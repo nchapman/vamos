@@ -19,6 +19,6 @@ services:
       POSTGRES_USER: ledger
     secrets:
       POSTGRES_PASSWORD: database-password
-    volumes:
-      - name: postgres
-        mount: /var/lib/postgresql/data
+    volume:
+      name: postgres
+      mount: /var/lib/postgresql/data

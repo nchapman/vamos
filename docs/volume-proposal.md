@@ -1,6 +1,6 @@
 # Proposal: first volume-backed deployment milestone
 
-**Status: proposed, not implemented or approved.** Deployment still rejects volumes. This narrows the broader storage design in [PLAN.md](../PLAN.md); it is not a commitment to implement databases, manual updates, scoped deployment, or rollback next.
+**Status: storage deployment remains proposed, not implemented.** Local configuration supports singular `volume`, with one per service and no sharing. Deployment still rejects it; implementing the configuration shape does not enable storage. This narrows the broader storage design in [PLAN.md](../PLAN.md); it is not a commitment to implement databases, manual updates, scoped deployment, or rollback next.
 
 ## Recommendation
 
@@ -8,11 +8,11 @@ Add persistent local storage for small Dockerfile-built applications, beginning 
 
 Recommended first boundary:
 
-- At most **one named volume per service**, eight desired volumes per app. SQLite and uploads can share directories under one `/data` mount. Keep the existing list-shaped configuration; reject a second mount explicitly at deploy preflight.
+- At most **one named volume per service**, eight desired volumes per app. SQLite and uploads can share directories under one `/data` mount. Use a singular `volume` object; lists and the plural `volumes` key are rejected rather than advertising unsupported multiple mounts.
 - Ordinary Docker `local` volumes only, with no driver options, host bind mounts, anonymous volumes, subpath mounts, or sharing between services/apps. Continue rejecting image-declared `VOLUME`, even when its path resembles a declared mount.
 - Keep `update: auto`. Changed volume-backed services have downtime; unchanged services do not restart. Private service observation remains process-only, not database readiness.
 - A service receives its volume binding when volume creation intent is recorded, not when its first deployment becomes healthy. Reject adding/removing/renaming a mount, changing its path/owner, or converting an existing service between stateless and volume-backed. Such changes need an explicit migration workflow later; adding a new service remains possible.
-- No data deletion command, snapshots, automatic backups, restore automation, quotas, replication, database management, or code/data rollback in this milestone. A tested manual backup/restore runbook is nevertheless a release requirement.
+- No data deletion command, snapshots, automatic backups, restore automation, quotas, replication, database management, or code/data rollback in this milestone. Backup/restore design and runbooks are deferred, not an implementation or release gate for this milestone.
 
 ## Configuration and user experience
 
@@ -26,9 +26,9 @@ services:
     env:
       DATABASE_PATH: /data/notebook.sqlite
     http: {port: 8080, health: /healthz}
-    volumes:
-      - name: data
-        mount: /data
+    volume:
+      name: data
+      mount: /data
 ```
 
 Before mutation, show the resolved target, created/reused volume identity, affected services, and downtime. After image resolution, identify which services actually require replacement. Do not describe the whole app as unchanged merely because its previous completed snapshot is retained.
@@ -42,15 +42,9 @@ Data is retained. Starting the new image may change it; no automatic rollback.
 
 Normal deploy remains noninteractive and does not require confirmation on every data-backed code update. Resume/supersede remain explicit operations and must show the same data warning. Status should distinguish `serving`, `unavailable/retired`, `candidate starting`, and `route switch pending`, with volume names/IDs and whether replacement execution may already have changed data. Do not label the old retired container available or imply that a completed app snapshot includes a database snapshot.
 
-Proposed additional commands are limited to storage preparation and inspection:
+Expose volume ownership, binding, identity, and retained/missing state through `status`, never data contents. Initial deploy creates its own new volume automatically. No separate volume preparation, listing, backup, or restore commands are proposed for this milestone.
 
-```sh
-soar volumes prepare              # Validate/capture mount bindings; create volumes, start no app code
-soar volumes list                 # Ownership, binding, identity, retained/missing state; never contents
-soar deploy --reuse-data          # Explicit reuse after destroy or manual restore into prepared volumes
-```
-
-Ordinary initial deploy prepares its own new volumes automatically. Preparation exists so an operator can restore data **before any application process runs**, without a new scoped-deploy feature or hand-editing Soar journals. It requires supported configuration and host ownership, but no application secrets or builds. `--reuse-data` authorizes attaching exact retained/prepared identities, never arbitrary adoption, deletion, renaming, or schema compatibility. Record that authorization in the operation so resume does not ask again. It is not needed for ordinary updates of an existing service or continued recovery of its captured operation. An explicitly named supersede inherits attachment authorization for the same captured volume identities, including after a failed **first** deployment. Preserve the binding and possible-mutation record independently of whether `Current` ever existed. Supersede cannot silently turn that failed first service into a fresh volume or a stateless service; correcting a binding mistake requires a separate identity/migration decision.
+The proposed `soar deploy --reuse-data` flag acknowledges reuse after destroy. It authorizes attaching exact retained identities, never arbitrary adoption, deletion, renaming, or schema compatibility. Record that authorization in the operation so resume does not ask again. It is not needed for ordinary updates of an existing service or continued recovery of its captured operation. An explicitly named supersede inherits attachment authorization for the same captured volume identities, including after a failed **first** deployment. Preserve the binding and possible-mutation record independently of whether `Current` ever existed. Supersede cannot silently turn that failed first service into a fresh volume or a stateless service; correcting a binding mistake requires a separate identity/migration decision.
 
 ## Stable ownership and creation
 
@@ -108,29 +102,24 @@ Destroy withdraws all public routes, disables restart, proves owned writers stop
 
 Same-name redeployment may reuse data only with the exact stored service/name/path binding and explicit `--reuse-data` authorization. Omitted retained volumes remain retained, not deleted. App/service/volume renaming is not migration. Host teardown/purge must refuse retained volume registry state as well as actual Docker volumes, including when a recorded volume is missing. No first-slice command deletes either data or its ownership evidence.
 
-## Backup and restore gate
+## Deferred backup/restore work and storage limits
 
-Before recommending storage for important data, publish and execute a runbook that:
+Persistence on one host is not a backup. This milestone neither chooses a backup approach nor implements or verifies backup/restore workflows. Those need a separate design discussion; the restore-driven preparation command is deferred with them. Do not claim retained volumes protect against host loss or data corruption.
 
-1. Produces a consistent off-host backup of **the database and uploads together**. The baseline runbook stops all writers, disables restart, and backs up the complete data directory. An online alternative requires an application-owned consistency mechanism: SQLite's backup API alone does not coordinate uploaded files with their database references. Copying only a live SQLite `.db` while ignoring WAL files is not a backup strategy.
-2. Retains compatible source/configuration, resolved image metadata, secret material, and required dependencies. Protect secrets separately; a volume archive alone cannot restore an app.
-3. Bootstraps a fresh host, uses `volumes prepare` to allocate new host-owned identities without starting app code, and restores bytes using a trusted, explicit operator-controlled helper with exclusive access. Do not transplant old host IDs or fabricate registry records.
-4. Removes the restore helper, checks ownership/permissions, and deploys compatible code with `--reuse-data`; verifies old records, an existing upload and its database reference, and new writes/uploads. Backup verification must inspect application data, not merely HTTP readiness.
-
-This is a manual runbook, not an implemented backup/restore service. Out-of-band Docker/host modification, missing storage, and filesystem corruption require operator recovery; normal Docker restart is not an integrity check. A technical spike must check missing-volume behavior on create/start/reboot before the implementation claims fail-closed recovery. If the supported daemon cannot uphold that boundary, revise restart policy or the design explicitly—do not paper over it with empty-volume recreation.
+Out-of-band Docker/host modification, missing storage, and filesystem corruption require operator recovery; normal Docker restart is not an integrity check. A technical spike must check missing-volume behavior on create/start/reboot before the implementation claims fail-closed recovery. If the supported daemon cannot uphold that boundary, revise restart policy or the design explicitly—do not paper over it with empty-volume recreation.
 
 ## Implementation and approval gates
 
-Use an explicit storage-aware journal version rather than weakening v2's no-mount invariants. Keep incomplete legacy/v2 operations recoverable with their original rules; migrate ready state only on an explicit new deployment. Preserve the global mutation lock and bounded, value-free runtime diagnostics. Volume-only registration/status and retained-data teardown refusal must work without a deployment journal, as secret-only registration does today.
+Use an explicit storage-aware journal version rather than weakening v2's no-mount invariants. Keep incomplete legacy/v2 operations recoverable with their original rules; migrate ready state only on an explicit new deployment. Preserve the global mutation lock and bounded, value-free runtime diagnostics. Retained-volume status and teardown refusal must work even without a deployment journal; missing deployment state is not authority to erase storage ownership.
 
 Implement in three reviewable steps:
 
-1. Registry/ownership, immutable binding validation, preparation/listing, and retention/teardown guards.
+1. Registry/ownership, immutable binding validation, volume status, and retention/teardown guards.
 2. Verified mounts, stopped candidate preparation, writer retirement, durable 503 routes, and recovery/supersede.
-3. A runnable SQLite/uploads example, failure-injection tests, live reboot/retention/destruction tests, and off-host backup/fresh-host restore verification.
+3. A runnable SQLite/uploads example, failure-injection tests, and live data-retention checks across replacement, failed startup, supersede, reboot, cleanup, destroy, and explicit data reuse.
 
 Required regressions include lost volume-create and container-start responses; missing/foreign/replaced volumes; unexpected mount references; delimiter-safe mount arguments; restart resurrection; interrupted initialization and readiness failure after a schema write; failed-first-deploy supersede retaining its binding, authorization, and possible data changes; mixed app progress; uncertain 503/activation reloads; interrupted supersede; changed mount bindings; data surviving cleanup/destroy/redeploy; and teardown refusing retained/missing recorded storage.
 
-**Decisions to approve before implementation:** the one-volume-per-service bound; immutable bindings/new-service-only attachment; `volumes prepare/list` plus explicit retained-data reuse; no implicit copy/chown or data deletion; and the backup/restore gate. No storage implementation is authorized merely by this proposal.
+**Settled scope:** singular `volume`, one per service, no sharing, and backup/restore work deferred. **Remaining decisions before storage implementation:** immutable bindings/new-service-only attachment; explicit retained-data reuse; and no implicit copy/chown or data deletion. No storage deployment implementation is authorized merely by accepting its configuration schema.
 
 Docker references: [volume lifecycle, implicit creation, and `volume-nocopy`](https://docs.docker.com/engine/storage/volumes/), [volume removal restrictions](https://docs.docker.com/reference/cli/docker/volume/rm/). These describe Docker primitives, not a substitute for Soar's ownership and writer checks.

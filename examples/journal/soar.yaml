@@ -9,9 +9,9 @@ services:
       UPLOAD_PATH: /data/uploads
     secrets:
       SESSION_SECRET: session-secret
-    volumes:
-      - name: data
-        mount: /data
+    volume:
+      name: data
+      mount: /data
     http:
       port: 8080
       health: /readyz

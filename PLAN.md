@@ -104,7 +104,7 @@ One `soar.yaml`, one app, one private network, several optional services. An app
 | `env` | Literal, nonsecret environment variables. |
 | `secrets` | Map of container environment variable names to app-scoped secret names. Missing secrets fail preflight. |
 | `http` | Opt-in public HTTP endpoint: container port, readiness path, optional custom domains. |
-| `volumes` | List of app-scoped named volumes and absolute container mount paths. Never arbitrary host paths. |
+| `volume` | Optional single app-scoped named volume with an absolute container mount path. Never a shared volume or arbitrary host path. |
 | `update` | `auto` by default; `manual` protects an existing service from ordinary app deploys. Independent of storage. |
 
 App, service, volume, and secret names are validated as simple DNS labels; environment-variable keys use normal environment-variable syntax, including uppercase letters and underscores. Reject unknown keys. Do not add templating, variable interpolation, inferred database URLs, or implicit service dependencies. Store complete connection URLs as secrets when needed; hostnames in those URLs are the service names.
@@ -270,9 +270,9 @@ services:
       UPLOAD_PATH: /data/uploads
     secrets:
       SESSION_SECRET: session-secret
-    volumes:
-      - name: data
-        mount: /data
+    volume:
+      name: data
+      mount: /data
     http:
       port: 8080
       health: /readyz
@@ -316,9 +316,9 @@ services:
       POSTGRES_USER: ledger
     secrets:
       POSTGRES_PASSWORD: database-password
-    volumes:
-      - name: postgres
-        mount: /var/lib/postgresql/data
+    volume:
+      name: postgres
+      mount: /var/lib/postgresql/data
 ```
 
 ```sh
@@ -373,16 +373,16 @@ services:
       POSTGRES_USER: dispatch
     secrets:
       POSTGRES_PASSWORD: database-password
-    volumes:
-      - name: postgres
-        mount: /var/lib/postgresql/data
+    volume:
+      name: postgres
+      mount: /var/lib/postgresql/data
   redis:
     image: redis:7
     update: manual
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
-    volumes:
-      - name: redis
-        mount: /data
+    volume:
+      name: redis
+      mount: /data
 ```
 
 ```sh

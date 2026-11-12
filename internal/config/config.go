@@ -2,6 +2,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,8 +33,34 @@ type Service struct {
 	Env     map[string]string `yaml:"env,omitempty"`
 	Secrets map[string]string `yaml:"secrets,omitempty"`
 	HTTP    *HTTP             `yaml:"http,omitempty"`
-	Volumes []Volume          `yaml:"volumes,omitempty"`
+	Volume  *Volume           `yaml:"volume,omitempty" json:"Volume,omitempty"`
 	Update  UpdatePolicy      `yaml:"update,omitempty"`
+}
+
+// UnmarshalJSON preserves stateless requests and journals written before the
+// singular volume schema. Their Volumes field was null or empty, never deployed
+// storage. Keep strict nested decoding and refuse nonempty legacy mounts rather
+// than silently discarding storage configuration.
+func (s *Service) UnmarshalJSON(data []byte) error {
+	type serviceJSON Service
+	var decoded serviceJSON
+	wire := struct {
+		*serviceJSON
+		LegacyVolumes json.RawMessage `json:"Volumes"`
+	}{serviceJSON: &decoded}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
+		return err
+	}
+	if len(wire.LegacyVolumes) != 0 {
+		var legacy []json.RawMessage
+		if err := json.Unmarshal(wire.LegacyVolumes, &legacy); err != nil || len(legacy) != 0 {
+			return errors.New("legacy JSON Volumes must be null or empty; use singular Volume")
+		}
+	}
+	*s = Service(decoded)
+	return nil
 }
 
 type Build struct {

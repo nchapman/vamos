@@ -105,20 +105,15 @@ func (a App) Validate() error {
 				domains[normalized] = prefix
 			}
 		}
-		mounts := make(map[string]bool)
-		for _, volume := range s.Volumes {
+		if volume := s.Volume; volume != nil {
 			if !validLabel(volume.Name) {
-				add("%s.volumes: volume name must be a lowercase DNS label", prefix)
+				add("%s.volume: volume name must be a lowercase DNS label", prefix)
 			}
 			if !path.IsAbs(volume.Mount) || path.Clean(volume.Mount) != volume.Mount || volume.Mount == "/" || strings.ContainsRune(volume.Mount, '\x00') {
-				add("%s.volumes: mount must be a clean absolute container directory other than /", prefix)
+				add("%s.volume: mount must be a clean absolute container directory other than /", prefix)
 			}
-			if mounts[volume.Mount] {
-				add("%s.volumes: duplicate mount %q", prefix, volume.Mount)
-			}
-			mounts[volume.Mount] = true
 			if owner, exists := volumes[volume.Name]; exists {
-				add("%s.volumes: volume %q is already mounted by %s; shared volumes are not supported", prefix, volume.Name, owner)
+				add("%s.volume: volume %q is already mounted by %s; shared volumes are not supported", prefix, volume.Name, owner)
 			}
 			volumes[volume.Name] = prefix
 		}

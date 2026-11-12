@@ -41,6 +41,8 @@ From an app directory, `soar validate` defaults to `soar.yaml`. Validation check
 
 It does **not** verify Dockerfile existence, image references against a registry, secret availability, DNS/TLS, server-wide hostname ownership, or live storage state. Success is not a deployment-readiness guarantee.
 
+A service can declare one named volume with `volume: {name: data, mount: /data}`. The singular field takes an object, not a list; `volumes` is not accepted. Local validation supports this schema, but **volume-backed deployment is still unimplemented**. See the [storage proposal](docs/volume-proposal.md) for the pending lifecycle design.
+
 Build contexts are relative to the configuration directory; Dockerfile paths are relative to their context and cannot escape it lexically. Container mount paths use POSIX syntax, must be clean absolute paths other than `/`, and are never host-directory mounts. Domains are ASCII DNS hostnames without a scheme, port, wildcard, or trailing dot (use punycode for international names). Environment values are passed literally; there is no interpolation.
 
 ## Inspect a host

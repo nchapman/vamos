@@ -45,7 +45,7 @@ func TestValidation(t *testing.T) {
 	}
 	for _, mut := range []func(*Request){func(r *Request) { r.App = "../bad" }, func(r *Request) { r.Operation = "ABC" }, func(r *Request) { r.Version = 2 }, func(r *Request) { r.Action = "destroy" }, func(r *Request) { r.Tail = 1001 }, func(r *Request) {
 		s := r.Config.Services["web"]
-		s.Volumes = []config.Volume{{Name: "data", Mount: "/data"}}
+		s.Volume = &config.Volume{Name: "data", Mount: "/data"}
 		r.Config.Services["web"] = s
 	}} {
 		q := r

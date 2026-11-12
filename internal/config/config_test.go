@@ -27,9 +27,9 @@ services:
       port: 8080
       health: /ready?check=db
       domains: [notes.example.com]
-    volumes:
-      - name: data
-        mount: /data
+    volume:
+      name: data
+      mount: /data
   db:
     image: postgres:17
     update: manual
@@ -47,7 +47,7 @@ services:
 	if app.Services["db"].Update != config.UpdateManual {
 		t.Fatal("manual update policy was not preserved")
 	}
-	if web.Build.Context != "." || web.HTTP.Port != 8080 || web.Secrets["SESSION_SECRET"] != "session-secret" || web.Volumes[0].Mount != "/data" {
+	if web.Build.Context != "." || web.HTTP.Port != 8080 || web.Secrets["SESSION_SECRET"] != "session-secret" || web.Volume == nil || web.Volume.Mount != "/data" {
 		t.Fatalf("configuration was not preserved: %+v", web)
 	}
 	if len(web.Command) != 2 || web.Command[1] != "" {
@@ -108,11 +108,10 @@ func TestDecodeRejectsInvalidServices(t *testing.T) {
 		{"absolute health URL", "image: app:v1\n    http: {port: 80, health: 'https://example.com/'}", "http.health"},
 		{"network health URL", "image: app:v1\n    http: {port: 80, health: '//example.com/'}", "http.health"},
 		{"health fragment", "image: app:v1\n    http: {port: 80, health: '/ready#fragment'}", "http.health"},
-		{"relative volume", "image: app:v1\n    volumes: [{name: data, mount: data}]", "absolute container directory"},
-		{"root volume", "image: app:v1\n    volumes: [{name: data, mount: /}]", "absolute container directory"},
-		{"unclean volume", "image: app:v1\n    volumes: [{name: data, mount: /data/../other}]", "absolute container directory"},
-		{"invalid volume name", "image: app:v1\n    volumes: [{name: /host/path, mount: /data}]", "volume name"},
-		{"duplicate mount", "image: app:v1\n    volumes: [{name: data, mount: /data}, {name: other, mount: /data}]", "duplicate mount"},
+		{"relative volume", "image: app:v1\n    volume: {name: data, mount: data}", "absolute container directory"},
+		{"root volume", "image: app:v1\n    volume: {name: data, mount: /}", "absolute container directory"},
+		{"unclean volume", "image: app:v1\n    volume: {name: data, mount: /data/../other}", "absolute container directory"},
+		{"invalid volume name", "image: app:v1\n    volume: {name: /host/path, mount: /data}", "volume name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -136,10 +135,10 @@ func TestDecodeRejectsCrossServiceConflicts(t *testing.T) {
 services:
   web:
     image: app:v1
-    volumes: [{name: data, mount: /data}]
+    volume: {name: data, mount: /data}
   worker:
     image: app:v1
-    volumes: [{name: data, mount: /other}]
+    volume: {name: data, mount: /other}
 `, "shared volumes are not supported")
 	})
 	t.Run("case-insensitive domain collision", func(t *testing.T) {

@@ -96,7 +96,7 @@ func multiIdentity(j *journal, r *release) error {
 	if !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) {
 		return errors.New("captured runtime secrets mismatch")
 	}
-	if len(r.Config.Volumes) != 0 {
+	if r.Config.Volume != nil {
 		return errors.New("runtime volumes are unsupported")
 	}
 	if r.Service == "" && r.Config.HTTP == nil {

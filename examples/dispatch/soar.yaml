@@ -32,13 +32,13 @@ services:
       POSTGRES_USER: dispatch
     secrets:
       POSTGRES_PASSWORD: database-password
-    volumes:
-      - name: postgres
-        mount: /var/lib/postgresql/data
+    volume:
+      name: postgres
+      mount: /var/lib/postgresql/data
   redis:
     image: redis:7
     update: manual
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
-    volumes:
-      - name: redis
-        mount: /data
+    volume:
+      name: redis
+      mount: /data

@@ -160,7 +160,7 @@ func ValidateApp(a *config.App) error {
 	}
 	mappings := 0
 	for name, s := range a.Services {
-		if s.Build == nil || s.Image != "" || len(s.Volumes) > 0 || s.Update == config.UpdateManual || (s.HTTP != nil && len(s.HTTP.Domains) > 0) {
+		if s.Build == nil || s.Image != "" || s.Volume != nil || s.Update == config.UpdateManual || (s.HTTP != nil && len(s.HTTP.Domains) > 0) {
 			return fmt.Errorf("service %s: only Dockerfile-built stateless services without manual updates or custom domains are supported", name)
 		}
 		if s.HTTP != nil && name != "web" && len(a.Name+"-"+name) > 63 {
