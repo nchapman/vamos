@@ -163,6 +163,14 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			return s, nil
 		}
 	} else {
+		// Retained secrets bind to the old host identity independently of app journals.
+		secretPath := m.path("/var/lib/soar/secrets")
+		if err := rejectSymlink(secretPath); err != nil {
+			return nil, err
+		}
+		if _, err := os.Lstat(secretPath); !errors.Is(err, os.ErrNotExist) {
+			return nil, errors.New("retained secret state prevents creating a new host identity; explicitly remove retained secrets first")
+		}
 		if err := m.preflight(ctx, s != nil); err != nil {
 			return nil, err
 		}

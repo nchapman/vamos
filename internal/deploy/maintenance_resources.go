@@ -34,7 +34,7 @@ func (m *Manager) resourceInspect(ctx context.Context, kind, id string) (*resour
 	}
 	var rows []resourceInspection
 	if e = json.Unmarshal(b, &rows); e != nil {
-		return nil, e
+		return nil, errors.New("invalid Docker maintenance inspection response")
 	}
 	if len(rows) != 1 {
 		return nil, errors.New("invalid inspection count")

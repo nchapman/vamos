@@ -34,6 +34,7 @@ A repeated add with the same name/domain verifies a ready host without reinstall
 
 Both `--yes` and `--purge` are required. The latter authorizes removal of owned runtime data and certificates; it **does not** authorize deleting workloads. Teardown checks the journal and name, then refuses:
 
+- Retained [secret stores](secrets.md), even after app destruction. A new host bootstrap also refuses retained secrets rather than adopting an old identity.
 - Missing ownership evidence, active/incomplete or unexpected Soar app/state files, symlinked managed paths, or mounts at/under owned data directories (including app receipts).
 - Changed managed configuration/executor, systemd overrides, service-account/group changes, or changed package versions.
 - Docker containers (including stopped ones), images, volumes, custom networks, or build cache.

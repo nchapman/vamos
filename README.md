@@ -2,7 +2,7 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**The first deployment slice works:** one Dockerfile-built, stateless public web service per app, with remote builds, readiness-checked replacement, Caddy routing/automatic HTTPS, status, logs, and captured-input recovery. Root-only setup/teardown of dedicated Ubuntu hosts is also implemented. Preview-first app cleanup/destruction and restart-stable ports are implemented. Multi-service apps, volumes, secrets, and rollback remain planned in [PLAN.md](PLAN.md). See [the implemented deployment boundary](docs/deployment.md) before using it.
+**The first deployment slice works:** one Dockerfile-built, stateless public web service per app, with remote builds, readiness-checked replacement, Caddy routing/automatic HTTPS, status, logs, and captured-input recovery. Root-only setup/teardown of dedicated Ubuntu hosts is also implemented. Preview-first app cleanup/destruction, restart-stable ports, and staged runtime secrets are implemented. Multi-service apps, volumes, and rollback remain planned in [PLAN.md](PLAN.md). See [the implemented deployment boundary](docs/deployment.md) before using it.
 
 ## Platform scope
 
@@ -93,6 +93,19 @@ With a bootstrapped server, wildcard DNS pointing at it, and TCP 80/443 allowed:
 
 The first default-target contact creates a gitignored project binding under `.soar/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules, always omit `.git`/`.soar`, and are limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
 
+## Stage runtime secrets
+
+Map environment variables to app-scoped names under `services.web.secrets`. From that app directory, with the built CLI on your PATH:
+
+```sh
+soar secrets stage session-secret  # No-echo prompt; flags precede the name
+soar secrets list
+soar status                       # Pending versions, never values
+soar deploy                       # Apply captured staged versions
+```
+
+Use `--stdin` for automation, supplying values from a trusted secret producer—not literal shell arguments. Staging never restarts an app; resume and reboot keep pinned versions. Cleanup/destruction retain secrets, and host teardown refuses retained secret state. See [staged secrets](docs/secrets.md) for input, storage, recovery, and exposure limits.
+
 ## Clean up or remove an app
 
 ```sh
@@ -121,6 +134,7 @@ internal/registry/  Private, atomically written local server registrations
 internal/buildcontext/ Bounded build-context capture with Docker ignore rules
 internal/deploy/    Stateless deployment/maintenance journals, Docker lifecycle, Caddy routing
 internal/appstate/  Minimal completed-destruction receipt shared with host teardown
+internal/secrets/   Private immutable secret versions and metadata-only selection
 docs/               Implemented boundary and verification notes
 examples/          Five design fixtures plus a runnable hello app
 mise.toml          Pinned development tools and project tasks

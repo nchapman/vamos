@@ -214,6 +214,17 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		return 0
 	}
+	if response.Status != nil && !*asJSON {
+		for _, secret := range response.Status.Secrets {
+			if _, err := fmt.Fprintf(stdout, "Secret %s: staged=%s applied=%s pending=%t services=%v\n", secret.Name, secret.StagedVersion, secret.AppliedVersion, secret.Pending, secret.Services); err != nil {
+				return lifecycleError(stderr, err)
+			}
+		}
+		if response.Status.Phase == "staged" {
+			fmt.Fprintln(stdout, "No deployment recorded; staged secrets are retained.")
+			return 0
+		}
+	}
 	if maintenance || response.Plan != nil || (response.Status != nil && response.Status.Phase == "destroyed") {
 		if *asJSON {
 			if err := json.NewEncoder(stdout).Encode(response); err != nil {

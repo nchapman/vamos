@@ -12,7 +12,7 @@ import (
 
 const OutputLimit = 64 * 1024
 
-var ErrOutputLimit = errors.New("process output exceeded the 64 KiB per-stream limit")
+var ErrOutputLimit = errors.New("process output exceeded the configured per-stream limit")
 
 type Result struct {
 	Stdout []byte
@@ -23,20 +23,29 @@ type Result struct {
 // for inherited pipe handles after the command exits or its context is cancelled.
 // It does not promise to terminate arbitrary proxy/remote descendants.
 func Run(ctx context.Context, executable string, args []string, stdin []byte) (Result, error) {
-	return run(ctx, executable, args, stdin, false)
+	return run(ctx, executable, args, stdin, false, OutputLimit)
 }
 
 // RunTail is for verbose package operations: it drains output and retains a
 // bounded diagnostic tail, rather than killing an installer on output overflow.
 func RunTail(ctx context.Context, executable string, args []string, stdin []byte) (Result, error) {
-	return run(ctx, executable, args, stdin, true)
+	return run(ctx, executable, args, stdin, true, OutputLimit)
 }
 
-func run(ctx context.Context, executable string, args []string, stdin []byte, tail bool) (Result, error) {
+// RunLimited permits a larger, still explicitly bounded internal response.
+// Transport protocols continue to use Run's smaller default allowance.
+func RunLimited(ctx context.Context, executable string, args []string, stdin []byte, limit int) (Result, error) {
+	if limit < 1 || limit > 8<<20 {
+		return Result{}, errors.New("invalid process output limit")
+	}
+	return run(ctx, executable, args, stdin, false, limit)
+}
+
+func run(ctx context.Context, executable string, args []string, stdin []byte, tail bool, limit int) (Result, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stdout := &boundedBuffer{cancel: cancel, tail: tail}
-	stderr := &boundedBuffer{cancel: cancel, tail: tail}
+	stdout := &boundedBuffer{cancel: cancel, tail: tail, limit: limit}
+	stderr := &boundedBuffer{cancel: cancel, tail: tail, limit: limit}
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	cmd.Stdout = stdout
@@ -57,6 +66,7 @@ func run(ctx context.Context, executable string, args []string, stdin []byte, ta
 }
 
 type boundedBuffer struct {
+	limit    int
 	buffer   bytes.Buffer
 	cancel   context.CancelFunc
 	exceeded bool
@@ -66,18 +76,18 @@ type boundedBuffer struct {
 func (b *boundedBuffer) Write(p []byte) (int, error) {
 	n := len(p)
 	if b.tail {
-		if n >= OutputLimit {
+		if n >= b.limit {
 			b.buffer.Reset()
-			b.buffer.Write(p[n-OutputLimit:])
+			b.buffer.Write(p[n-b.limit:])
 		} else {
-			if excess := b.buffer.Len() + n - OutputLimit; excess > 0 {
+			if excess := b.buffer.Len() + n - b.limit; excess > 0 {
 				b.buffer.Next(excess)
 			}
 			b.buffer.Write(p)
 		}
 		return n, nil
 	}
-	remaining := OutputLimit - b.buffer.Len()
+	remaining := b.limit - b.buffer.Len()
 	if n > remaining {
 		b.buffer.Write(p[:remaining])
 		b.exceeded = true

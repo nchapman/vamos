@@ -22,6 +22,7 @@ Usage:
   soar resume OPERATION                 Resume captured operation inputs
   soar cleanup [--yes]                  Preview or remove obsolete app resources
   soar destroy [--yes]                  Preview or remove an app
+  soar secrets stage|list [flags]        Stage a secret or list retained version metadata
   soar validate [-f soar.yaml]           Validate local app configuration
   soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
@@ -31,7 +32,7 @@ Usage:
   soar help                             Show this help
 
 Setup/teardown require explicit authorization. Deploy currently supports one Dockerfile-built
-public web service without volumes or secrets. Run a command with --help for options.
+public web service without volumes. Run a command with --help for options.
 `
 
 // Run is the noninteractive entry point for local commands.
@@ -62,6 +63,8 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return 0
 	case "validate":
 		return validate(args[1:], stdout, stderr)
+	case "secrets":
+		return secretsCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "server":
 		return server(ctx, args[1:], stdout, stderr)
 	case "deploy", "status", "logs", "resume", "cleanup", "destroy":

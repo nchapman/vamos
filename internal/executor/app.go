@@ -13,6 +13,7 @@ import (
 
 	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/soar/internal/secrets"
 )
 
 const maxAppRequest = 64 * 1024
@@ -51,13 +52,24 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 			return appFailure(stdout, err, 1)
 		}
 	}
+	if request.Action == "secrets-stage" {
+		archive, err = readSecretFile("secret.value")
+		if err != nil {
+			return appFailure(stdout, errors.New("invalid secret input file"), 1)
+		}
+	}
 	deadline := 20 * time.Minute
-	if request.Action == "status" || request.Action == "logs" {
+	if request.Action == "status" || request.Action == "logs" || request.Action == "secrets-list" {
 		deadline = 15 * time.Second
 	}
 	ctx, stop := context.WithTimeout(ctx, deadline)
 	defer stop()
-	response, err := deploy.NewManager().Execute(ctx, request, archive)
+	manager := deploy.NewManager()
+	manager.RuntimeDir, err = os.Getwd()
+	if err != nil {
+		return appFailure(stdout, errors.New("worker directory unavailable"), 1)
+	}
+	response, err := manager.Execute(ctx, request, archive)
 	if err != nil {
 		return appFailure(stdout, err, 1)
 	}
@@ -70,6 +82,29 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func readSecretFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > secrets.MaxValueBytes {
+		return nil, errors.New("invalid secret file")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, secrets.MaxValueBytes+1))
+	if err != nil {
+		return nil, errors.New("cannot read secret file")
+	}
+	if err := secrets.ValidateValue(data); err != nil {
+		return nil, errors.New("invalid secret value")
+	}
+	return data, nil
 }
 
 func readAppContext(r io.Reader) ([]byte, error) {

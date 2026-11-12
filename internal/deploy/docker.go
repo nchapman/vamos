@@ -51,7 +51,7 @@ func (m *Manager) inspect(c context.Context, kind, name string) (*inspection, er
 	}
 	var v []inspection
 	if e = json.Unmarshal(b, &v); e != nil {
-		return nil, e
+		return nil, errors.New("invalid Docker inspection response")
 	}
 	if len(v) != 1 {
 		return nil, errors.New("expected one inspected object")
@@ -228,6 +228,10 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 		return nil
 	}
 	s := j.Config.Services["web"]
+	// Validate captured versions before any resumed build or runtime mutation.
+	if _, err := m.secretValues(j, j.SecretRefs); err != nil {
+		return err
+	}
 	if j.Candidate == nil {
 		p := filepath.Join(m.dir(j.App), j.Operation+".image.iid")
 		if e := safe(p); e != nil {
@@ -268,7 +272,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 		if v.ID != id || len(v.Config.Volumes) > 0 {
 			return errors.New("image declares volumes or mismatched identity")
 		}
-		j.Candidate = &release{Container: "soar-" + j.App + "-" + j.Operation, Image: id, Operation: j.Operation}
+		j.Candidate = &release{Container: "soar-" + j.App + "-" + j.Operation, Image: id, Operation: j.Operation, SecretRefs: j.SecretRefs}
 		j.Phase = "starting"
 		if e = m.save(j); e != nil {
 			return e
@@ -330,7 +334,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 			}
 			args = append(args, r.Image)
 			args = append(args, s.Command...)
-			if _, e = m.cmd(c, "docker", args...); e != nil {
+			if e = m.runContainer(c, j, r, args); e != nil {
 				return e
 			}
 		}
@@ -429,6 +433,13 @@ func (m *Manager) verifyCandidate(c context.Context, j *journal, r *release) (*i
 	}
 	for k, val := range s.Env {
 		env[k] = val
+	}
+	values, e := m.secretValues(j, r.SecretRefs)
+	if e != nil {
+		return nil, e
+	}
+	for key, value := range values {
+		env[key] = value
 	}
 	actual := map[string]string{}
 	for _, x := range v.Config.Env {

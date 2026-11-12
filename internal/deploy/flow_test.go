@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -152,6 +153,20 @@ func (f *flowEngine) run(_ context.Context, n string, a []string, b []byte) (pro
 				}
 				if x == "--env" {
 					v.Config.Env = append(v.Config.Env, a[i+1])
+				}
+				if x == "--env-file" {
+					info, err := os.Stat(a[i+1])
+					if err != nil {
+						f.t.Fatal(err)
+					}
+					if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
+						f.t.Fatal("runtime secret file is not private")
+					}
+					data, err := os.ReadFile(a[i+1])
+					if err != nil {
+						f.t.Fatal(err)
+					}
+					v.Config.Env = append(v.Config.Env, strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")...)
 				}
 				if x == f.image.ID && i+1 < len(a) {
 					v.Config.Cmd = append([]string{}, a[i+1:]...)

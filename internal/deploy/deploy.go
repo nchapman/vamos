@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -22,37 +23,51 @@ import (
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/lifecycle"
 	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/soar/internal/secrets"
 )
 
 type Request struct {
-	Apply     bool             `json:"apply,omitempty"`
-	Supersede string           `json:"supersede,omitempty"`
-	Version   int              `json:"version"`
-	Action    string           `json:"action"`
-	App       string           `json:"app"`
-	Operation string           `json:"operation,omitempty"`
-	Config    *config.App      `json:"config,omitempty"`
-	Host      lifecycle.Config `json:"host"`
-	Tail      int              `json:"tail,omitempty"`
+	SecretName string           `json:"secret_name,omitempty"`
+	Apply      bool             `json:"apply,omitempty"`
+	Supersede  string           `json:"supersede,omitempty"`
+	Version    int              `json:"version"`
+	Action     string           `json:"action"`
+	App        string           `json:"app"`
+	Operation  string           `json:"operation,omitempty"`
+	Config     *config.App      `json:"config,omitempty"`
+	Host       lifecycle.Config `json:"host"`
+	Tail       int              `json:"tail,omitempty"`
 }
 type Response struct {
-	Plan    *Plan   `json:"plan,omitempty"`
-	Version int     `json:"version"`
-	Status  *Status `json:"status,omitempty"`
-	Logs    string  `json:"logs,omitempty"`
-	Error   string  `json:"error,omitempty"`
+	Secret         *secrets.Entry  `json:"secret,omitempty"`
+	SecretVersions []secrets.Entry `json:"secret_versions,omitempty"`
+	Plan           *Plan           `json:"plan,omitempty"`
+	Version        int             `json:"version"`
+	Status         *Status         `json:"status,omitempty"`
+	Logs           string          `json:"logs,omitempty"`
+	Error          string          `json:"error,omitempty"`
 }
+type SecretStatus struct {
+	Name           string   `json:"name"`
+	StagedVersion  string   `json:"staged_version"`
+	AppliedVersion string   `json:"applied_version,omitempty"`
+	Pending        bool     `json:"pending"`
+	Services       []string `json:"services"`
+}
+
 type Status struct {
-	App       string `json:"app"`
-	URL       string `json:"url"`
-	Phase     string `json:"phase"`
-	Operation string `json:"operation"`
-	Active    bool   `json:"active"`
-	Container string `json:"container"`
-	LastError string `json:"last_error"`
-	Running   bool   `json:"running"`
+	Secrets   []SecretStatus `json:"secrets,omitempty"`
+	App       string         `json:"app"`
+	URL       string         `json:"url"`
+	Phase     string         `json:"phase"`
+	Operation string         `json:"operation"`
+	Active    bool           `json:"active"`
+	Container string         `json:"container"`
+	LastError string         `json:"last_error"`
+	Running   bool           `json:"running"`
 }
 type release struct {
+	SecretRefs  map[string]secrets.Ref `json:",omitempty"`
 	Container   string
 	Image       string
 	Port        string
@@ -60,10 +75,11 @@ type release struct {
 	Operation   string
 }
 type journal struct {
-	Maintenance              *maintenance `json:",omitempty"`
-	LastMaintenanceOperation string       `json:",omitempty"`
-	LastMaintenanceAction    string       `json:",omitempty"`
-	Version                  int          `json:"version"`
+	SecretRefs               map[string]secrets.Ref `json:",omitempty"`
+	Maintenance              *maintenance           `json:",omitempty"`
+	LastMaintenanceOperation string                 `json:",omitempty"`
+	LastMaintenanceAction    string                 `json:",omitempty"`
+	Version                  int                    `json:"version"`
 	Status
 	Archive                      string
 	HostID                       string
@@ -73,6 +89,8 @@ type journal struct {
 }
 type Runner func(context.Context, string, []string, []byte) (process.Result, error)
 type Manager struct {
+	// RuntimeDir is the private worker staging directory for transient env files.
+	RuntimeDir string
 	// AllocatePort selects an advisory loopback reservation. Docker's bind is authoritative.
 	AllocatePort  func() (string, error)
 	Root          string
@@ -99,6 +117,11 @@ func NewManager() *Manager {
 		if n == "docker" && len(a) > 0 && a[0] == "buildx" {
 			return process.RunTail(c, n, a, b)
 		}
+		// Full Docker inspection includes runtime values, which can be much larger
+		// than the metadata-only SSH response. Never increase the transport budget.
+		if n == "docker" && len(a) > 1 && a[1] == "inspect" {
+			return process.RunLimited(c, n, a, b, 8<<20)
+		}
 		return process.Run(c, n, a, b)
 	}, HTTP: &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, HealthTimeout: 30 * time.Second, Drain: 2 * time.Second}
 }
@@ -115,12 +138,22 @@ func ValidateApp(a *config.App) error {
 		return err
 	}
 	s, ok := a.Services["web"]
-	if !ok || len(a.Services) != 1 || s.Build == nil || s.Image != "" || s.HTTP == nil || len(s.HTTP.Domains) > 0 || len(s.Volumes) > 0 || len(s.Secrets) > 0 || s.Update == config.UpdateManual {
-		return errors.New("only one build-only public HTTP web service without volumes, secrets, manual updates or custom domains is supported")
+	if !ok || len(a.Services) != 1 || s.Build == nil || s.Image != "" || s.HTTP == nil || len(s.HTTP.Domains) > 0 || len(s.Volumes) > 0 || s.Update == config.UpdateManual {
+		return errors.New("only one build-only public HTTP web service without volumes, manual updates or custom domains is supported")
+	}
+	if len(s.Secrets) > secrets.MaxNames {
+		return errors.New("at most 64 secret environment mappings are supported")
 	}
 	return nil
 }
+func (r Request) Mutating() bool {
+	return r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
+}
+
 func ValidateRequest(r Request) error {
+	if r.SecretName != "" && r.Action != "secrets-stage" {
+		return errors.New("secret name requires secrets-stage")
+	}
 	if r.Supersede != "" && (r.Action != "deploy" || !operation.MatchString(r.Supersede)) {
 		return errors.New("supersede requires deploy and valid operation ID")
 	}
@@ -161,7 +194,11 @@ func ValidateRequest(r Request) error {
 		if !operation.MatchString(r.Operation) || r.Config != nil {
 			return errors.New("resume requires operation ID and captured config")
 		}
-	case "status", "logs":
+	case "secrets-stage":
+		if !operation.MatchString(r.Operation) || !secrets.ValidName(r.SecretName) || r.Config != nil {
+			return errors.New("secret staging requires operation ID, valid name, and no config")
+		}
+	case "status", "logs", "secrets-list":
 		if r.Operation != "" || r.Config != nil {
 			return errors.New("read-only request cannot supply operation or config")
 		}
@@ -296,6 +333,14 @@ func (m *Manager) load(app string) (*journal, error) {
 func (m *Manager) cmd(c context.Context, n string, a ...string) ([]byte, error) {
 	r, e := m.Run(c, n, a, nil)
 	if e != nil {
+		// Runtime Docker output may contain secret environment values. Build output
+		// is handled separately: runtime secrets are never supplied to the builder.
+		if n == "docker" {
+			if c.Err() != nil {
+				return nil, fmt.Errorf("docker command: %w", c.Err())
+			}
+			return nil, errors.New("Docker command failed; runtime diagnostic output withheld")
+		}
 		return nil, fmt.Errorf("%s: %w: %s", n, e, diagnostic(string(r.Stderr)))
 	}
 	return r.Stdout, nil
@@ -310,8 +355,12 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	if err = ValidateRequest(r); err != nil {
 		return
 	}
-	mut := r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy"
-	if len(tar) > 32<<20 || (r.Action != "deploy" && len(tar) > 0) {
+	mut := r.Mutating()
+	if r.Action == "secrets-stage" {
+		if err = secrets.ValidateValue(tar); err != nil {
+			return
+		}
+	} else if len(tar) > 32<<20 || (r.Action != "deploy" && len(tar) > 0) {
 		err = errors.New("invalid context archive size or action")
 		return
 	}
@@ -354,16 +403,25 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		err = errors.New("foreign app journal")
 		return
 	}
+	secretState, e := m.secretStore().Load(r.App, h.ID)
+	if e != nil {
+		err = e
+		return
+	}
 	if !mut {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		if j == nil {
+		if j == nil && secretState == nil {
 			err = errors.New("app is unmanaged")
 			return
 		}
-		s := maintenanceStatus(j, r.Host.Domain)
+		s := secretOnlyStatus(r.App, r.Host.Domain)
+		if j != nil {
+			s = maintenanceStatus(j, r.Host.Domain)
+		}
+		s.Secrets = secretStatuses(secretState, j)
 		s.Active = !ok
-		if j.Current != nil {
+		if j != nil && j.Current != nil {
 			s.Container = j.Current.Container
 			v, x := m.container(ctx, j, j.Current)
 			s.Running = x == nil && v.State.Running
@@ -372,8 +430,11 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			}
 		}
 		resp.Status = &s
+		if r.Action == "secrets-list" {
+			resp.SecretVersions = secretState.List()
+		}
 		if r.Action == "logs" {
-			if j.Current == nil {
+			if j == nil || j.Current == nil {
 				err = errors.New("app has no current release")
 				return
 			}
@@ -397,8 +458,27 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	if err = m.maintenanceFence(r); err != nil {
 		return
 	}
+	if r.Action == "secrets-stage" {
+		var entry secrets.Entry
+		entry, err = m.secretStore().Stage(r.App, h.ID, r.SecretName, r.Operation, tar)
+		if err == nil {
+			resp.Secret = &entry
+		}
+		return
+	}
+	if j == nil && secretState != nil && (r.Action == "cleanup" || r.Action == "destroy") {
+		s := secretOnlyStatus(r.App, r.Host.Domain)
+		s.Secrets = secretStatuses(secretState, nil)
+		resp.Status = &s
+		resp.Plan = &Plan{Action: r.Action, App: r.App, Retained: []string{"secret store: retained; no deployment recorded"}}
+		return
+	}
 	if r.Action == "cleanup" || r.Action == "destroy" || (r.Action == "resume" && j != nil && (j.Maintenance != nil || j.Phase == "destroyed" || j.LastMaintenanceOperation == r.Operation)) {
-		return m.executeMaintenance(ctx, r, j)
+		resp, err = m.executeMaintenance(ctx, r, j)
+		if resp.Status != nil {
+			resp.Status.Secrets = secretStatuses(secretState, j)
+		}
+		return
 	}
 	if r.Action == "deploy" {
 		if len(tar) == 0 {
@@ -413,6 +493,11 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		}
 		if j != nil && (j.Operation == r.Operation || releaseOperation(j.Current, r.Operation) || releaseOperation(j.Previous, r.Operation)) {
 			err = errors.New("operation ID already used")
+			return
+		}
+		refs, e := secretState.Snapshot(r.Config.Services["web"].Secrets)
+		if e != nil {
+			err = e
 			return
 		}
 		if r.Supersede != "" {
@@ -433,7 +518,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			current = j.Current
 			previous = j.Previous
 		}
-		j = &journal{Status: Status{App: r.App, URL: "https://" + r.App + "." + r.Host.Domain, Phase: "building", Operation: r.Operation}, HostID: h.ID, Config: r.Config, Current: current, Previous: previous, Archive: r.Operation + ".context.tar"}
+		j = &journal{Status: Status{App: r.App, URL: "https://" + r.App + "." + r.Host.Domain, Phase: "building", Operation: r.Operation}, HostID: h.ID, Config: r.Config, SecretRefs: refs, Current: current, Previous: previous, Archive: r.Operation + ".context.tar"}
 		if err = atomic(filepath.Join(m.dir(r.App), j.Archive), tar, 0600); err != nil {
 			return
 		}
@@ -450,6 +535,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			err = errors.Join(err, m.save(j))
 		}
 		s := maintenanceStatus(j, r.Host.Domain)
+		s.Secrets = secretStatuses(secretState, j)
 		s.Running = false
 		if j.Current != nil {
 			s.Container = j.Current.Container
@@ -531,7 +617,7 @@ func diagnostic(s string) string {
 func validateJournal(j *journal, app string) error {
 	bad := errors.New("invalid app journal")
 	if j.Phase == "destroyed" {
-		if j.Config != nil || j.Current != nil || j.Previous != nil || j.Candidate != nil || j.Maintenance != nil || j.URL != "" || j.Archive != "" || j.OldCaddy != "" || j.NewCaddy != "" {
+		if len(j.SecretRefs) != 0 || j.Config != nil || j.Current != nil || j.Previous != nil || j.Candidate != nil || j.Maintenance != nil || j.URL != "" || j.Archive != "" || j.OldCaddy != "" || j.NewCaddy != "" {
 			return bad
 		}
 		return (appstate.Tombstone{Version: j.Version, App: j.App, Operation: j.Operation, Phase: j.Phase, HostID: j.HostID}).Validate(app, j.HostID)
@@ -540,6 +626,15 @@ func validateJournal(j *journal, app string) error {
 		return err
 	}
 	if j.Version != 1 || len(app) > 63 || !label.MatchString(app) || j.App != app || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" {
+		return bad
+	}
+	if !matchingSecretRefs(j.SecretRefs, j.Config.Services["web"].Secrets) {
+		return bad
+	}
+	if j.Candidate != nil && !maps.Equal(j.Candidate.SecretRefs, j.SecretRefs) {
+		return bad
+	}
+	if j.Current != nil && j.Current.Operation == j.Operation && !maps.Equal(j.Current.SecretRefs, j.SecretRefs) {
 		return bad
 	}
 	prefix := "https://" + app + "."
@@ -566,7 +661,7 @@ func validateJournal(j *journal, app string) error {
 		if r == nil {
 			continue
 		}
-		if !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
+		if !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
 			return bad
 		}
 		for _, port := range []string{r.Port, r.PublishPort} {

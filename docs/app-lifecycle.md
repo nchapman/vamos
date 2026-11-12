@@ -16,7 +16,7 @@ Soar supports app-scoped cleanup and destruction for the single-service, volume-
 
 Without `--yes`, both commands return a preview and delete nothing. `--yes` authorizes a **freshly recomputed plan** under the host mutation lock, not an earlier preview. Preview and apply therefore may list different resources if the host changed in between. `--json` emits the full response (plan plus status); `status --json` continues to emit only the status object.
 
-Only a ready app can begin maintenance. Finish or supersede an incomplete deployment first. An app already destroyed is an idempotent no-op. No implicit stop, data purge, or automatic retention policy is added to deployment.
+Only a ready deployed app can begin maintenance. A secret-only app has no recorded deployment resources to remove; cleanup/destroy leave its store unchanged. Finish or supersede an incomplete deployment first. An app already destroyed is an idempotent no-op. No implicit stop, data purge, or automatic retention policy is added to deployment.
 
 ## Cleanup policy
 
@@ -27,6 +27,7 @@ Cleanup preserves:
 - Images referenced by any Docker container, including stopped/foreign containers, or another app's current, previous, candidate, or pending maintenance state.
 - Tagged images and images with repository digests.
 - Image-ID provenance files, so a later cleanup can reconsider safely retained build outputs.
+- All [secret versions](secrets.md), in a separate private store outside release history.
 
 It can remove stopped older containers, obsolete captured contexts, and unused untagged/undigested images proven by private app-local Buildx IID records. Docker 29's containerd image store distinguishes requested OCI manifest/index IDs from actual container image/config IDs; reference checks protect both. Image inventory includes untagged/intermediate outputs with `--all`, but **only proven app build outputs** are deletion candidates.
 
@@ -36,7 +37,7 @@ Plans are deliberately bounded: at most 256 planned resources/retention entries 
 
 ## Destruction and recovery
 
-Destruction removes the app's generated route, verified owned containers, its empty owned bridge network, and known captured contexts/IID files. It does **not** remove the local project binding or configuration, DNS, another app, volumes, build cache, or Caddy's shared certificate storage.
+Destruction removes the app's generated route, verified owned containers, its empty owned bridge network, and known captured contexts/IID files. It does **not** remove the local project binding or configuration, DNS, another app, volumes, secrets, build cache, or Caddy's shared certificate storage.
 
 The sequence is:
 
@@ -57,7 +58,7 @@ An interruption leaves a resumable operation. While maintenance is pending, othe
 
 Resume replays only the saved plan and rechecks route removal before continuing destructive work. Missing objects count as completed only after a successful inventory query; a replacement with the same name is not adopted. Successful cleanup and destruction can be resumed idempotently until a later operation replaces their completion record.
 
-A destroyed app can be deployed again normally. The small receipt remains for status/retry safety. Explicit host teardown/purge accepts only strictly decoded, matching-host completed receipts with no extra app files; existing workload, image, build-cache, mount, and ownership checks remain intact. It does not treat a receipt as proof that Docker is empty.
+A destroyed app can be deployed again normally. The small receipt remains for status/retry safety. Explicit host teardown/purge accepts only strictly decoded, matching-host completed receipts with no extra app files; existing workload, image, build-cache, mount, and ownership checks remain intact. It does not treat a receipt as proof that Docker is empty, and retained secret stores still block host teardown/purge.
 
 ## Restart-stable ports and upgrade notes
 

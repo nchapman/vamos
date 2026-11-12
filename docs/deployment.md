@@ -1,8 +1,8 @@
 # First stateless deployment slice
 
-Implemented: one Dockerfile-built public `web` service per app, remote Buildx builds, candidate readiness, Caddy routing with automatic HTTPS, repeat deployment, captured-input resume, explicit pre-promotion supersede, status, bounded logs, and [explicit cleanup/destruction](app-lifecycle.md).
+Implemented: one Dockerfile-built public `web` service per app, remote Buildx builds, candidate readiness, Caddy routing with automatic HTTPS, repeat deployment, captured-input resume, explicit pre-promotion supersede, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md).
 
-Not implemented: multiple services, prebuilt images, custom domain aliases, volumes, secrets, manual update policies, rollback, streaming logs, `init`, or automatic image/context/container garbage collection. These configurations fail explicitly; they are not partially applied. Multiple single-service apps can share a host, with separate networks and merged Caddy routes.
+Not implemented: multiple services, prebuilt images, custom domain aliases, volumes, manual update policies, rollback, streaming logs, `init`, or automatic image/context/container garbage collection. These configurations fail explicitly; they are not partially applied. Multiple single-service apps can share a host, with separate networks and merged Caddy routes.
 
 ## Deploy an app
 
@@ -44,7 +44,7 @@ Without `--server`, a project's first contacting command binds the registered de
 ./bin/soar logs --server droplet --app hello --tail 50
 ```
 
-Flags precede positional arguments. `--app` is only for status/logs/resume and requires `--server`. Status reports the journal phase and live container-running state separately; `ready` describes the last operation, not a guarantee that the app has remained healthy forever. `host-operation-active` describes the shared host mutation lock, not necessarily an operation for this app.
+Flags precede positional arguments. `--app` is for commands that do not require local deployment inputs (status/logs/resume/cleanup/destroy and secrets), and requires `--server`. Status reports the journal phase and live container-running state separately; `ready` describes the last operation, not a guarantee that the app has remained healthy forever. `host-operation-active` describes the shared host mutation lock, not necessarily an operation for this app.
 
 ## Build and runtime boundaries
 
@@ -62,7 +62,7 @@ Flags precede positional arguments. `--app` is only for status/logs/resume and r
 
 A transient `soar-host-operation.service` worker survives client disconnection, as with host lifecycle operations. App mutations share the host kernel lock; the first slice serializes them globally. Status/logs temporarily stage a matching trusted executor and run directly without the mutation worker, so they remain available while a worker runs and can read newer journal fields. The bootstrap-owned installed executor is not replaced. Client mutation deadlines default to 25 minutes, executor work to 20 minutes, and the systemd hard limit to 21 minutes.
 
-Before building, a private versioned journal under `/var/lib/soar/apps/<app>/state.json` records the operation and its operation-specific source archive. Builds produce immutable image IDs. The old container and route remain unchanged while building and checking candidate HTTP readiness.
+Before building, a private versioned journal under `/var/lib/soar/apps/<app>/state.json` records the operation, its operation-specific source archive, and immutable secret-version references. Required secrets are resolved before build or supersede; values stay outside release history. Builds produce immutable image IDs. The old container and route remain unchanged while building and checking candidate HTTP readiness.
 
 Promotion records its old/new Caddy intent durably, verifies the existing file and live admin API configuration against known app routes, validates the new configuration, and checks the candidate again. It then replaces/reloads Caddy and verifies the actual configuration before retiring the old container. Manual file/runtime drift blocks promotion; Soar does not take over unrelated Caddy configuration. On a proven reload failure with the runtime still old, the old durable file is restored. An uncertain reload remains explicitly pending for reconciliation.
 
@@ -70,7 +70,7 @@ Promotion records its old/new Caddy intent durably, verifies the existing file a
 # First inspect what actually happened after an error or disconnect.
 ./bin/soar status --server droplet --app hello
 
-# Resume the exact captured context/config/image, independent of current local files.
+# Resume the exact captured context/config/image/secret versions, independent of current local files.
 ./bin/soar resume --server droplet --app hello OPERATION_ID
 
 # If a build or pre-promotion candidate needs corrected inputs:
