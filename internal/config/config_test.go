@@ -177,8 +177,8 @@ func TestLoadExamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 5 {
-		t.Fatalf("found %d examples, want 5", len(files))
+	if len(files) != 6 {
+		t.Fatalf("found %d examples, want 6", len(files))
 	}
 	for _, filename := range files {
 		t.Run(filepath.Base(filepath.Dir(filename)), func(t *testing.T) {

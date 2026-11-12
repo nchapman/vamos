@@ -27,7 +27,7 @@ func TestInformationalCommands(t *testing.T) {
 }
 
 func TestUsageErrors(t *testing.T) {
-	for _, args := range [][]string{{"deploy"}, {"version", "extra"}, {"help", "extra"}, {"validate", "file.yaml"}, {"validate", "--unknown"}, {"validate", "-f"}} {
+	for _, args := range [][]string{{"unknown-command"}, {"version", "extra"}, {"help", "extra"}, {"validate", "file.yaml"}, {"validate", "--unknown"}, {"validate", "-f"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			if code := cli.Run(args, &stdout, &stderr, "dev"); code != 2 || stderr.Len() == 0 || stdout.Len() != 0 {

@@ -1,6 +1,6 @@
 # Soar: a small app platform for one server
 
-**Status: proposed platform design.** Local configuration validation, read-only `server inspect` over SSH, and the internal executor's inspection protocol are implemented. Setup, deployment, and the other operational workflows below are not implemented. See [README.md](README.md) and [host inspection](docs/host-inspection.md) for the current boundary and verification limits.
+**Status: platform design with a working first slice.** Configuration validation, host inspection/setup/teardown, and single-service stateless Dockerfile deployment with status/logs/resume/supersede are implemented. Broader workflows below remain proposed. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), and [deployment](docs/deployment.md) for the exact implemented boundary and verification limits.
 
 ## 1. The goal
 
@@ -149,7 +149,7 @@ Named volumes survive deploys, rollbacks, and app deletion. `soar destroy` remov
 
 ### A thin CLI and host-side executor
 
-Use the same small Go executable locally and remotely. Start with the system SSH client for existing agent/key/config support and Docker's Go client for container management; do not generate Compose files as a second deployment state model. The local CLI sends authenticated commands over SSH; the host-side executor owns mutations and reports results. Fresh-host inspection is a bootstrap exception: before Soar is installed, SSH runs a fixed read-only shell collector. The installed executor runs the identical collector locally and shares the same Go parser/policy. Its versioned JSON protocol currently supports inspection only; bootstrap inspection does not upload or invoke a remote Go binary. No always-running custom control-plane daemon is needed initially. Docker restarts containers and Caddy restarts through the host's service manager after reboot.
+Use the same small Go executable locally and remotely. Use the system SSH client for existing agent/key/config support. The first slice uses bounded Docker CLI subprocesses with argument arrays and structured JSON inspection, sharing the host-lifecycle process boundary; add an SDK only when a concrete need warrants it. Do not generate Compose files as a second deployment state model. The local CLI sends authenticated commands over SSH; the host-side executor owns mutations and reports results. Fresh-host inspection is a bootstrap exception: before Soar is installed, SSH runs a fixed read-only shell collector. The installed executor runs the identical collector locally and shares the same Go parser/policy. Its versioned JSON protocols support host lifecycle and the narrow app-deployment slice; bootstrap inspection alone does not upload or invoke a remote Go binary. No always-running custom control-plane daemon is needed initially. Docker restarts containers and Caddy restarts through the host's service manager after reboot.
 
 Store root/private state under a directory such as `/var/lib/soar/`:
 

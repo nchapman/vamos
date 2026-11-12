@@ -1,4 +1,4 @@
-// Package cli implements the local command-line interface and read-only server inspection.
+// Package cli implements the local command-line interface and remote operations.
 package cli
 
 import (
@@ -16,6 +16,10 @@ import (
 const help = `Soar — a small app platform for one server
 
 Usage:
+  soar deploy [-f soar.yaml]             Build and deploy one stateless web service
+  soar status [--json]                   Inspect the app's actual running state
+  soar logs [--tail 100]                 Read bounded web-container logs
+  soar resume OPERATION                 Resume a deployment's captured inputs
   soar validate [-f soar.yaml]           Validate local app configuration
   soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
@@ -24,7 +28,8 @@ Usage:
   soar version                          Print the build version
   soar help                             Show this help
 
-Setup and teardown require explicit authorization. App deployment is not implemented yet.
+Setup/teardown require explicit authorization. Deploy currently supports one Dockerfile-built
+public web service without volumes or secrets. Run a command with --help for options.
 `
 
 // Run is the noninteractive entry point for local commands.
@@ -57,6 +62,13 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return validate(args[1:], stdout, stderr)
 	case "server":
 		return server(ctx, args[1:], stdout, stderr)
+	case "deploy", "status", "logs", "resume":
+		return appCommand(ctx, args[0], args[1:], stdout, stderr, defaultAppDeps())
+	case "internal-app-executor":
+		if len(args) != 1 {
+			return usageError(stderr, "internal-app-executor accepts only a JSON request on stdin")
+		}
+		return executor.ServeApp(ctx, stdin, stdout)
 	case "internal-executor":
 		if len(args) != 1 {
 			return usageError(stderr, "internal-executor accepts only a JSON request on stdin")

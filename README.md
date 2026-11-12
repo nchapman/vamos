@@ -2,7 +2,7 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**App deployment is not implemented yet.** Local configuration validation, read-only SSH inspection, and root-only setup/teardown of dedicated Ubuntu hosts work. Setup installs Docker/Buildx and Caddy; teardown removes an unused, unchanged installation with explicit authorization. App builds/runs, domains/TLS, secrets, and deployment recovery remain planned in [PLAN.md](PLAN.md).
+**The first deployment slice works:** one Dockerfile-built, stateless public web service per app, with remote builds, readiness-checked replacement, Caddy routing/automatic HTTPS, status, logs, and captured-input recovery. Root-only setup/teardown of dedicated Ubuntu hosts is also implemented. Multi-service apps, volumes, secrets, rollback, and app destruction remain planned in [PLAN.md](PLAN.md). See [the implemented deployment boundary](docs/deployment.md) before using it.
 
 ## Platform scope
 
@@ -79,6 +79,20 @@ Teardown is intentionally conservative: containers, images, volumes, build cache
 
 Remote operations run in a bounded systemd worker and survive SSH loss. If interrupted, query `server status NAME TARGET` before retrying the same command. An explicit target permits recovery even when setup failed before local registration. See [the lifecycle contract and recovery notes](docs/host-lifecycle.md).
 
+## Deploy a stateless web app
+
+With a bootstrapped server, wildcard DNS pointing at it, and TCP 80/443 allowed:
+
+```sh
+./bin/soar deploy -f examples/hello/soar.yaml
+./bin/soar status -f examples/hello/soar.yaml
+./bin/soar logs -f examples/hello/soar.yaml --tail 100
+```
+
+`examples/hello` is a runnable nginx-based Dockerfile app. With base domain `pastime.gg`, its generated URL is `https://hello.pastime.gg`. No local Docker or image registry is required. Caddy route activation is verified; public DNS and certificate readiness must be checked separately.
+
+The first default-target contact creates a gitignored project binding under `.soar/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules, always omit `.git`/`.soar`, and are limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
+
 ## Layout
 
 ```text
@@ -91,25 +105,28 @@ internal/process/   Bounded, cancellable subprocess execution
 internal/executor/  Versioned JSON stdin/stdout host-operation protocol
 internal/lifecycle/ Ubuntu setup/teardown, ownership journal, and safety checks
 internal/registry/  Private, atomically written local server registrations
+internal/buildcontext/ Bounded build-context capture with Docker ignore rules
+internal/deploy/    Stateless deployment journal, Docker lifecycle, Caddy routing
 docs/               Implemented boundary and verification notes
-examples/          Five configurations matching the design document
+examples/          Five design fixtures plus a runnable hello app
 mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
 
-The Go module is `github.com/nchapman/soar`. There is no custom daemon, runtime abstraction, or deployment framework yet. The SSH collector and host executor share one host-inspection implementation. Host operations use transient systemd workers, not a persistent Soar service.
+The Go module is `github.com/nchapman/soar`. No persistent Soar daemon or separate runtime framework is required. The SSH collector and host executor share one host-inspection implementation. Host operations use transient systemd workers, not a persistent Soar service.
 
 ## Examples
 
 | Config | Scenario |
 | --- | --- |
+| [hello](examples/hello/soar.yaml) | Runnable single-service Dockerfile app supported today |
 | [studio](examples/studio/soar.yaml) | Stateless website and multiple domains |
 | [journal](examples/journal/soar.yaml) | SQLite and uploads; automatic updates with stop/start |
 | [ledger](examples/ledger/soar.yaml) | API and private, manually updated PostgreSQL |
 | [dispatch](examples/dispatch/soar.yaml) | Web, worker, PostgreSQL, and Redis |
 | [workspace](examples/workspace/soar.yaml) | Separate frontend/API builds and a private renderer |
 
-These are configuration fixtures, not runnable sample applications: Dockerfiles and application code are intentionally absent. The proposed first-deploy and day-2 workflows are in [PLAN.md](PLAN.md). Tests load all five fixtures.
+Only `hello` is a runnable application supported by the current deployment slice. The other five are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all six configurations.
 
 ## Development
 
@@ -134,4 +151,4 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-The next milestone is one end-to-end stateless deployment: transfer a build context over SSH, build with Docker, start one service, and serve it through Caddy. Inspection has passed a real-host smoke test from macOS against a fresh Ubuntu 26.04 amd64 droplet as root. Ubuntu 24.04, non-root access, and the other outstanding cases are tracked in [the verification notes](docs/host-inspection.md#observed-real-host-results).
+The next milestones build on the stateless path: multi-service apps, staged secrets, and explicit volume-backed update/recovery semantics. Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), and [deployment](docs/deployment.md#verification).

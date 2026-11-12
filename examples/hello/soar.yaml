@@ -1,0 +1,9 @@
+app: hello
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    http:
+      port: 80
+      health: /healthz

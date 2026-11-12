@@ -2,7 +2,7 @@
 
 ## Supported boundary
 
-Root SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm64. The client runs on macOS, Linux, or Windows and needs OpenSSH, not Docker or APT. Trust the SSH host key separately. No sudo escalation, distribution-independent installer, external package repository, or adoption of existing Docker/Caddy installations is implemented.
+Root SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm64. The client runs on macOS, Linux, or Windows and needs OpenSSH, not Docker or APT. Trust the SSH host key separately. No sudo escalation, distribution-independent installer, external package repository, or adoption of existing Docker/Caddy installations is implemented. The separate [deployment slice](deployment.md) can subsequently manage app routes; host teardown still refuses app state/workloads.
 
 ```sh
 mise run build
