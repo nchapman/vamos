@@ -1,0 +1,29 @@
+app: workspace
+services:
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    env:
+      API_ORIGIN: https://api.workspace.example.com
+    http:
+      port: 3000
+      health: /healthz
+      domains:
+        - workspace.example.com
+        - www.workspace.example.com
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    env:
+      RENDER_URL: http://renderer:8080
+    http:
+      port: 8080
+      health: /readyz
+      domains:
+        - api.workspace.example.com
+  renderer:
+    build:
+      context: ./renderer
+      dockerfile: Dockerfile

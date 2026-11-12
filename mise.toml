@@ -1,0 +1,41 @@
+[tools]
+go = "1.27.1"
+
+[env]
+# Keep Go's automatic toolchain downloader from overriding the mise pin.
+GOTOOLCHAIN = "local"
+
+[tasks.build]
+description = "Build the CLI into bin/soar"
+run = "go build -trimpath -o bin/soar ./cmd/soar"
+
+[tasks.check]
+description = "Check formatting, vet, run the full race-enabled test suite, and build"
+depends = ["fmt-check", "vet", "test", "build"]
+
+[tasks.deps]
+description = "Download Go module dependencies from go.mod/go.sum"
+run = "go mod download"
+
+[tasks.fmt]
+description = "Format Go source"
+run = "gofmt -w cmd internal"
+
+[tasks.fmt-check]
+description = "Check Go formatting without changing files"
+run = '''
+set -eu
+files=$(gofmt -l cmd internal)
+if [ -n "$files" ]; then
+  printf 'Run mise run fmt for:\n%s\n' "$files"
+  exit 1
+fi
+'''
+
+[tasks.vet]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks.test]
+description = "Run all tests with race detection"
+run = "go test -race ./..."

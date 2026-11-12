@@ -1,0 +1,12 @@
+app: studio
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    http:
+      port: 3000
+      health: /healthz
+      domains:
+        - studio.example.com
+        - www.studio.example.com

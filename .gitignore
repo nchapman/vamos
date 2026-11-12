@@ -1,0 +1,9 @@
+/bin/
+/.soar/
+/.pi/
+.env
+.env.*
+!.env.example
+*.test
+coverage.out
+.DS_Store
