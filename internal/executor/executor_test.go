@@ -148,3 +148,24 @@ func readResponse(t *testing.T, reader io.Reader) Response {
 	}
 	return response
 }
+
+func TestLifecycleAuthorizationRefusedBeforeInspection(t *testing.T) {
+	for _, input := range []string{
+		`{"version":1,"operation":"bootstrap","config":{"name":"home","domain":"example.com"}}`,
+		`{"version":1,"operation":"bootstrap","confirm":true}`,
+		`{"version":1,"operation":"bootstrap","confirm":true,"purge":true,"config":{"name":"home","domain":"example.com"}}`,
+		`{"version":1,"operation":"teardown","confirm":true,"config":{"name":"home","domain":"example.com"}}`,
+		`{"version":1,"operation":"teardown","confirm":true,"purge":true,"config":{"name":"../home","domain":"example.com"}}`,
+		`{"version":1,"operation":"bootstrap","confirm":true,"config":{"name":"home","domain":"https://example.com"}}`,
+		`{"version":1,"operation":"inspect","confirm":true}`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			var out bytes.Buffer
+			code := serve(context.Background(), strings.NewReader(input), &out, func(context.Context) ([]byte, error) { t.Fatal("unauthorized request inspected host"); return nil, nil })
+			r := readResponse(t, &out)
+			if code != 2 || r.Error == nil || r.Error.Code != "invalid_request" || r.HostState != nil || r.Result != nil {
+				t.Fatalf("code=%d response=%+v", code, r)
+			}
+		})
+	}
+}

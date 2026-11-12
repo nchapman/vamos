@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime"
 	"time"
 
 	"github.com/nchapman/soar/internal/host"
+	"github.com/nchapman/soar/internal/lifecycle"
 	"github.com/nchapman/soar/internal/process"
 )
 
@@ -20,14 +22,18 @@ const Version = 1
 const maxRequest = 4096
 
 type Request struct {
-	Version   int    `json:"version"`
-	Operation string `json:"operation"`
+	Version   int               `json:"version"`
+	Operation string            `json:"operation"`
+	Config    *lifecycle.Config `json:"config,omitempty"`
+	Confirm   bool              `json:"confirm,omitempty"`
+	Purge     bool              `json:"purge,omitempty"`
 }
 
 type Response struct {
-	Version int            `json:"version"`
-	Result  *host.Report   `json:"result,omitempty"`
-	Error   *ProtocolError `json:"error,omitempty"`
+	Version   int              `json:"version"`
+	Result    *host.Report     `json:"result,omitempty"`
+	HostState *lifecycle.State `json:"host_state,omitempty"`
+	Error     *ProtocolError   `json:"error,omitempty"`
 }
 
 type ProtocolError struct {
@@ -43,23 +49,72 @@ func Serve(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 }
 
 func serve(ctx context.Context, stdin io.Reader, stdout io.Writer, collect host.Collect) int {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	request, err := readRequestContext(ctx, stdin)
+	readCtx, cancelRead := context.WithTimeout(ctx, 15*time.Second)
+	defer cancelRead()
+	request, err := readRequestContext(readCtx, stdin)
 	if err != nil {
 		return failure(stdout, "invalid_request", err.Error(), 2)
 	}
 	if request.Version != Version {
 		return failure(stdout, "unsupported_version", "supported protocol version is 1", 2)
 	}
-	if request.Operation != "inspect" {
-		return failure(stdout, "unsupported_operation", "only inspect is implemented", 2)
+	if request.Operation == "bootstrap" || request.Operation == "teardown" {
+		cancelRead()
+		return runLifecycle(ctx, request, stdout, collect)
 	}
-	report, err := host.Inspect(ctx, collect)
+	if request.Operation != "inspect" {
+		return failure(stdout, "unsupported_operation", "supported operations are inspect, bootstrap, and teardown", 2)
+	}
+	if request.Config != nil || request.Confirm || request.Purge {
+		return failure(stdout, "invalid_request", "inspect does not accept mutation options", 2)
+	}
+	report, err := host.Inspect(readCtx, collect)
 	if err != nil {
 		return failure(stdout, "inspection_failed", err.Error(), 1)
 	}
 	if err := json.NewEncoder(stdout).Encode(Response{Version: Version, Result: report}); err != nil {
+		return 1
+	}
+	return 0
+}
+
+func runLifecycle(ctx context.Context, request Request, stdout io.Writer, collect host.Collect) int {
+	if !request.Confirm || request.Config == nil {
+		return failure(stdout, "invalid_request", "mutation requires explicit confirmation and server configuration", 2)
+	}
+	if err := lifecycle.ValidateConfig(*request.Config); err != nil {
+		return failure(stdout, "invalid_request", err.Error(), 2)
+	}
+	if request.Operation == "teardown" && !request.Purge {
+		return failure(stdout, "invalid_request", "teardown requires explicit data-purge authorization", 2)
+	}
+	if request.Operation == "bootstrap" && request.Purge {
+		return failure(stdout, "invalid_request", "bootstrap does not accept purge", 2)
+	}
+	if runtime.GOOS != "linux" {
+		return failure(stdout, "lifecycle_failed", "host lifecycle requires Linux", 1)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancel()
+	manager := &lifecycle.Manager{Root: "/", Run: lifecycle.RunCommand, Inspect: func(ctx context.Context) (*host.Report, error) { return host.Inspect(ctx, collect) }}
+	var state *lifecycle.State
+	var err error
+	if request.Operation == "bootstrap" {
+		filename, pathErr := os.Executable()
+		if pathErr != nil {
+			return failure(stdout, "lifecycle_failed", pathErr.Error(), 1)
+		}
+		manager.Executor, err = os.ReadFile(filename)
+		if err == nil {
+			state, err = manager.Bootstrap(ctx, *request.Config)
+		}
+	} else {
+		state, err = manager.Teardown(ctx, request.Config.Name, request.Purge)
+	}
+	if err != nil {
+		return failure(stdout, "lifecycle_failed", err.Error(), 1)
+	}
+	if err := json.NewEncoder(stdout).Encode(Response{Version: Version, HostState: state}); err != nil {
 		return 1
 	}
 	return 0

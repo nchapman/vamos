@@ -14,12 +14,18 @@ import (
 	"github.com/nchapman/soar/internal/ssh"
 )
 
-const serverHelp = `Usage: soar server inspect [--json] [--timeout 15s] TARGET
+const serverHelp = `Usage:
+  soar server inspect [--json] [--timeout 15s] TARGET
+  soar server add --yes --domain DOMAIN [--executor FILE] NAME TARGET
+  soar server status [--json] NAME [TARGET]
+  soar server teardown --yes --purge [--executor FILE] NAME [TARGET]
 
 TARGET is an SSH alias or [user@]host (unbracketed IPv6 is supported).
 Use SSH config for ports, identities, and jump hosts. Flags precede TARGET.
 Requires an already trusted host key and noninteractive key/agent authentication.
-No files are uploaded, software installed, or host configuration changed by Soar.
+Inspect is read-only. Add and teardown require root and explicit --yes.
+Teardown refuses workloads and changed managed resources; --purge deletes owned data.
+TARGET is optional for registered names; provide it to recover an unregistered host.
 `
 
 func server(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -27,10 +33,14 @@ func server(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stdout, serverHelp)
 		return 0
 	}
-	if args[0] != "inspect" {
-		return usageError(stderr, "only 'server inspect' is implemented")
+	switch args[0] {
+	case "inspect":
+		return inspectServer(ctx, args[1:], stdout, stderr, ssh.Inspect)
+	case "add", "status", "teardown":
+		return serverLifecycle(ctx, args[0], args[1:], stdout, stderr, defaultLifecycleDeps())
+	default:
+		return usageError(stderr, "unknown server command")
 	}
-	return inspectServer(ctx, args[1:], stdout, stderr, ssh.Inspect)
 }
 
 func inspectServer(ctx context.Context, args []string, stdout, stderr io.Writer, inspect func(context.Context, string) (*host.Report, error)) int {

@@ -2,7 +2,7 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**This is not a deployment tool yet.** Local configuration validation and read-only host inspection over SSH work. The internal host-executor inspection protocol is also implemented. Server setup, Docker builds/runs, domains, secrets, deployment, and recovery remain planned in [PLAN.md](PLAN.md). No current command provisions a host or modifies Docker state.
+**App deployment is not implemented yet.** Local configuration validation, read-only SSH inspection, and root-only setup/teardown of dedicated Ubuntu hosts work. Setup installs Docker/Buildx and Caddy; teardown removes an unused, unchanged installation with explicit authorization. App builds/runs, domains/TLS, secrets, and deployment recovery remain planned in [PLAN.md](PLAN.md).
 
 ## Platform scope
 
@@ -13,7 +13,7 @@ A small, Dockerfile-first app platform for one server. The intended stack is a G
 
 The Ubuntu restriction applies **only to deployment hosts**. The client does not require Ubuntu, APT, systemd, or a local Docker daemon; builds will run remotely. Host inspection uses the client's OpenSSH executable. Keep Ubuntu-specific setup in the remote executor, not in shared client code.
 
-Older Ubuntu releases, other server distributions, and Ubuntu derivatives are outside the supported host scope. Host setup will use APT and systemd directly rather than a cross-distribution installation layer. Host inspection checks OS identity/version, architecture, running systemd, and the SSH user's UID. Server setup does not exist yet.
+Older Ubuntu releases, other server distributions, and Ubuntu derivatives are outside the supported host scope. Host setup uses APT and systemd directly rather than a cross-distribution installation layer. Host inspection checks OS identity/version, architecture, running systemd, and the SSH user's UID. Setup requires root and refuses to adopt pre-existing runtimes, configurations, or data.
 
 CI is configured for native Ubuntu 24.04, macOS, and Windows client checks. These exercise parsing, subprocess lifecycle, protocol handling, and OpenSSH argument acceptance without connecting to a remote server. They do not establish working host provisioning or deployment.
 
@@ -62,6 +62,23 @@ A compatible **non-root** host can pass inspection: its UID is reported, but pri
 
 See [the host inspection boundary](docs/host-inspection.md) for protocol details, limits, tests, and a real-host smoke-test checklist.
 
+## Bootstrap and tear down a test host
+
+```sh
+mise run build  # Builds the client plus Linux amd64/arm64 executors in bin/
+./bin/soar server add --yes --domain apps.example.com test root@server.example.com
+./bin/soar server status test
+# Repeating add with the same identity verifies an already-ready installation.
+./bin/soar server add --yes --domain apps.example.com test root@server.example.com
+./bin/soar server teardown --yes --purge test
+```
+
+Use a **fresh, dedicated, disposable host** for initial testing. Keep the Linux executor binaries beside the client, or supply `--executor FILE`. Setup does not change DNS, issue certificates, open firewall ports, or deploy apps. It registers the server locally only after remote setup succeeds; the first registration becomes the default.
+
+Teardown is intentionally conservative: containers, images, volumes, build cache, custom networks, containerd resources, changed configuration, package-version drift, and mounted data block it. `--purge` authorizes deleting owned runtime data/certificates, not arbitrary workloads. A small ownership receipt remains for retry safety. APT/system logs and caches are not erased; this is not a byte-for-byte restoration of the original OS.
+
+Remote operations run in a bounded systemd worker and survive SSH loss. If interrupted, query `server status NAME TARGET` before retrying the same command. An explicit target permits recovery even when setup failed before local registration. See [the lifecycle contract and recovery notes](docs/host-lifecycle.md).
+
 ## Layout
 
 ```text
@@ -71,14 +88,16 @@ internal/config/    Typed configuration, strict loading, validation
 internal/host/      Shared read-only collector, parser, and Ubuntu policy
 internal/ssh/       System OpenSSH bootstrap transport
 internal/process/   Bounded, cancellable subprocess execution
-internal/executor/  Versioned JSON stdin/stdout inspection protocol
+internal/executor/  Versioned JSON stdin/stdout host-operation protocol
+internal/lifecycle/ Ubuntu setup/teardown, ownership journal, and safety checks
+internal/registry/  Private, atomically written local server registrations
 docs/               Implemented boundary and verification notes
 examples/          Five configurations matching the design document
 mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
 
-The Go module is `github.com/nchapman/soar`. There is no custom daemon, runtime abstraction, or deployment framework yet. The SSH bootstrap collector and installed executor share one host-inspection implementation; Docker integration and provisioning come next.
+The Go module is `github.com/nchapman/soar`. There is no custom daemon, runtime abstraction, or deployment framework yet. The SSH collector and host executor share one host-inspection implementation. Host operations use transient systemd workers, not a persistent Soar service.
 
 ## Examples
 
@@ -115,4 +134,4 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-The next milestone is idempotent Ubuntu host setup, followed by one end-to-end stateless deployment: transfer a build context over SSH, build with Docker, start one service, and serve it through Caddy. Inspection has passed a real-host smoke test from macOS against a fresh Ubuntu 26.04 amd64 droplet as root. Ubuntu 24.04, non-root access, and the other outstanding cases are tracked in [the verification notes](docs/host-inspection.md#observed-real-host-results).
+The next milestone is one end-to-end stateless deployment: transfer a build context over SSH, build with Docker, start one service, and serve it through Caddy. Inspection has passed a real-host smoke test from macOS against a fresh Ubuntu 26.04 amd64 droplet as root. Ubuntu 24.04, non-root access, and the other outstanding cases are tracked in [the verification notes](docs/host-inspection.md#observed-real-host-results).

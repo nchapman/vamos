@@ -1,6 +1,6 @@
 # Host inspection boundary
 
-Implemented: read-only inspection, not provisioning or deployment.
+This document covers the read-only inspection boundary. Provisioning and removal are documented separately in [host lifecycle](host-lifecycle.md); app deployment is not implemented.
 
 ## Fresh-host path
 
@@ -22,7 +22,7 @@ The Go parser requires exact versioned framing rather than searching through ban
 
 Compatible architectures are `x86_64` → `amd64` and `aarch64`/`arm64` → `arm64`. A systemctl executable alone is not sufficient: systemd must also be PID 1 with its runtime directory present. Inspection does not test individual units or reject an otherwise valid host just because an unrelated unit is degraded.
 
-Non-root inspection is allowed. The report describes the UID and does not infer setup permissions from group membership or a sudo probe. Docker/Caddy presence and port conflicts are provisioning concerns, not yet inspected.
+Non-root inspection is allowed. The report describes the UID and does not infer setup permissions from group membership or a sudo probe. Docker/Caddy presence and port conflicts are checked by provisioning, not by this read-only compatibility probe.
 
 ## SSH behavior
 
@@ -74,7 +74,7 @@ Executor exit status differs from the public inspection command:
 - **1:** collection failed or the response could not be written.
 - **2:** invalid/unsupported request.
 
-The public command exits 1 for an incompatible host and preserves the report. Its `--json` output is the report itself, not the executor envelope. This internal protocol is implemented and tested, but remote binary installation and transport to that installed endpoint are not implemented yet.
+The public command exits 1 for an incompatible host and preserves the report. Its `--json` output is the report itself, not the executor envelope. The same protocol also supports explicitly authorized `bootstrap` and `teardown` requests. Their longer deadlines, installed artifact, transient-worker transport, and `host_state` responses are described in the lifecycle document; they do not change inspection's read-only behavior.
 
 ## Verification
 

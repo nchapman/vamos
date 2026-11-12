@@ -26,6 +26,11 @@ func TestProcessHelper(t *testing.T) {
 		case "echo":
 			io.Copy(os.Stdout, os.Stdin)
 			fmt.Fprint(os.Stderr, "diagnostic")
+		case "tail":
+			os.Stdout.Write(bytes.Repeat([]byte("a"), process.OutputLimit*4))
+			os.Stderr.Write(bytes.Repeat([]byte("b"), process.OutputLimit*4))
+			fmt.Fprint(os.Stdout, "stdout finished")
+			fmt.Fprint(os.Stderr, "stderr finished")
 		case "fail":
 			fmt.Fprint(os.Stdout, "not a successful response")
 			fmt.Fprint(os.Stderr, "failure")
@@ -115,5 +120,16 @@ func TestOutputExactlyAtLimit(t *testing.T) {
 	r, err := process.Run(context.Background(), os.Args[0], helperArgs("echo"), []byte(strings.Repeat("a", process.OutputLimit)))
 	if err != nil || len(r.Stdout) != process.OutputLimit {
 		t.Fatalf("stdout=%d err=%v", len(r.Stdout), err)
+	}
+}
+
+func TestRunTailDrainsWithoutCancelling(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r, err := process.RunTail(ctx, os.Args[0], helperArgs("tail"), nil)
+	wantOut := strings.Repeat("a", process.OutputLimit-len("stdout finished")) + "stdout finished"
+	wantErr := strings.Repeat("b", process.OutputLimit-len("stderr finished")) + "stderr finished"
+	if err != nil || string(r.Stdout) != wantOut || string(r.Stderr) != wantErr {
+		t.Fatalf("stdout=%d stderr=%d err=%v", len(r.Stdout), len(r.Stderr), err)
 	}
 }

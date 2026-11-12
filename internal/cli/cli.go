@@ -18,10 +18,13 @@ const help = `Soar — a small app platform for one server
 Usage:
   soar validate [-f soar.yaml]           Validate local app configuration
   soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
+  soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
+  soar server status NAME [TARGET]     Read the host lifecycle journal
+  soar server teardown [flags] NAME    Remove an unused owned installation
   soar version                          Print the build version
   soar help                             Show this help
 
-Server setup and deployment are not implemented yet. See PLAN.md.
+Setup and teardown require explicit authorization. App deployment is not implemented yet.
 `
 
 // Run is the noninteractive entry point for local commands.

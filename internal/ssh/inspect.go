@@ -47,7 +47,18 @@ func inspect(ctx context.Context, target string, run runProcess) (*host.Report, 
 	if err := ValidateTarget(target); err != nil {
 		return nil, err
 	}
-	args := []string{
+	args := arguments(target, "/bin/sh -s")
+	return host.Inspect(ctx, func(ctx context.Context) ([]byte, error) {
+		result, err := run(ctx, "ssh", args, []byte(host.Collector()))
+		if err != nil {
+			return nil, connectionError(target, result, err)
+		}
+		return result.Stdout, nil
+	})
+}
+
+func arguments(target, command string) []string {
+	return []string{
 		"-T",
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=yes",
@@ -62,22 +73,18 @@ func inspect(ctx context.Context, target string, run runProcess) (*host.Report, 
 		"-o", "ConnectTimeout=10",
 		"-o", "ServerAliveInterval=5",
 		"-o", "ServerAliveCountMax=1",
-		"--", target, "/bin/sh -s",
+		"--", target, command,
 	}
-	return host.Inspect(ctx, func(ctx context.Context) ([]byte, error) {
-		result, err := run(ctx, "ssh", args, []byte(host.Collector()))
-		if err != nil {
-			// Quoting bounds terminal effects from untrusted remote diagnostics.
-			detail := ""
-			if len(result.Stderr) > 0 {
-				stderr := result.Stderr
-				if len(stderr) > 4096 {
-					stderr = append(append([]byte{}, stderr[:4096]...), []byte(" [truncated]")...)
-				}
-				detail = fmt.Sprintf("; SSH stderr: %q", stderr)
-			}
-			return nil, fmt.Errorf("inspect %q over SSH: %w%s; verify OpenSSH, connectivity, known_hosts, and noninteractive key/agent authentication", target, err, detail)
+}
+
+func connectionError(target string, result process.Result, err error) error {
+	detail := ""
+	if len(result.Stderr) > 0 {
+		stderr := result.Stderr
+		if len(stderr) > 4096 {
+			stderr = append(append([]byte{}, stderr[:4096]...), []byte(" [truncated]")...)
 		}
-		return result.Stdout, nil
-	})
+		detail = fmt.Sprintf("; SSH stderr: %q", stderr)
+	}
+	return fmt.Errorf("connect to %q over SSH: %w%s; verify OpenSSH, connectivity, known_hosts, and noninteractive key/agent authentication", target, err, detail)
 }

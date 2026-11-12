@@ -32,7 +32,7 @@ They should not repeatedly configure servers, registries, reverse proxies, certi
 
 ```sh
 # Once: install prerequisites, configure the host, remember it locally.
-soar server add home root@203.0.113.10 --domain apps.example.com
+soar server add --yes --domain apps.example.com home root@203.0.113.10
 
 # In a project containing a Dockerfile:
 soar init notes --port 8080       # Write a small soar.yaml; do not infer a framework.
@@ -56,7 +56,7 @@ soar secrets stage session-secret   # Prompt without echo; never put values in a
 soar deploy                        # Apply staged values to changed services.
 ```
 
-Before installing packages or changing host state, `server add` reads `/etc/os-release` to verify `ID=ubuntu` and a numeric `VERSION_ID` of at least 24.04, then checks that systemd is the running host service manager and the architecture is amd64 or arm64. Missing/unrecognized OS metadata or an unsupported host fails with the detected OS and the Ubuntu 24.04+ requirement. Installation uses APT and systemd directly; do not add distro-specific backends. These read-only compatibility checks now exist in `server inspect`; wiring them into provisioning remains planned. Inspection reports root/non-root UID without invoking sudo, and does not claim that non-root privileged setup is authorized.
+Before installing packages or changing host state, `server add` reads `/etc/os-release` to verify `ID=ubuntu` and a numeric `VERSION_ID` of at least 24.04, then checks that systemd is the running host service manager and the architecture is amd64 or arm64. Missing/unrecognized OS metadata or an unsupported host fails with the detected OS and the Ubuntu 24.04+ requirement. Installation uses APT and systemd directly; do not add distro-specific backends. These read-only compatibility checks exist in `server inspect` and are reused by root-only provisioning. Initial fresh-host setup and conservative teardown are implemented; see [the lifecycle boundary](docs/host-lifecycle.md) for ownership, authorization, and recovery constraints. Inspection reports root/non-root UID without invoking sudo, and does not claim that non-root privileged setup is authorized.
 
 Setup tells the owner to point `*.apps.example.com` at the server and open TCP 80/443. Caddy obtains certificates for individual hostnames; Soar does not require wildcard certificates or a DNS-provider integration. Incorrect DNS produces an actionable diagnostic, not an indefinite wait.
 

@@ -23,10 +23,20 @@ type Result struct {
 // for inherited pipe handles after the command exits or its context is cancelled.
 // It does not promise to terminate arbitrary proxy/remote descendants.
 func Run(ctx context.Context, executable string, args []string, stdin []byte) (Result, error) {
+	return run(ctx, executable, args, stdin, false)
+}
+
+// RunTail is for verbose package operations: it drains output and retains a
+// bounded diagnostic tail, rather than killing an installer on output overflow.
+func RunTail(ctx context.Context, executable string, args []string, stdin []byte) (Result, error) {
+	return run(ctx, executable, args, stdin, true)
+}
+
+func run(ctx context.Context, executable string, args []string, stdin []byte, tail bool) (Result, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stdout := &boundedBuffer{cancel: cancel}
-	stderr := &boundedBuffer{cancel: cancel}
+	stdout := &boundedBuffer{cancel: cancel, tail: tail}
+	stderr := &boundedBuffer{cancel: cancel, tail: tail}
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	cmd.Stdout = stdout
@@ -50,10 +60,23 @@ type boundedBuffer struct {
 	buffer   bytes.Buffer
 	cancel   context.CancelFunc
 	exceeded bool
+	tail     bool
 }
 
 func (b *boundedBuffer) Write(p []byte) (int, error) {
 	n := len(p)
+	if b.tail {
+		if n >= OutputLimit {
+			b.buffer.Reset()
+			b.buffer.Write(p[n-OutputLimit:])
+		} else {
+			if excess := b.buffer.Len() + n - OutputLimit; excess > 0 {
+				b.buffer.Next(excess)
+			}
+			b.buffer.Write(p)
+		}
+		return n, nil
+	}
 	remaining := OutputLimit - b.buffer.Len()
 	if n > remaining {
 		b.buffer.Write(p[:remaining])

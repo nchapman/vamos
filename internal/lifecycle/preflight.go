@@ -1,0 +1,167 @@
+package lifecycle
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+func (m *Manager) preflight(ctx context.Context, receipt bool) error {
+	for _, path := range dataPaths {
+		if err := rejectSymlink(m.path(path)); err != nil {
+			return err
+		}
+		if _, err := os.Lstat(m.path(path)); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("pre-existing %s; unmanaged installations/data cannot be adopted", path)
+		}
+	}
+	if !receipt {
+		if _, err := os.Lstat(m.path("/var/lib/soar")); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("/var/lib/soar already exists without a valid receipt; refusing adoption")
+		}
+	}
+	for _, unit := range units {
+		if _, err := os.Lstat(m.path("/etc/systemd/system/" + unit)); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("pre-existing service override for %s", unit)
+		}
+		if err := m.checkOverrides(unit); err != nil {
+			return err
+		}
+		out, err := m.Run(ctx, "systemctl", []string{"show", "--property=LoadState", "--value", unit})
+		if err != nil {
+			return fmt.Errorf("cannot establish unit ownership for %s: %w", unit, err)
+		}
+		if strings.TrimSpace(string(out.Stdout)) != "not-found" {
+			return fmt.Errorf("pre-existing unit %s (load state: %q)", unit, strings.TrimSpace(string(out.Stdout)))
+		}
+	}
+	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/bin/caddy", "/usr/local/bin/caddy", "/usr/local/bin/soar"} {
+		if _, err := os.Lstat(m.path(path)); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("pre-existing executable %s", path)
+		}
+	}
+	for _, account := range [][2]string{{"passwd", "caddy"}, {"group", "caddy"}, {"group", "docker"}} {
+		value, err := m.account(ctx, account[0], account[1])
+		if err != nil {
+			return err
+		}
+		if value != "" {
+			return fmt.Errorf("pre-existing %s account %s", account[0], account[1])
+		}
+	}
+	inventory, err := m.packages(ctx)
+	if err != nil {
+		return err
+	}
+	for name := range inventory {
+		if name == "caddy" || name == "runc" || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "containerd") || name == "moby-engine" {
+			return fmt.Errorf("pre-existing runtime package %s; refusing adoption", name)
+		}
+	}
+	if audit, err := m.command(ctx, "dpkg", "--audit"); err != nil || len(strings.TrimSpace(string(audit))) != 0 {
+		return fmt.Errorf("dpkg has pending or broken work; resolve it before setup (query error: %v)", err)
+	}
+	for _, port := range []string{"80", "443", "2019"} {
+		out, err := m.command(ctx, "ss", "-H", "-ltn", "sport = :"+port)
+		if err != nil {
+			return err
+		}
+		if len(strings.TrimSpace(string(out))) != 0 {
+			return fmt.Errorf("TCP port %s is already in use", port)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) checkOverrides(unit string) error {
+	for _, path := range []string{"/etc/systemd/system/" + unit, "/etc/systemd/system/" + unit + ".d", "/run/systemd/system/" + unit, "/run/systemd/system/" + unit + ".d"} {
+		actual := m.path(path)
+		if err := rejectSymlink(filepath.Dir(actual)); err != nil {
+			return err
+		}
+		if target, err := os.Readlink(actual); err == nil && target == "/dev/null" && strings.HasPrefix(path, "/etc/") && !strings.HasSuffix(path, ".d") {
+			continue
+		}
+		if _, err := os.Lstat(actual); !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("unexpected service override at %s", path)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) account(ctx context.Context, kind, name string) (string, error) {
+	result, err := m.Run(ctx, "getent", []string{kind, name})
+	if err != nil {
+		var exit interface{ ExitCode() int }
+		if errors.As(err, &exit) && exit.ExitCode() == 2 {
+			return "", nil
+		}
+		return "", fmt.Errorf("query %s %s: %w", kind, name, err)
+	}
+	return strings.TrimSpace(string(result.Stdout)), nil
+}
+
+func (m *Manager) workloads(ctx context.Context) error {
+	for _, args := range [][]string{{"container", "ls", "-aq"}, {"image", "ls", "-aq"}, {"volume", "ls", "-q"}} {
+		out, err := m.command(ctx, "docker", args...)
+		if err != nil {
+			return fmt.Errorf("cannot verify Docker is unused; restore daemon health before teardown: %w", err)
+		}
+		if len(strings.TrimSpace(string(out))) != 0 {
+			return fmt.Errorf("Docker has %s resources; remove workloads explicitly before host teardown", args[0])
+		}
+	}
+	out, err := m.command(ctx, "docker", "network", "ls", "--format", "{{.Name}}")
+	if err != nil {
+		return err
+	}
+	for _, network := range strings.Fields(string(out)) {
+		if network != "bridge" && network != "host" && network != "none" {
+			return fmt.Errorf("Docker has custom network %q; refusing teardown", network)
+		}
+	}
+	// Build caches also contain user data. A nonempty cache must be cleaned by
+	// its operator, not by a global prune hidden in teardown.
+	out, err = m.command(ctx, "docker", "system", "df", "--format", "{{json .}}")
+	if err != nil {
+		return err
+	}
+	if err := checkBuildCache(out); err != nil {
+		return err
+	}
+	namespaces, err := m.command(ctx, "ctr", "namespaces", "ls", "-q")
+	if err != nil {
+		return err
+	}
+	for _, namespace := range strings.Fields(string(namespaces)) {
+		if namespace != "moby" && namespace != "plugins.moby" {
+			return fmt.Errorf("containerd has unmanaged namespace %q; refusing teardown", namespace)
+		}
+		for _, resource := range []string{"containers", "images", "content"} {
+			out, err := m.command(ctx, "ctr", "--namespace", namespace, resource, "ls", "-q")
+			if err != nil {
+				return err
+			}
+			if len(strings.TrimSpace(string(out))) != 0 {
+				return fmt.Errorf("containerd has %s in %s; refusing teardown", resource, namespace)
+			}
+		}
+	}
+	return nil
+}
+
+func (m *Manager) checkStateDirectory() error {
+	entries, err := os.ReadDir(filepath.Dir(m.path(StatePath)))
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() != "host.json" {
+			return fmt.Errorf("unexpected Soar state %s; app/data teardown is not implemented", entry.Name())
+		}
+	}
+	return nil
+}
