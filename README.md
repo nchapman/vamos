@@ -2,24 +2,24 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**This is a scaffold, not a deployment tool yet.** Local configuration validation works. Server setup, Docker builds/runs, SSH transport, domains, secrets, deployment, and recovery are described in [PLAN.md](PLAN.md) but are not implemented. Current commands never contact a server or modify Docker state.
+**This is not a deployment tool yet.** Local configuration validation and read-only host inspection over SSH work. The internal host-executor inspection protocol is also implemented. Server setup, Docker builds/runs, domains, secrets, deployment, and recovery remain planned in [PLAN.md](PLAN.md). No current command provisions a host or modifies Docker state.
 
 ## Platform scope
 
 | Component | Target operating systems |
 | --- | --- |
 | Client CLI | macOS, Linux, and Windows |
-| Deployment host / remote executor | Ubuntu 24.04 or newer, with systemd |
+| Deployment host / remote executor | Ubuntu 24.04 or newer, with systemd; amd64 or arm64 |
 
-The Ubuntu restriction applies **only to deployment hosts**. The client must not require Ubuntu, APT, systemd, or a local Docker daemon; builds will run remotely. Deployment commands will use the client's OpenSSH executable. Keep Ubuntu-specific setup in the remote executor, not in shared client code.
+The Ubuntu restriction applies **only to deployment hosts**. The client does not require Ubuntu, APT, systemd, or a local Docker daemon; builds will run remotely. Host inspection uses the client's OpenSSH executable. Keep Ubuntu-specific setup in the remote executor, not in shared client code.
 
-Older Ubuntu releases, other server distributions, and Ubuntu derivatives are outside the supported host scope. Host setup will use APT and systemd directly rather than a cross-distribution installation layer. Host OS detection and enforcement will be implemented with server setup, which does not exist yet.
+Older Ubuntu releases, other server distributions, and Ubuntu derivatives are outside the supported host scope. Host setup will use APT and systemd directly rather than a cross-distribution installation layer. Host inspection checks OS identity/version, architecture, running systemd, and the SSH user's UID. Server setup does not exist yet.
 
-CI currently runs on Ubuntu 24.04 and covers the scaffold, not host provisioning or deployment. The broader client targets are separate from that baseline; native macOS and Windows CI coverage is still to be added.
+CI is configured for native Ubuntu 24.04, macOS, and Windows client checks. These exercise parsing, subprocess lifecycle, protocol handling, and OpenSSH argument acceptance without connecting to a remote server. They do not establish working host provisioning or deployment.
 
 ## Try it
 
-Install [mise](https://mise.jdx.dev/getting-started.html) to manage the pinned Go toolchain and project commands. `mise.toml` pins Go 1.27.1; `go.mod` retains Go 1.25 as the minimum language/toolchain requirement. Race-enabled tests also require a system C toolchain (Xcode Command Line Tools on macOS or a C compiler on Linux). Docker is not required to build or test this scaffold.
+Install [mise](https://mise.jdx.dev/getting-started.html) to manage the pinned Go toolchain and project commands. `mise.toml` pins Go 1.27.1; `go.mod` retains Go 1.25 as the minimum language/toolchain requirement. Race-enabled tests also require a system C toolchain (Xcode Command Line Tools on macOS, a C compiler on Linux, or a Go-compatible MinGW-w64 toolchain on Windows). Formatting checks use Bash; Windows contributors need Git Bash on PATH. These are development requirements, not client runtime dependencies. Docker is not required to build or test this scaffold.
 
 ```sh
 mise trust       # Trust this project's configuration after reviewing it
@@ -43,18 +43,42 @@ It does **not** verify Dockerfile existence, image references against a registry
 
 Build contexts are relative to the configuration directory; Dockerfile paths are relative to their context and cannot escape it lexically. Container mount paths use POSIX syntax, must be clean absolute paths other than `/`, and are never host-directory mounts. Domains are ASCII DNS hostnames without a scheme, port, wildcard, or trailing dot (use punycode for international names). Environment values are passed literally; there is no interpolation.
 
+## Inspect a host
+
+```sh
+# Establish and verify the host key separately using your normal SSH workflow.
+# An SSH alias can configure the user, port, identity file, and jump host.
+./bin/soar server inspect home
+./bin/soar server inspect --json --timeout 20s root@server.example.com
+```
+
+On Windows, use `bin/soar.exe`. Flags precede the target. Targets accept SSH aliases or `[user@]host`, including unbracketed IPv6. Use SSH configuration for nonstandard ports and keys, not an arbitrary argument tail.
+
+Inspection works on a fresh host without Soar, Docker, or Caddy installed. It runs a fixed shell collector over SSH; it does not upload files, install software, change host configuration, or invoke sudo. Ordinary SSH access can still produce authentication/audit logs and other system-managed side effects.
+
+Host keys must already be trusted; authentication must work noninteractively with keys or an agent. Unknown/changed keys and password prompts fail rather than weakening SSH verification. Forwarding and connection reuse are disabled for the probe. Existing SSH configuration, including proxy/Match rules, remains trusted client configuration.
+
+A compatible **non-root** host can pass inspection: its UID is reported, but privileged setup capability is explicitly unverified. A host-policy failure preserves detected facts and explains the incompatibility. Exit codes are 0 for a compatible host, 1 for incompatible hosts or inspection/connection failures, and 2 for invalid arguments. `--json` writes a report for completed inspections; transport errors go to stderr and do not produce a report.
+
+See [the host inspection boundary](docs/host-inspection.md) for protocol details, limits, tests, and a real-host smoke-test checklist.
+
 ## Layout
 
 ```text
 cmd/soar/           Process entry point and build version
 internal/cli/       Commands, output, and exit codes
 internal/config/    Typed configuration, strict loading, validation
+internal/host/      Shared read-only collector, parser, and Ubuntu policy
+internal/ssh/       System OpenSSH bootstrap transport
+internal/process/   Bounded, cancellable subprocess execution
+internal/executor/  Versioned JSON stdin/stdout inspection protocol
+docs/               Implemented boundary and verification notes
 examples/          Five configurations matching the design document
 mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
 
-The Go module is `github.com/nchapman/soar`. There is intentionally no speculative runtime interface, daemon, or empty deployment framework. Add SSH, Docker, and host-executor packages with the first working deployment slice.
+The Go module is `github.com/nchapman/soar`. There is no custom daemon, runtime abstraction, or deployment framework yet. The SSH bootstrap collector and installed executor share one host-inspection implementation; Docker integration and provisioning come next.
 
 ## Examples
 
@@ -83,7 +107,7 @@ Tasks run from the project root, including when invoked from a subdirectory. `ch
 
 Mise manages development tool versions; Go libraries remain in `go.mod`/`go.sum`. Use `mise exec -- go get <module>@<version>` to change a library dependency and `mise exec -- go mod tidy` to reconcile modules. `GOTOOLCHAIN=local` prevents Go from silently selecting a different toolchain than the mise pin. Shell activation is optional when using `mise run` or `mise exec`.
 
-Tests are offline apart from initial Go module downloads; no Docker daemon, SSH server, or credentials are needed. CLI tests use temporary directories and captured output. Configuration tests cover invalid inputs and storage/network declarations without mocking runtime infrastructure.
+Tests are offline apart from initial Go module downloads; no Docker daemon, SSH server, or credentials are needed. Native Unix tests run the read-only collector locally. If OpenSSH is installed, a test runs `ssh -G` with an empty SSH configuration to validate options without connecting. Subprocess tests exercise real child processes, cancellation, output limits, and inherited pipes. SSH boundary tests supply recorded probe results; they do not claim to test remote authentication or network behavior.
 
 To build a versioned binary:
 
@@ -91,4 +115,4 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-The next milestone is a narrow end-to-end deployment: transfer a build context over system SSH, build with Docker, start one stateless service, and serve it through Caddy. Implement the associated failure-path tests with that behavior rather than pretending a scaffold deploys anything today.
+The next milestone is idempotent Ubuntu host setup, followed by one end-to-end stateless deployment: transfer a build context over SSH, build with Docker, start one service, and serve it through Caddy. Real-host inspection should be smoke-tested on a disposable Ubuntu 24.04 machine before provisioning is built on it.

@@ -7,7 +7,7 @@ GOTOOLCHAIN = "local"
 
 [tasks.build]
 description = "Build the CLI into bin/soar"
-run = "go build -trimpath -o bin/soar ./cmd/soar"
+run = "go build -trimpath -o bin/ ./cmd/soar"
 
 [tasks.check]
 description = "Check formatting, vet, run the full race-enabled test suite, and build"
@@ -23,6 +23,7 @@ run = "gofmt -w cmd internal"
 
 [tasks.fmt-check]
 description = "Check Go formatting without changing files"
+shell = "bash -c"
 run = '''
 set -eu
 files=$(gofmt -l cmd internal)

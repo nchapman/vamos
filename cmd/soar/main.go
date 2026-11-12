@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/nchapman/soar/internal/cli"
 )
@@ -10,5 +13,15 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(cli.Run(os.Args[1:], os.Stdout, os.Stderr, version))
+	os.Exit(run())
+}
+
+func run() int {
+	ctx, stop := shutdownContext()
+	defer stop()
+	return cli.RunContext(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, version)
+}
+
+func shutdownContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }

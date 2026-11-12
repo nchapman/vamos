@@ -1,29 +1,38 @@
-// Package cli implements the local command-line interface. No command currently
-// contacts a server or changes Docker state.
+// Package cli implements the local command-line interface and read-only server inspection.
 package cli
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/soar/internal/executor"
 )
 
 const help = `Soar — a small app platform for one server
 
 Usage:
-  soar validate [-f soar.yaml]   Validate local app configuration
-  soar version                   Print the build version
-  soar help                      Show this help
+  soar validate [-f soar.yaml]           Validate local app configuration
+  soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
+  soar version                          Print the build version
+  soar help                             Show this help
 
-Deployment and server management are not implemented yet. See PLAN.md.
+Server setup and deployment are not implemented yet. See PLAN.md.
 `
 
-// Run returns a process exit code: 0 for success, 1 for configuration failures,
-// and 2 for command-line usage errors. Streams are supplied by the caller.
+// Run is the noninteractive entry point for local commands.
 func Run(args []string, stdout, stderr io.Writer, version string) int {
+	return RunContext(context.Background(), args, strings.NewReader(""), stdout, stderr, version)
+}
+
+// RunContext returns 0 for success, 1 for validation/inspection failures or an
+// unsupported host, and 2 for usage errors. The internal protocol has its own
+// documented exit semantics. Context cancellation is propagated to subprocesses.
+func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, version string) int {
 	if len(args) == 0 {
 		fmt.Fprint(stdout, help)
 		return 0
@@ -43,6 +52,13 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 		return 0
 	case "validate":
 		return validate(args[1:], stdout, stderr)
+	case "server":
+		return server(ctx, args[1:], stdout, stderr)
+	case "internal-executor":
+		if len(args) != 1 {
+			return usageError(stderr, "internal-executor accepts only a JSON request on stdin")
+		}
+		return executor.Serve(ctx, stdin, stdout)
 	default:
 		return usageError(stderr, fmt.Sprintf("unknown command %q", args[0]))
 	}

@@ -1,6 +1,6 @@
 # Soar: a small app platform for one server
 
-**Status: proposed platform design.** The Go scaffold implements local configuration validation only; the operational commands and workflows below are not implemented. See [README.md](README.md) for commands that work today.
+**Status: proposed platform design.** Local configuration validation, read-only `server inspect` over SSH, and the internal executor's inspection protocol are implemented. Setup, deployment, and the other operational workflows below are not implemented. See [README.md](README.md) and [host inspection](docs/host-inspection.md) for the current boundary and verification limits.
 
 ## 1. The goal
 
@@ -20,7 +20,7 @@ They should not repeatedly configure servers, registries, reverse proxies, certi
 ### Boundaries
 
 - Client CLI targets macOS, Linux, and Windows. It must not depend on Ubuntu, APT, systemd, or local Docker; remote operations use the client's OpenSSH executable.
-- Deployment hosts and the remote executor target Ubuntu 24.04 or newer with systemd. No support for older Ubuntu, other server distributions, or Ubuntu derivatives. Keep host-specific installation and service management out of shared client code.
+- Deployment hosts and the remote executor target Ubuntu 24.04 or newer with systemd, on amd64 or arm64. No support for older Ubuntu, other server distributions, or Ubuntu derivatives. Keep host-specific installation and service management out of shared client code.
 - Many apps may share one server; each app is confined to one server, with one instance per declared service initially.
 - Trusted applications operated by the server owner, not hostile tenants.
 - Dockerfile builds and existing OCI images. No buildpacks or framework detection.
@@ -56,7 +56,7 @@ soar secrets stage session-secret   # Prompt without echo; never put values in a
 soar deploy                        # Apply staged values to changed services.
 ```
 
-Before installing packages or changing host state, `server add` reads `/etc/os-release` to verify `ID=ubuntu` and a numeric `VERSION_ID` of at least 24.04, then checks that systemd is available as the host service manager. Missing/unrecognized OS metadata or an unsupported host fails with the detected OS and the Ubuntu 24.04+ requirement. Installation uses APT and systemd directly; do not add distro-specific backends. This preflight is planned behavior, not implemented by the scaffold.
+Before installing packages or changing host state, `server add` reads `/etc/os-release` to verify `ID=ubuntu` and a numeric `VERSION_ID` of at least 24.04, then checks that systemd is the running host service manager and the architecture is amd64 or arm64. Missing/unrecognized OS metadata or an unsupported host fails with the detected OS and the Ubuntu 24.04+ requirement. Installation uses APT and systemd directly; do not add distro-specific backends. These read-only compatibility checks now exist in `server inspect`; wiring them into provisioning remains planned. Inspection reports root/non-root UID without invoking sudo, and does not claim that non-root privileged setup is authorized.
 
 Setup tells the owner to point `*.apps.example.com` at the server and open TCP 80/443. Caddy obtains certificates for individual hostnames; Soar does not require wildcard certificates or a DNS-provider integration. Incorrect DNS produces an actionable diagnostic, not an indefinite wait.
 
@@ -149,7 +149,7 @@ Named volumes survive deploys, rollbacks, and app deletion. `soar destroy` remov
 
 ### A thin CLI and host-side executor
 
-Use the same small Go executable locally and remotely. Start with the system SSH client for existing agent/key/config support and Docker's Go client for container management; do not generate Compose files as a second deployment state model. The local CLI sends authenticated commands over SSH; the host-side executor owns mutations and reports results. No always-running custom control-plane daemon is needed initially. Docker restarts containers and Caddy restarts through the host's service manager after reboot.
+Use the same small Go executable locally and remotely. Start with the system SSH client for existing agent/key/config support and Docker's Go client for container management; do not generate Compose files as a second deployment state model. The local CLI sends authenticated commands over SSH; the host-side executor owns mutations and reports results. Fresh-host inspection is a bootstrap exception: before Soar is installed, SSH runs a fixed read-only shell collector. The installed executor runs the identical collector locally and shares the same Go parser/policy. Its versioned JSON protocol currently supports inspection only; bootstrap inspection does not upload or invoke a remote Go binary. No always-running custom control-plane daemon is needed initially. Docker restarts containers and Caddy restarts through the host's service manager after reboot.
 
 Store root/private state under a directory such as `/var/lib/soar/`:
 
@@ -460,7 +460,7 @@ On later deployments, API and renderer versions must tolerate overlap. If a rend
 
 ## 7. Build order and acceptance checks
 
-1. **One stateless app end to end.** Setup, target binding, build transfer, generated URL, HTTPS, logs, status. Follow example 1 from a fresh Ubuntu 24.04 host; verify explicit target overrides do not silently change future targets. Check that older Ubuntu, other distributions, and missing OS metadata fail before host mutation. Ubuntu 24.04 is the host CI baseline; newer Ubuntu releases remain within the host support scope. Add separate native macOS/Linux/Windows client checks for command behavior, configuration paths, and SSH invocation; client support is not limited to the host CI image.
+1. **One stateless app end to end.** Setup, target binding, build transfer, generated URL, HTTPS, logs, status. Follow example 1 from a fresh Ubuntu 24.04 host; verify explicit target overrides do not silently change future targets. Check that older Ubuntu, other distributions, and missing OS metadata fail before host mutation. Ubuntu 24.04 is the host CI baseline; newer Ubuntu releases remain within the host support scope. Native macOS/Linux/Windows client CI is configured for command behavior, configuration paths, subprocesses, and SSH option acceptance; client support is not limited to the host CI image. These offline tests do not replace a real Ubuntu SSH smoke test.
 2. **Safe replacement and routing.** Readiness, domain edits, rollback, locks, interrupted-operation recovery. A bad build/readiness check leaves the old volume-free route live. Duplicate hostnames fail safely; incorrect custom DNS leaves generated URLs usable and reports pending, not HTTPS success. Confirm web/API domains route to the correct services.
 3. **Private multi-service apps.** Networks, staged secrets, workers, build reuse, one-off commands, partial deploys. Follow examples 3–5 without editing YAML to bootstrap. Migrate an empty database while the API cannot yet pass readiness. Same-app connections succeed; external and other-app connections fail. Staged secrets remain pending across reboot. Interrupted worker replacement never resurrects a retired worker.
 4. **Persistent data and protected services.** Example 2 uses ordinary deploy and never overlaps writers. App deploy leaves protected db/Redis untouched; changed protected config gives an exact next command. Test changed loopback ports, failed readiness, interrupted stop/start, retained volumes, and explicit data-compatible code rollback. Exercise scoped updates and pending secret versions.
