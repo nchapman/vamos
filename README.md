@@ -4,6 +4,12 @@ A small, Dockerfile-first app platform for one server. The intended stack is a G
 
 **This is a scaffold, not a deployment tool yet.** Local configuration validation works. Server setup, Docker builds/runs, SSH transport, domains, secrets, deployment, and recovery are described in [PLAN.md](PLAN.md) but are not implemented. Current commands never contact a server or modify Docker state.
 
+## Supported hosts
+
+Deployment hosts must run **Ubuntu 24.04 or newer**, with systemd. Older Ubuntu releases, other distributions, and Ubuntu derivatives are outside the supported host scope. Host setup will use Ubuntu's APT and systemd conventions rather than a cross-distribution installation layer.
+
+This restriction applies to the remote server, not the local CLI or development machine; macOS development remains supported. Host OS detection and enforcement will be implemented with server setup, which does not exist yet. CI runs on Ubuntu 24.04 as the minimum-version baseline; current tests cover the scaffold, not host provisioning or deployment.
+
 ## Try it
 
 Install [mise](https://mise.jdx.dev/getting-started.html) to manage the pinned Go toolchain and project commands. `mise.toml` pins Go 1.27.1; `go.mod` retains Go 1.25 as the minimum language/toolchain requirement. Race-enabled tests also require a system C toolchain (Xcode Command Line Tools on macOS or a C compiler on Linux). Docker is not required to build or test this scaffold.

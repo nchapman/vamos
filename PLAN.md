@@ -4,7 +4,7 @@
 
 ## 1. The goal
 
-Rent a good Linux server, install Soar once, and deploy our apps from Dockerfiles. Keep Fly's app-oriented experience without building a cloud provider.
+Rent a good Ubuntu 24.04+ server, install Soar once, and deploy our apps from Dockerfiles. Keep Fly's app-oriented experience without building a cloud provider.
 
 The user should think about:
 
@@ -19,6 +19,7 @@ They should not repeatedly configure servers, registries, reverse proxies, certi
 
 ### Boundaries
 
+- Deployment hosts run Ubuntu 24.04 or newer with systemd. No support for older Ubuntu, other distributions, or Ubuntu derivatives. This is a remote-host requirement, not a restriction on the local CLI or macOS development.
 - Many apps may share one server; each app is confined to one server, with one instance per declared service initially.
 - Trusted applications operated by the server owner, not hostile tenants.
 - Dockerfile builds and existing OCI images. No buildpacks or framework detection.
@@ -53,6 +54,8 @@ For an app that needs a session secret, add `SESSION_SECRET: session-secret` und
 soar secrets stage session-secret   # Prompt without echo; never put values in argv.
 soar deploy                        # Apply staged values to changed services.
 ```
+
+Before installing packages or changing host state, `server add` reads `/etc/os-release` to verify `ID=ubuntu` and a numeric `VERSION_ID` of at least 24.04, then checks that systemd is available as the host service manager. Missing/unrecognized OS metadata or an unsupported host fails with the detected OS and the Ubuntu 24.04+ requirement. Installation uses APT and systemd directly; do not add distro-specific backends. This preflight is planned behavior, not implemented by the scaffold.
 
 Setup tells the owner to point `*.apps.example.com` at the server and open TCP 80/443. Caddy obtains certificates for individual hostnames; Soar does not require wildcard certificates or a DNS-provider integration. Incorrect DNS produces an actionable diagnostic, not an indefinite wait.
 
@@ -456,7 +459,7 @@ On later deployments, API and renderer versions must tolerate overlap. If a rend
 
 ## 7. Build order and acceptance checks
 
-1. **One stateless app end to end.** Setup, target binding, build transfer, generated URL, HTTPS, logs, status. Follow example 1 from an empty server; verify explicit target overrides do not silently change future targets.
+1. **One stateless app end to end.** Setup, target binding, build transfer, generated URL, HTTPS, logs, status. Follow example 1 from a fresh Ubuntu 24.04 host; verify explicit target overrides do not silently change future targets. Check that older Ubuntu, other distributions, and missing OS metadata fail before host mutation. Ubuntu 24.04 is the CI baseline; newer Ubuntu releases remain within the host support scope.
 2. **Safe replacement and routing.** Readiness, domain edits, rollback, locks, interrupted-operation recovery. A bad build/readiness check leaves the old volume-free route live. Duplicate hostnames fail safely; incorrect custom DNS leaves generated URLs usable and reports pending, not HTTPS success. Confirm web/API domains route to the correct services.
 3. **Private multi-service apps.** Networks, staged secrets, workers, build reuse, one-off commands, partial deploys. Follow examples 3–5 without editing YAML to bootstrap. Migrate an empty database while the API cannot yet pass readiness. Same-app connections succeed; external and other-app connections fail. Staged secrets remain pending across reboot. Interrupted worker replacement never resurrects a retired worker.
 4. **Persistent data and protected services.** Example 2 uses ordinary deploy and never overlaps writers. App deploy leaves protected db/Redis untouched; changed protected config gives an exact next command. Test changed loopback ports, failed readiness, interrupted stop/start, retained volumes, and explicit data-compatible code rollback. Exercise scoped updates and pending secret versions.
