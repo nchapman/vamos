@@ -19,7 +19,8 @@ They should not repeatedly configure servers, registries, reverse proxies, certi
 
 ### Boundaries
 
-- Deployment hosts run Ubuntu 24.04 or newer with systemd. No support for older Ubuntu, other distributions, or Ubuntu derivatives. This is a remote-host requirement, not a restriction on the local CLI or macOS development.
+- Client CLI targets macOS, Linux, and Windows. It must not depend on Ubuntu, APT, systemd, or local Docker; remote operations use the client's OpenSSH executable.
+- Deployment hosts and the remote executor target Ubuntu 24.04 or newer with systemd. No support for older Ubuntu, other server distributions, or Ubuntu derivatives. Keep host-specific installation and service management out of shared client code.
 - Many apps may share one server; each app is confined to one server, with one instance per declared service initially.
 - Trusted applications operated by the server owner, not hostile tenants.
 - Dockerfile builds and existing OCI images. No buildpacks or framework detection.
@@ -459,7 +460,7 @@ On later deployments, API and renderer versions must tolerate overlap. If a rend
 
 ## 7. Build order and acceptance checks
 
-1. **One stateless app end to end.** Setup, target binding, build transfer, generated URL, HTTPS, logs, status. Follow example 1 from a fresh Ubuntu 24.04 host; verify explicit target overrides do not silently change future targets. Check that older Ubuntu, other distributions, and missing OS metadata fail before host mutation. Ubuntu 24.04 is the CI baseline; newer Ubuntu releases remain within the host support scope.
+1. **One stateless app end to end.** Setup, target binding, build transfer, generated URL, HTTPS, logs, status. Follow example 1 from a fresh Ubuntu 24.04 host; verify explicit target overrides do not silently change future targets. Check that older Ubuntu, other distributions, and missing OS metadata fail before host mutation. Ubuntu 24.04 is the host CI baseline; newer Ubuntu releases remain within the host support scope. Add separate native macOS/Linux/Windows client checks for command behavior, configuration paths, and SSH invocation; client support is not limited to the host CI image.
 2. **Safe replacement and routing.** Readiness, domain edits, rollback, locks, interrupted-operation recovery. A bad build/readiness check leaves the old volume-free route live. Duplicate hostnames fail safely; incorrect custom DNS leaves generated URLs usable and reports pending, not HTTPS success. Confirm web/API domains route to the correct services.
 3. **Private multi-service apps.** Networks, staged secrets, workers, build reuse, one-off commands, partial deploys. Follow examples 3–5 without editing YAML to bootstrap. Migrate an empty database while the API cannot yet pass readiness. Same-app connections succeed; external and other-app connections fail. Staged secrets remain pending across reboot. Interrupted worker replacement never resurrects a retired worker.
 4. **Persistent data and protected services.** Example 2 uses ordinary deploy and never overlaps writers. App deploy leaves protected db/Redis untouched; changed protected config gives an exact next command. Test changed loopback ports, failed readiness, interrupted stop/start, retained volumes, and explicit data-compatible code rollback. Exercise scoped updates and pending secret versions.

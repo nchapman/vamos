@@ -4,11 +4,18 @@ A small, Dockerfile-first app platform for one server. The intended stack is a G
 
 **This is a scaffold, not a deployment tool yet.** Local configuration validation works. Server setup, Docker builds/runs, SSH transport, domains, secrets, deployment, and recovery are described in [PLAN.md](PLAN.md) but are not implemented. Current commands never contact a server or modify Docker state.
 
-## Supported hosts
+## Platform scope
 
-Deployment hosts must run **Ubuntu 24.04 or newer**, with systemd. Older Ubuntu releases, other distributions, and Ubuntu derivatives are outside the supported host scope. Host setup will use Ubuntu's APT and systemd conventions rather than a cross-distribution installation layer.
+| Component | Target operating systems |
+| --- | --- |
+| Client CLI | macOS, Linux, and Windows |
+| Deployment host / remote executor | Ubuntu 24.04 or newer, with systemd |
 
-This restriction applies to the remote server, not the local CLI or development machine; macOS development remains supported. Host OS detection and enforcement will be implemented with server setup, which does not exist yet. CI runs on Ubuntu 24.04 as the minimum-version baseline; current tests cover the scaffold, not host provisioning or deployment.
+The Ubuntu restriction applies **only to deployment hosts**. The client must not require Ubuntu, APT, systemd, or a local Docker daemon; builds will run remotely. Deployment commands will use the client's OpenSSH executable. Keep Ubuntu-specific setup in the remote executor, not in shared client code.
+
+Older Ubuntu releases, other server distributions, and Ubuntu derivatives are outside the supported host scope. Host setup will use APT and systemd directly rather than a cross-distribution installation layer. Host OS detection and enforcement will be implemented with server setup, which does not exist yet.
+
+CI currently runs on Ubuntu 24.04 and covers the scaffold, not host provisioning or deployment. The broader client targets are separate from that baseline; native macOS and Windows CI coverage is still to be added.
 
 ## Try it
 
