@@ -2,7 +2,7 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**Stateless multi-service apps work:** up to eight Dockerfile-built public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Volumes, scoped deployment, and rollback remain planned in [PLAN.md](PLAN.md). See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
+**Dockerfile-built multi-service apps work:** up to eight Dockerfile-built public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Persistent local volumes use single-writer stop/start with durable public 503 routing and retained data. Scoped deployment and rollback remain planned in [PLAN.md](PLAN.md). See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
 
 ## Platform scope
 
@@ -95,6 +95,25 @@ With a bootstrapped server, wildcard DNS pointing at it, and TCP 80/443 allowed:
 
 The first default-target contact creates a gitignored project binding under `.soar/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules and always omit `.git`/`.soar`. The aggregate multibuild bundle is limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
 
+## Try SQLite and uploads
+
+`examples/journal` is a runnable Python standard-library **demo, not a production
+app; it has no authentication**. SQLite and uploads share one `/data` mount.
+
+```sh
+./bin/soar deploy -f examples/journal/soar.yaml
+./bin/soar status -f examples/journal/soar.yaml
+```
+
+See its [write/read API and persistence exercise](examples/journal/README.md).
+Each service may have one owned named local volume; sharing is forbidden and
+bindings are immutable. Updates stop/start with public durable HTTP 503 downtime.
+Data survives failed startup, supersede, reboot, cleanup and destroy; after
+destroy, reuse requires explicit `deploy --reuse-data`. Status shows storage
+identities, missing/retained state and possible mutation. There is no data deletion,
+backup or restore command. See [the storage boundary](docs/volumes.md), including
+legacy journal recovery and the limits of missing-storage checks.
+
 ## Add a private backend
 
 `examples/private-backend` is a runnable web/private-backend example. Both services share one build; only `web` gets a public route. The web process connects to `http://backend:9000` through its app network.
@@ -146,11 +165,11 @@ internal/executor/  Versioned JSON stdin/stdout host-operation protocol
 internal/lifecycle/ Ubuntu setup/teardown, ownership journal, and safety checks
 internal/registry/  Private, atomically written local server registrations
 internal/buildcontext/ Bounded build-context capture with Docker ignore rules
-internal/deploy/    Stateless deployment/maintenance journals, Docker lifecycle, Caddy routing
+internal/deploy/    Deployment/maintenance journals, Docker lifecycle, Caddy routing
 internal/appstate/  Minimal completed-destruction receipt shared with host teardown
 internal/secrets/   Private immutable secret versions and metadata-only selection
 docs/               Implemented boundary and verification notes
-examples/          Five design fixtures plus runnable hello and private-backend apps
+examples/          Four design fixtures plus runnable hello, journal and private-backend apps
 mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
@@ -169,7 +188,7 @@ The Go module is `github.com/nchapman/soar`. No persistent Soar daemon or separa
 | [dispatch](examples/dispatch/soar.yaml) | Web, worker, PostgreSQL, and Redis |
 | [workspace](examples/workspace/soar.yaml) | Separate frontend/API builds and a private renderer |
 
-`hello` and `private-backend` are runnable applications supported by the current deployment implementation. The other five are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all seven configurations.
+`hello`, `private-backend`, and `journal` are runnable applications supported by the current deployment implementation. The other four are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all seven configurations.
 
 ## Development
 
@@ -194,4 +213,4 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-Staged secrets and stateless multi-service apps are implemented. The [first volume-backed deployment proposal](docs/volume-proposal.md) is ready for discussion, not implementation approval; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).
+Staged secrets, multi-service apps and [persistent local volumes](docs/volumes.md) are implemented. The original volume proposal is superseded; backup/restore/preparation remain deferred, and new storage full-suite/live acceptance results are not claimed here; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).

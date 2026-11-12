@@ -84,7 +84,7 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 	if !pending {
 		j.OldCaddy = old
 		j.NewCaddy = next
-		if j.Version == 2 {
+		if isMulti(j) {
 			j.Phase = "updating"
 		} else {
 			j.Phase = "promoting"
@@ -194,7 +194,7 @@ func (m *Manager) recordCancelledPromotion(j *journal) error {
 		return nil
 	}
 	candidate := j.Candidate
-	if j.Version == 2 {
+	if isMulti(j) {
 		slot := j.ServiceStates[j.ActiveService]
 		slot.Phase = "starting"
 		candidate = slot.Candidate

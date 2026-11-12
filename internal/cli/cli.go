@@ -16,9 +16,9 @@ import (
 const help = `Soar — a small app platform for one server
 
 Usage:
-  soar deploy [-f soar.yaml]             Build and deploy one stateless web service
+  soar deploy [-f soar.yaml]             Build and deploy the app's services
   soar status [--json]                   Inspect the app's actual running state
-  soar logs [--tail 100]                 Read bounded web-container logs
+  soar logs [--tail 100]                 Read bounded service-container logs
   soar resume OPERATION                 Resume captured operation inputs
   soar cleanup [--yes]                  Preview or remove obsolete app resources
   soar destroy [--yes]                  Preview or remove an app
@@ -31,8 +31,9 @@ Usage:
   soar version                          Print the build version
   soar help                             Show this help
 
-Setup/teardown require explicit authorization. Deploy currently supports one Dockerfile-built
-public web service without volumes. Run a command with --help for options.
+Setup/teardown require explicit authorization. Deploy supports 1–8 Dockerfile-built public/private
+services, with one optional named volume per service. Data-backed updates stop/start; data is retained.
+Run a command with --help for options.
 `
 
 // Run is the noninteractive entry point for local commands.

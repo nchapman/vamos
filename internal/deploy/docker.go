@@ -53,6 +53,7 @@ type inspection struct {
 		DNSSearch                      []string `json:"DnsSearch"`
 		SecurityOpt                    []string
 		PidMode, IpcMode, UTSMode      string
+		Mounts                         []json.RawMessage
 		Binds                          []string
 		RestartPolicy                  struct{ Name string }
 		PortBindings                   map[string][]struct{ HostIP, HostPort string }

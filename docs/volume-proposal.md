@@ -1,6 +1,10 @@
 # Proposal: first volume-backed deployment milestone
 
-**Status: storage deployment remains proposed, not implemented.** Local configuration supports singular `volume`, with one per service and no sharing. Deployment still rejects it; implementing the configuration shape does not enable storage. This narrows the broader storage design in [PLAN.md](../PLAN.md); it is not a commitment to implement databases, manual updates, scoped deployment, or rollback next.
+**Status: superseded by the implemented [storage lifecycle](volumes.md).**
+The text below preserves the design rationale and acceptance targets, not a pending
+authorization gate or verification report. End-to-end lifecycle implementation is
+authorized; backup/restore/preparation remain deferred. Storage uses journal v3,
+with ready/incomplete v1/v2 recovery preserved.
 
 ## Recommendation
 
@@ -44,7 +48,7 @@ Normal deploy remains noninteractive and does not require confirmation on every 
 
 Expose volume ownership, binding, identity, and retained/missing state through `status`, never data contents. Initial deploy creates its own new volume automatically. No separate volume preparation, listing, backup, or restore commands are proposed for this milestone.
 
-The proposed `soar deploy --reuse-data` flag acknowledges reuse after destroy. It authorizes attaching exact retained identities, never arbitrary adoption, deletion, renaming, or schema compatibility. Record that authorization in the operation so resume does not ask again. It is not needed for ordinary updates of an existing service or continued recovery of its captured operation. An explicitly named supersede inherits attachment authorization for the same captured volume identities, including after a failed **first** deployment. Preserve the binding and possible-mutation record independently of whether `Current` ever existed. Supersede cannot silently turn that failed first service into a fresh volume or a stateless service; correcting a binding mistake requires a separate identity/migration decision.
+The `soar deploy --reuse-data` flag acknowledges reuse after destroy. It authorizes attaching exact retained identities, never arbitrary adoption, deletion, renaming, or schema compatibility. Record that authorization in the operation so resume does not ask again. It is not needed for ordinary updates of an existing service or continued recovery of its captured operation. An explicitly named supersede inherits attachment authorization for the same captured volume identities, including after a failed **first** deployment. Preserve the binding and possible-mutation record independently of whether `Current` ever existed. Supersede cannot silently turn that failed first service into a fresh volume or a stateless service; correcting a binding mistake requires a separate identity/migration decision.
 
 ## Stable ownership and creation
 
@@ -106,9 +110,14 @@ Same-name redeployment may reuse data only with the exact stored service/name/pa
 
 Persistence on one host is not a backup. This milestone neither chooses a backup approach nor implements or verifies backup/restore workflows. Those need a separate design discussion; the restore-driven preparation command is deferred with them. Do not claim retained volumes protect against host loss or data corruption.
 
-Out-of-band Docker/host modification, missing storage, and filesystem corruption require operator recovery; normal Docker restart is not an integrity check. A technical spike must check missing-volume behavior on create/start/reboot before the implementation claims fail-closed recovery. If the supported daemon cannot uphold that boundary, revise restart policy or the design explicitly—do not paper over it with empty-volume recreation.
+Missing registered storage fails closed before execution. This is not continuous
+storage-integrity monitoring: ordinary Docker volume removal is guarded while
+containers reference it, including stopped containers. Out-of-band filesystem
+corruption and privileged host/daemon modification are not covered. Normal Docker
+restart is not an integrity check. Live fault/reboot checks remain acceptance
+targets, not claimed results here.
 
-## Implementation and approval gates
+## Original implementation sequence and acceptance targets
 
 Use an explicit storage-aware journal version rather than weakening v2's no-mount invariants. Keep incomplete legacy/v2 operations recoverable with their original rules; migrate ready state only on an explicit new deployment. Preserve the global mutation lock and bounded, value-free runtime diagnostics. Retained-volume status and teardown refusal must work even without a deployment journal; missing deployment state is not authority to erase storage ownership.
 
@@ -120,6 +129,9 @@ Implement in three reviewable steps:
 
 Required regressions include lost volume-create and container-start responses; missing/foreign/replaced volumes; unexpected mount references; delimiter-safe mount arguments; restart resurrection; interrupted initialization and readiness failure after a schema write; failed-first-deploy supersede retaining its binding, authorization, and possible data changes; mixed app progress; uncertain 503/activation reloads; interrupted supersede; changed mount bindings; data surviving cleanup/destroy/redeploy; and teardown refusing retained/missing recorded storage.
 
-**Settled scope:** singular `volume`, one per service, no sharing, and backup/restore work deferred. **Remaining decisions before storage implementation:** immutable bindings/new-service-only attachment; explicit retained-data reuse; and no implicit copy/chown or data deletion. No storage deployment implementation is authorized merely by accepting its configuration schema.
+**Implemented scope:** singular `volume`, one per service, no sharing, immutable
+bindings, explicit retained-data reuse, and no implicit copy/chown or data deletion.
+Backup/restore/preparation work remains deferred. The checklist above is not a
+claim that new full-suite or live checks have already passed.
 
 Docker references: [volume lifecycle, implicit creation, and `volume-nocopy`](https://docs.docker.com/engine/storage/volumes/), [volume removal restrictions](https://docs.docker.com/reference/cli/docker/volume/rm/). These describe Docker primitives, not a substitute for Soar's ownership and writer checks.

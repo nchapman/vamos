@@ -28,6 +28,7 @@ import (
 )
 
 type Request struct {
+	ReuseData     bool             `json:"reuse_data,omitempty"`
 	ContextFormat string           `json:"context_format,omitempty"`
 	Service       string           `json:"service,omitempty"`
 	Candidate     bool             `json:"candidate,omitempty"`
@@ -63,7 +64,18 @@ type SecretStatus struct {
 	Services        []string          `json:"services"`
 }
 
+type VolumeStatus struct {
+	Service            string `json:"service"`
+	Name               string `json:"name"`
+	Mount              string `json:"mount"`
+	ID                 string `json:"id"`
+	State              string `json:"state"`
+	Missing            bool   `json:"missing"`
+	DataMayHaveChanged bool   `json:"data_may_have_changed"`
+}
+
 type Status struct {
+	Volumes   []VolumeStatus           `json:"volumes,omitempty"`
 	Services  map[string]ServiceStatus `json:"services,omitempty"`
 	Secrets   []SecretStatus           `json:"secrets,omitempty"`
 	App       string                   `json:"app"`
@@ -76,16 +88,19 @@ type Status struct {
 	Running   bool                     `json:"running"`
 }
 type release struct {
-	Service     string                 `json:",omitempty"`
-	Config      *config.Service        `json:",omitempty"`
-	SecretRefs  map[string]secrets.Ref `json:",omitempty"`
-	Container   string
-	Image       string
-	Port        string
-	PublishPort string
-	Operation   string
+	VolumeID        string                 `json:",omitempty"`
+	ExecutionIntent bool                   `json:",omitempty"`
+	Service         string                 `json:",omitempty"`
+	Config          *config.Service        `json:",omitempty"`
+	SecretRefs      map[string]secrets.Ref `json:",omitempty"`
+	Container       string
+	Image           string
+	Port            string
+	PublishPort     string
+	Operation       string
 }
 type journal struct {
+	ReuseData                    bool                     `json:",omitempty"`
 	ServiceStates                map[string]*serviceState `json:",omitempty"`
 	BuildImages                  map[string]string        `json:",omitempty"`
 	BundleSHA                    string                   `json:",omitempty"`
@@ -160,8 +175,8 @@ func ValidateApp(a *config.App) error {
 	}
 	mappings := 0
 	for name, s := range a.Services {
-		if s.Build == nil || s.Image != "" || s.Volume != nil || s.Update == config.UpdateManual || (s.HTTP != nil && len(s.HTTP.Domains) > 0) {
-			return fmt.Errorf("service %s: only Dockerfile-built stateless services without manual updates or custom domains are supported", name)
+		if s.Build == nil || s.Image != "" || s.Update == config.UpdateManual || (s.HTTP != nil && len(s.HTTP.Domains) > 0) {
+			return fmt.Errorf("service %s: only Dockerfile-built services without manual updates or custom domains are supported", name)
 		}
 		if s.HTTP != nil && name != "web" && len(a.Name+"-"+name) > 63 {
 			return fmt.Errorf("service %s: generated hostname label exceeds 63 bytes", name)
@@ -179,7 +194,7 @@ func validateLegacyApp(a *config.App) error {
 		return err
 	}
 	s, ok := a.Services["web"]
-	if !ok || len(a.Services) != 1 || s.HTTP == nil {
+	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil {
 		return errors.New("legacy protocol supports only one public web service; use a current client with a captured build bundle")
 	}
 	return nil
@@ -189,6 +204,9 @@ func (r Request) Mutating() bool {
 }
 
 func ValidateRequest(r Request) error {
+	if r.ReuseData && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
+		return errors.New("reuse-data requires deploy with a current client")
+	}
 	if r.ContextFormat != "" && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
 		return errors.New("unsupported context format or action")
 	}
@@ -330,7 +348,7 @@ func (m *Manager) save(j *journal) error {
 		j.Version = 1
 	}
 	j.LastError = diagnostic(j.LastError)
-	if j.Version == 2 {
+	if isMulti(j) {
 		if err := validateMultiJournal(j, j.App); err != nil {
 			return err
 		}
@@ -472,17 +490,22 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		err = e
 		return
 	}
+	volumeState, e := m.volumeStore().Load(r.App, h.ID)
+	if e != nil {
+		return resp, e
+	}
+	defer func() { m.enrichVolumeResponse(ctx, r, h.ID, &resp) }()
 	if !mut {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		if j == nil && secretState == nil {
+		if j == nil && secretState == nil && volumeState == nil {
 			err = errors.New("app is unmanaged")
 			return
 		}
-		if j != nil && j.Version == 2 {
+		if j != nil && isMulti(j) {
 			return m.readMulti(ctx, r, j, secretState, !ok)
 		}
-		if r.Service != "" && (r.Service != "web" || j == nil || j.Phase == "destroyed") {
+		if r.Service != "" && (r.Service != "web" || j == nil || j.Phase == "destroyed") && !(r.Action == "status" && volumeState != nil && volumeState.Records[r.Service].ID != "") {
 			err = errors.New("service has no recorded deployment")
 			return
 		}
@@ -549,11 +572,15 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		}
 		return
 	}
-	if j == nil && secretState != nil && (r.Action == "cleanup" || r.Action == "destroy") {
+	if j == nil && (secretState != nil || volumeState != nil) && (r.Action == "cleanup" || r.Action == "destroy") {
 		s := secretOnlyStatus(r.App, r.Host.Domain)
 		s.Secrets = secretStatuses(secretState, nil)
 		resp.Status = &s
-		resp.Plan = &Plan{Action: r.Action, App: r.App, Retained: []string{"secret store: retained; no deployment recorded"}}
+		resp.Plan = &Plan{Action: r.Action, App: r.App}
+		if secretState != nil {
+			resp.Plan.Retained = append(resp.Plan.Retained, "secret store: retained; no deployment recorded")
+		}
+		err = m.maintenanceVolumes(ctx, &journal{HostID: h.ID, Status: Status{App: r.App}}, resp.Plan)
 		return
 	}
 	if r.Action == "cleanup" || r.Action == "destroy" || (r.Action == "resume" && j != nil && (j.Maintenance != nil || j.Phase == "destroyed" || j.LastMaintenanceOperation == r.Operation)) {
@@ -575,7 +602,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		tar = archives[buildcontext.BuildKey(*r.Config.Services["web"].Build)]
 		r.ContextFormat = ""
 	}
-	if r.ContextFormat == BundleFormat || (j != nil && j.Version == 2) {
+	if r.ContextFormat == BundleFormat || (j != nil && isMulti(j)) {
 		return m.executeMulti(ctx, r, tar, j, h, secretState)
 	}
 	if r.Action == "deploy" {
@@ -726,10 +753,10 @@ func diagnostic(s string) string {
 	return s
 }
 func validateJournal(j *journal, app string) error {
-	if j.Version == 2 {
+	if isMulti(j) {
 		return validateMultiJournal(j, app)
 	}
-	if len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+	if j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
 		return errors.New("invalid legacy app journal")
 	}
 	bad := errors.New("invalid app journal")
@@ -778,7 +805,7 @@ func validateJournal(j *journal, app string) error {
 		if r == nil {
 			continue
 		}
-		if r.Service != "" || r.Config != nil || !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
+		if r.ExecutionIntent || r.VolumeID != "" || r.Service != "" || r.Config != nil || !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
 			return bad
 		}
 		for _, port := range []string{r.Port, r.PublishPort} {

@@ -8,22 +8,27 @@ const MaxServices = 8
 const BundleFormat = "bundle-v1"
 
 type ServiceStatus struct {
-	Kind      string `json:"kind"`
-	Phase     string `json:"phase"`
-	URL       string `json:"url,omitempty"`
-	Operation string `json:"operation,omitempty"`
-	Container string `json:"container,omitempty"`
-	Candidate string `json:"candidate,omitempty"`
-	Image     string `json:"image,omitempty"`
-	Port      string `json:"port,omitempty"`
-	Running   bool   `json:"running"`
-	Available bool   `json:"available"`
+	Unavailable        bool   `json:"unavailable,omitempty"`
+	DataMayHaveChanged bool   `json:"data_may_have_changed,omitempty"`
+	Kind               string `json:"kind"`
+	Phase              string `json:"phase"`
+	URL                string `json:"url,omitempty"`
+	Operation          string `json:"operation,omitempty"`
+	Container          string `json:"container,omitempty"`
+	Candidate          string `json:"candidate,omitempty"`
+	Image              string `json:"image,omitempty"`
+	Port               string `json:"port,omitempty"`
+	Running            bool   `json:"running"`
+	Available          bool   `json:"available"`
 }
 
 // Each slot describes effective state, not just the last requested app config.
 // Retirement intent survives stopped workers and must never resurrect them.
 type serviceState struct {
-	New                          bool `json:",omitempty"`
+	VolumeID                     string `json:",omitempty"`
+	Unavailable                  bool   `json:",omitempty"`
+	DataMayHaveChanged           bool   `json:",omitempty"`
+	New                          bool   `json:",omitempty"`
 	Phase                        string
 	SecretRefs                   map[string]secrets.Ref `json:",omitempty"`
 	Current, Candidate, Retiring *release

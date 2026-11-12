@@ -22,7 +22,7 @@ func secretOnlyStatus(app, domain string) Status {
 }
 
 func secretStatuses(state *secrets.State, j *journal) []SecretStatus {
-	if j != nil && j.Version == 2 {
+	if j != nil && isMulti(j) {
 		return multiSecretStatuses(state, j)
 	}
 	applied := map[string]string{}

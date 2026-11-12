@@ -98,7 +98,7 @@ func TestHistoricalStatelessVolumeFieldsRemainReadable(t *testing.T) {
 	}
 }
 
-func TestSingularVolumeStillRefusedByDeployment(t *testing.T) {
+func TestSingularVolumeRequiresCurrentDeploymentProtocol(t *testing.T) {
 	for _, public := range []bool{true, false} {
 		a := app()
 		s := a.Services["web"]
@@ -110,8 +110,17 @@ func TestSingularVolumeStillRefusedByDeployment(t *testing.T) {
 		if err := a.Validate(); err != nil {
 			t.Fatal("valid schema rejected:", err)
 		}
-		if err := ValidateApp(a); err == nil || !strings.Contains(err.Error(), "stateless") {
-			t.Fatal("volume deployment was enabled by schema change", err)
+		if err := ValidateApp(a); err != nil {
+			t.Fatal(err)
+		}
+		_, request := setup(t)
+		request.Config = a
+		if err := ValidateRequest(request); err == nil {
+			t.Fatal("legacy volume deployment accepted")
+		}
+		request.ContextFormat = BundleFormat
+		if err := ValidateRequest(request); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

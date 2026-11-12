@@ -2,10 +2,14 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/nchapman/soar/internal/secrets"
 )
@@ -91,7 +95,7 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 			continue
 		}
 		slot := j.ServiceStates[name]
-		s := ServiceStatus{Kind: "private", Phase: slot.Phase}
+		s := ServiceStatus{Kind: "private", Phase: slot.Phase, Unavailable: slot.Unavailable, DataMayHaveChanged: slot.DataMayHaveChanged}
 		cfg := j.Config.Services[name]
 		if cfg.HTTP != nil {
 			s.Kind = "public"
@@ -109,7 +113,7 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 			v, err := m.multiInspect(ctx, j, r, false, true)
 			if err == nil {
 				s.Running = v.State.Running
-				s.Available = runtimeRunning(v) && !slot.CurrentRetired && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
+				s.Available = runtimeRunning(v) && !slot.CurrentRetired && !slot.Unavailable && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
 			} else if j.Phase != "destroying" && out.LastError == "" {
 				out.LastError = diagnostic(fmt.Sprintf("service %s: %s", name, err))
 			}
@@ -134,7 +138,13 @@ func (m *Manager) readMulti(ctx context.Context, r Request, j *journal, state *s
 		return
 	}
 	if r.Service != "" && j.ServiceStates[r.Service] == nil {
-		return resp, errors.New("service has no recorded deployment")
+		registry, e := m.volumeStore().Load(j.App, j.HostID)
+		if e != nil {
+			return resp, e
+		}
+		if r.Action != "status" || registry == nil || registry.Records[r.Service].ID == "" {
+			return resp, errors.New("service has no recorded deployment")
+		}
 	}
 	s := m.multiStatus(ctx, j, state, active, r.Service)
 	resp.Status = &s
@@ -174,4 +184,46 @@ func (m *Manager) readMulti(ctx context.Context, r Request, j *journal, state *s
 	out, err := m.Run(ctx, "docker", []string{"logs", "--timestamps", "--tail", fmt.Sprint(n), target.Container}, nil)
 	resp.Logs = diagnostic(string(out.Stdout) + string(out.Stderr))
 	return resp, err
+}
+
+// Enrichment is response-only and reloads durable state after transitions.
+func (m *Manager) enrichVolumeResponse(ctx context.Context, r Request, hostID string, resp *Response) {
+	if resp.Status == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	latest, err := m.load(r.App)
+	if errors.Is(err, os.ErrNotExist) {
+		latest, err = nil, nil
+	}
+	var metadata []VolumeStatus
+	if err == nil {
+		metadata, err = m.volumeStatuses(ctx, r.App, hostID, latest, r.Service)
+	}
+	resp.Status.Volumes = metadata
+	if err == nil {
+		b, e := json.Marshal(resp)
+		if e != nil || len(b) > 64<<10 {
+			err = errors.New("volume status exceeds response limit; select --service")
+		}
+	}
+	if err != nil {
+		resp.Status.Volumes = nil
+		message := "volume metadata inspection failed; ownership or runtime state could not be verified"
+		if strings.Contains(err.Error(), "select --service") {
+			message = "volume status exceeds response limit; select --service"
+		}
+		resp.Status.LastError = diagnostic(strings.TrimSpace(resp.Status.LastError + "\n" + message))
+		// Metadata must not turn completed deployments or useful logs/status into
+		// failed actions. Mark storage availability unverified and surface a warning.
+		if latest != nil && latest.Config != nil {
+			for name, service := range resp.Status.Services {
+				if latest.Config.Services[name].Volume != nil {
+					service.Available = false
+					resp.Status.Services[name] = service
+				}
+			}
+		}
+	}
 }

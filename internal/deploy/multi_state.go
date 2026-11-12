@@ -15,6 +15,8 @@ import (
 	"github.com/nchapman/soar/internal/lifecycle"
 )
 
+func isMulti(j *journal) bool { return j != nil && (j.Version == 2 || j.Version == 3) }
+
 func journalDomain(j *journal) string { return strings.TrimPrefix(j.URL, "https://"+j.App+".") }
 
 func serviceOrder(j *journal) []string {
@@ -58,12 +60,22 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 		return bad
 	}
 	if r.Config == nil {
+		if r.VolumeID != "" || r.ExecutionIntent {
+			return bad
+		}
 		if !historical || r.Service != "" || !validPort(r.Port) {
 			return bad
 		}
 	} else {
 		a := &config.App{Name: j.App, Services: map[string]config.Service{name: *r.Config}}
 		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) {
+			return bad
+		}
+		if r.Config.Volume == nil {
+			if r.VolumeID != "" || r.ExecutionIntent {
+				return bad
+			}
+		} else if j.Version != 3 || r.Service == "" || !operation.MatchString(r.VolumeID) {
 			return bad
 		}
 		if r.Config.HTTP == nil && (r.Port != "" || r.PublishPort != "") {
@@ -86,7 +98,10 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 
 func validateMultiJournal(j *journal, app string) error {
 	bad := errors.New("invalid multi-service app journal")
-	if j.Version != 2 || j.App != app || len(app) > 63 || !label.MatchString(app) || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
+	if !isMulti(j) || j.App != app || len(app) > 63 || !label.MatchString(app) || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
+		return bad
+	}
+	if len(j.Volumes) != 0 || (j.Version != 3 && j.ReuseData) {
 		return bad
 	}
 	if j.Current != nil || j.Previous != nil || j.Candidate != nil || len(j.SecretRefs) != 0 || j.Container != "" || len(j.Services) != 0 || len(j.Secrets) != 0 || j.Active || j.Running {
@@ -133,6 +148,12 @@ func validateMultiJournal(j *journal, app string) error {
 		if err := validateServiceRelease(j, name, r, historical); err != nil {
 			return err
 		}
+		if r.Config != nil && r.Config.Volume != nil {
+			slot := j.ServiceStates[name]
+			if slot == nil || slot.VolumeID != r.VolumeID || !reflect.DeepEqual(r.Config.Volume, j.Config.Services[name].Volume) {
+				return bad
+			}
+		}
 		if old := known[r.Container]; old != nil && !reflect.DeepEqual(old, r) {
 			return errors.New("conflicting service release identities")
 		}
@@ -147,13 +168,23 @@ func validateMultiJournal(j *journal, app string) error {
 		if cfg.HTTP != nil && len(strings.TrimPrefix(ServiceURL(app, name, journalDomain(j)), "https://")) > 253 {
 			return bad
 		}
+		if cfg.Volume == nil {
+			if s.VolumeID != "" || s.Unavailable || s.DataMayHaveChanged {
+				return bad
+			}
+		} else if j.Version != 3 || !operation.MatchString(s.VolumeID) {
+			return bad
+		}
+		if s.Unavailable && cfg.HTTP == nil {
+			return bad
+		}
 		if s.Current == nil && !s.New {
 			return bad
 		}
 		if s.New && (s.CurrentRetired || (s.Current != nil && s.Current.Operation != j.Operation)) {
 			return bad
 		}
-		if s.CurrentRetired && (cfg.HTTP != nil || s.Current == nil) {
+		if s.CurrentRetired && (s.Current == nil || (cfg.HTTP != nil && (cfg.Volume == nil || !s.Unavailable))) {
 			return bad
 		}
 		for _, r := range []*release{s.Current, s.Candidate, s.Retiring} {
@@ -161,10 +192,22 @@ func validateMultiJournal(j *journal, app string) error {
 				if err := record(name, r, false); err != nil {
 					return err
 				}
+				if r.VolumeID != s.VolumeID || !reflect.DeepEqual(r.Config.Volume, cfg.Volume) {
+					return bad
+				}
 				if (r.Config.HTTP == nil) != (cfg.HTTP == nil) {
 					return bad
 				}
 			}
+		}
+		if s.Current != nil && cfg.Volume != nil && !s.Current.ExecutionIntent {
+			return bad
+		}
+		if s.Candidate != nil && s.Candidate.ExecutionIntent && !s.DataMayHaveChanged {
+			return bad
+		}
+		if cfg.Volume != nil && (s.Phase == "aliasing" || s.Phase == "promoting") && (s.Candidate == nil || !s.Candidate.ExecutionIntent) {
+			return bad
 		}
 		if s.Current != nil && s.Current.Config.HTTP != nil && s.Current.Port == "" {
 			return bad
@@ -194,16 +237,20 @@ func validateMultiJournal(j *journal, app string) error {
 			if s.Candidate == nil || s.Retiring != nil {
 				return bad
 			}
+		case "withdrawing":
+			if j.Version != 3 || cfg.Volume == nil || cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || s.Unavailable {
+				return bad
+			}
 		case "retiring":
-			if cfg.HTTP != nil || s.Candidate == nil || !s.CurrentRetired || s.Retiring != nil {
+			if (cfg.HTTP != nil && (cfg.Volume == nil || !s.Unavailable)) || s.Candidate == nil || !s.CurrentRetired || s.Retiring != nil {
 				return bad
 			}
 		case "starting":
-			if s.Candidate == nil || s.Retiring != nil || (cfg.HTTP == nil && s.Current != nil && !s.CurrentRetired) {
+			if s.Candidate == nil || s.Retiring != nil || ((cfg.HTTP == nil || cfg.Volume != nil) && s.Current != nil && !s.CurrentRetired) || (cfg.Volume != nil && cfg.HTTP != nil && !s.Unavailable) {
 				return bad
 			}
 		case "aliasing", "promoting":
-			if cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil {
+			if cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || (cfg.Volume != nil && !s.Unavailable) {
 				return bad
 			}
 		case "draining":
@@ -211,7 +258,7 @@ func validateMultiJournal(j *journal, app string) error {
 				return bad
 			}
 		case "ready":
-			if s.Current == nil || s.Candidate != nil || s.Retiring != nil || s.CurrentRetired {
+			if s.Current == nil || s.Candidate != nil || s.Retiring != nil || s.CurrentRetired || s.Unavailable {
 				return bad
 			}
 		default:
@@ -229,7 +276,7 @@ func validateMultiJournal(j *journal, app string) error {
 	}
 	if j.NewCaddy != "" {
 		s := j.ServiceStates[j.ActiveService]
-		if j.Phase != "updating" || s == nil || s.Phase != "promoting" || s.Candidate == nil || s.Candidate.Config.HTTP == nil {
+		if j.Phase != "updating" || s == nil || (s.Phase != "promoting" && s.Phase != "withdrawing") || s.Candidate == nil || s.Candidate.Config.HTTP == nil {
 			return bad
 		}
 	}
@@ -281,10 +328,16 @@ func checkTransitions(old *journal, a *config.App) error {
 		if old.Phase != "ready" {
 			return errors.New("finish the legacy deployment with resume before upgrading to multi-service deployment")
 		}
-		if s, ok := a.Services["web"]; !ok || s.HTTP == nil {
+		if s, ok := a.Services["web"]; !ok || s.HTTP == nil || s.Volume != nil {
 			return errors.New("removing web or changing its public/private kind is not supported")
 		}
 		return nil
+	}
+	for name, previous := range old.Config.Services {
+		next, exists := a.Services[name]
+		if (exists && !reflect.DeepEqual(previous.Volume, next.Volume)) || (!exists && previous.Volume != nil) {
+			return fmt.Errorf("service %s: volume bindings are immutable; adding, removing, or changing storage requires a new service", name)
+		}
 	}
 	for name, s := range old.ServiceStates {
 		if s.Current == nil {

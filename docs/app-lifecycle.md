@@ -1,6 +1,8 @@
-# Stateless app lifecycle
+# app lifecycle
 
-Soar supports app-scoped cleanup and destruction for stateless public/private multi-service apps, including legacy single-service journals. These commands never run Docker prune, remove volumes, or force-delete images/containers.
+See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
+
+Soar supports app-scoped cleanup and destruction for public/private multi-service apps, including legacy single-service journals. These commands never run Docker prune, remove volumes, or force-delete images/containers.
 
 ## Preview, then explicitly apply
 
@@ -71,6 +73,8 @@ All app commands now use a matching trusted local Linux executor artifact. Statu
 This is a **root-SSH administration interface**, not a restricted read-only credential API. Status/logs are read-only with respect to application/runtime state but stage executable files. Use trusted client binaries and executor artifacts; the payload checksum checks transfer integrity, not software authenticity. Older clients may reject newer journal fields; update the client and companion Linux executor artifacts together.
 
 ## Verification
+
+Historical evidence below predates storage lifecycle acceptance unless explicitly noted. See [persistent volumes](volumes.md) for the storage boundary; no new live/full-suite results are implied.
 
 Offline tests cover preview immutability, maintenance fencing, strict receipts and teardown refusal, same-name replacement detection, network identity changes, image sharing/tag retention, archive hash drift, replay of missing resources, Caddy route proof, cross-app route isolation, port intent/recreation, and bounded journals. External Docker/Caddy boundaries are simulated.
 

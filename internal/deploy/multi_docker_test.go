@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,7 +25,13 @@ import (
 // particular network connect/disconnect take NETWORK CONTAINER, and inventory
 // absence is distinct from a failed inspect. Lost responses happen AFTER the
 // mutation, as they do when the client connection disappears.
+type fakeVolume struct {
+	Name, Driver, Scope, CreatedAt string
+	Labels, Options                map[string]string
+}
+
 type fakeDocker struct {
+	volumes     map[string]*fakeVolume
 	t           *testing.T
 	m           *Manager
 	j           *journal
@@ -41,7 +48,7 @@ type fakeDocker struct {
 }
 
 func newFakeDocker(t *testing.T, m *Manager, j *journal) *fakeDocker {
-	f := &fakeDocker{t: t, m: m, j: j, images: map[string]*inspection{}, containers: map[string]*inspection{}, lose: map[string]int{}, ignore: map[string]bool{}}
+	f := &fakeDocker{volumes: map[string]*fakeVolume{}, t: t, m: m, j: j, images: map[string]*inspection{}, containers: map[string]*inspection{}, lose: map[string]int{}, ignore: map[string]bool{}}
 	f.net = &inspection{Driver: "bridge", Labels: map[string]string{"soar.host": j.HostID, "soar.app": j.App}}
 	m.Run = f.run
 	return f
@@ -108,13 +115,59 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 			return process.Result{}, errors.New("sensitive missing image")
 		}
 		return dockerJSON([]*inspection{v})
+	case "volume":
+		switch a[1] {
+		case "ls":
+			var b strings.Builder
+			for n := range f.volumes {
+				row, _ := json.Marshal(map[string]string{"Name": n})
+				b.Write(row)
+				b.WriteByte('\n')
+			}
+			return process.Result{Stdout: []byte(b.String())}, nil
+		case "inspect":
+			v := f.volumes[a[2]]
+			if v == nil {
+				return process.Result{}, errors.New("missing volume")
+			}
+			return dockerJSON([]*fakeVolume{v})
+		case "create":
+			n := a[len(a)-1]
+			if f.volumes[n] == nil {
+				v := &fakeVolume{Name: n, Driver: "local", Scope: "local", CreatedAt: "2026-06-01T00:00:00Z", Labels: map[string]string{}}
+				for i := 2; i < len(a)-1; i++ {
+					if a[i] == "--label" {
+						k, val, _ := strings.Cut(a[i+1], "=")
+						v.Labels[k] = val
+						i++
+					}
+				}
+				f.volumes[n] = v
+			}
+			f.events = append(f.events, "volume-create")
+			return f.response("volume-create")
+		}
 	case "container":
 		if len(a) >= 2 && a[1] == "ls" {
-			if !reflect.DeepEqual(a, []string{"container", "ls", "--format", "{{json .}}", "--all"}) {
+			filter := fakeArg(a, "--filter")
+			if filter == "" && !reflect.DeepEqual(a, []string{"container", "ls", "--format", "{{json .}}", "--all"}) {
 				f.t.Fatalf("container list signature: %v", a)
 			}
 			names := make([]string, 0, len(f.containers))
-			for n := range f.containers {
+			for n, v := range f.containers {
+				if filter != "" {
+					matched := false
+					for _, raw := range v.Mounts {
+						var mount struct{ Name string }
+						_ = json.Unmarshal(raw, &mount)
+						if "volume="+mount.Name == filter {
+							matched = true
+						}
+					}
+					if !matched {
+						continue
+					}
+				}
 				names = append(names, n)
 			}
 			sort.Strings(names)
@@ -201,7 +254,7 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 			}
 			return f.response(key)
 		}
-	case "run":
+	case "run", "create":
 		if f.beforeRun != nil {
 			f.beforeRun(a)
 		}
@@ -236,6 +289,31 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 		}
 		for i := 1; i < pos; i++ {
 			switch a[i] {
+			case "--mount":
+				fields, err := csv.NewReader(strings.NewReader(a[i+1])).Read()
+				if err != nil {
+					f.t.Fatal(err)
+				}
+				values := map[string]string{}
+				for _, field := range fields {
+					k, val, _ := strings.Cut(field, "=")
+					values[k] = val
+				}
+				if len(fields) != 4 || values["type"] != "volume" {
+					f.t.Fatal("invalid mount", fields)
+				}
+				if _, ok := values["volume-nocopy"]; !ok {
+					f.t.Fatal("missing nocopy")
+				}
+				source, target := values["source"], values["target"]
+				if f.volumes[source] == nil {
+					f.t.Fatal("mount references missing volume")
+				}
+				mount, _ := json.Marshal(map[string]any{"Type": "volume", "Name": source, "Destination": target, "Driver": "local", "RW": true})
+				spec, _ := json.Marshal(map[string]any{"Type": "volume", "Source": source, "Target": target, "VolumeOptions": map[string]bool{"NoCopy": true}})
+				v.Mounts = append(v.Mounts, mount)
+				v.HostConfig.Mounts = append(v.HostConfig.Mounts, spec)
+				i++
 			case "--label":
 				k, val, _ := strings.Cut(a[i+1], "=")
 				v.Config.Labels[k] = val
@@ -272,12 +350,12 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 			}
 			v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{parts[2] + "/tcp": {{HostIP: parts[0], HostPort: parts[1]}}}
 		}
-		v.State.Running = true
+		v.State.Running = a[0] == "run"
 		v.State.StartedAt = "2026-06-01T00:00:00Z"
 		f.endpoint(v, fakeArg(a, "--network-alias"))
 		f.containers[n] = v
-		f.events = append(f.events, "run")
-		return f.response("run")
+		f.events = append(f.events, a[0])
+		return f.response(a[0])
 	case "start", "update", "stop", "rm":
 		n := a[len(a)-1]
 		v := f.containers[n]
@@ -295,11 +373,11 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 				v.NetworkSettings.Ports = v.HostConfig.PortBindings
 			}
 		case "update":
-			if !reflect.DeepEqual(a, []string{"update", "--restart=no", n}) {
+			if !reflect.DeepEqual(a, []string{"update", "--restart=no", n}) && !reflect.DeepEqual(a, []string{"update", "--restart=unless-stopped", n}) {
 				f.t.Fatal(a)
 			}
 			if !f.ignore["update"] {
-				v.HostConfig.RestartPolicy.Name = "no"
+				v.HostConfig.RestartPolicy.Name = strings.TrimPrefix(a[1], "--restart=")
 			}
 		case "stop":
 			if !reflect.DeepEqual(a, []string{"stop", "--time", "30", n}) {
@@ -307,6 +385,7 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 			}
 			if !f.ignore["stop"] {
 				v.State.Running = false
+				v.State.Restarting = false
 				v.NetworkSettings.Ports = nil
 			}
 		case "rm":

@@ -1,6 +1,6 @@
 # Staged runtime secrets
 
-Supported across Dockerfile-built, volume-free public and private services. Staging never builds an image, changes a route, or restarts a container. Values are applied only through deployment.
+Supported across Dockerfile-built public and private services, including volume-backed services. Staging never builds an image, changes a route, or restarts a container. Values are applied only through deployment.
 
 ## Stage, inspect, deploy
 

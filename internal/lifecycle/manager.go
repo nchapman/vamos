@@ -163,6 +163,9 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			return s, nil
 		}
 	} else {
+		if err := m.rejectRetainedVolumes(); err != nil {
+			return nil, err
+		}
 		// Retained secrets bind to the old host identity independently of app journals.
 		secretPath := m.path("/var/lib/soar/secrets")
 		if err := rejectSymlink(secretPath); err != nil {

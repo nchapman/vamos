@@ -38,6 +38,7 @@ Both `--yes` and `--purge` are required. The latter authorizes removal of owned 
 - Missing ownership evidence, active/incomplete or unexpected Soar app/state files, symlinked managed paths, or mounts at/under owned data directories (including app receipts).
 - Changed managed configuration/executor, systemd overrides, service-account/group changes, or changed package versions.
 - Docker containers (including stopped ones), images, volumes, custom networks, or build cache.
+- Retained volume registry ownership, even if a recorded volume is missing; purge does not delete app data. See [storage lifecycle](volumes.md).
 - Unmanaged containerd namespaces or containers/images/content in Docker's namespaces.
 - API-loaded Caddy configuration that differs from its managed file.
 - An APT purge plan that would remove anything outside the recorded package set.

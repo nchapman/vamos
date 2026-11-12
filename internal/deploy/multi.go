@@ -46,7 +46,7 @@ func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State
 	j := &journal{Version: 2, Status: Status{App: r.App, URL: "https://" + r.App + "." + r.Host.Domain, Phase: "building", Operation: r.Operation}, HostID: h.ID, Config: r.Config, Archive: r.Operation + ".context.tar", BundleSHA: bundleDigest(data), BuildImages: map[string]string{}, ServiceStates: map[string]*serviceState{}}
 	previousSlots := map[string]*serviceState{}
 	if old != nil && old.Phase != "destroyed" {
-		if old.Version == 2 {
+		if isMulti(old) {
 			previousSlots = old.ServiceStates
 			j.Completed = old.Completed
 			j.PreviousCompleted = old.PreviousCompleted
@@ -70,6 +70,9 @@ func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State
 		if prev := previousSlots[name]; prev != nil {
 			s.Current = prev.Current
 			s.CurrentRetired = prev.CurrentRetired
+			s.VolumeID = prev.VolumeID
+			s.Unavailable = prev.Unavailable
+			s.DataMayHaveChanged = prev.DataMayHaveChanged
 		}
 		s.New = s.Current == nil
 		j.ServiceStates[name] = s
@@ -110,6 +113,10 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if err != nil {
 			return
 		}
+		volumeState, volumeErr := m.planVolumes(r, j, next)
+		if volumeErr != nil {
+			return resp, volumeErr
+		}
 		if err = validateMultiJournal(next, r.App); err != nil {
 			return
 		}
@@ -120,7 +127,7 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 			return
 		}
 		if r.Supersede != "" {
-			if j == nil || j.Version != 2 || j.Operation != r.Supersede || (j.Phase != "building" && j.Phase != "updating") {
+			if j == nil || !isMulti(j) || j.Operation != r.Supersede || (j.Phase != "building" && j.Phase != "updating") {
 				return resp, errors.New("supersede does not match an incomplete multi-service operation")
 			}
 			if err = m.supersedeMulti(ctx, j); err != nil {
@@ -132,11 +139,16 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if err = atomic(filepath.Join(m.dir(r.App), next.Archive), data, 0600); err != nil {
 			return
 		}
+		if volumeState != nil {
+			if err = m.volumeStore().Save(volumeState); err != nil {
+				return
+			}
+		}
 		if err = m.save(next); err != nil {
 			return
 		}
 		j = next
-	} else if r.Action != "resume" || j == nil || j.Version != 2 || j.Operation != r.Operation {
+	} else if r.Action != "resume" || j == nil || !isMulti(j) || j.Operation != r.Operation {
 		return resp, errors.New("resume operation does not match")
 	}
 	defer func() {
@@ -161,6 +173,9 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 }
 
 func (m *Manager) supersedeMulti(ctx context.Context, j *journal) error {
+	if slot := j.ServiceStates[j.ActiveService]; j.NewCaddy != "" && slot != nil && slot.Phase == "withdrawing" {
+		return errors.New("public withdrawal is pending; resume before superseding")
+	}
 	for _, s := range j.ServiceStates {
 		if s.Phase == "draining" {
 			return errors.New("public retirement is pending; resume before superseding")
@@ -241,6 +256,9 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 	if err = m.multiBuild(ctx, j, archives); err != nil {
 		return err
 	}
+	if err = m.ensureVolumes(ctx, j); err != nil {
+		return err
+	}
 	if j.Phase == "building" {
 		// Commit planning as a whole so inspection failure leaves a retryable
 		// building journal, rather than a mixture of pending and prepared slots.
@@ -263,7 +281,7 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 				s.Phase = "ready"
 				continue
 			}
-			s.Candidate = &release{Service: name, Config: &cfg, Container: containerName(j.App, name, j.Operation), Image: image, Operation: j.Operation, SecretRefs: s.SecretRefs}
+			s.Candidate = &release{VolumeID: s.VolumeID, Service: name, Config: &cfg, Container: containerName(j.App, name, j.Operation), Image: image, Operation: j.Operation, SecretRefs: s.SecretRefs}
 			s.Phase = "prepared"
 		}
 		j.ServiceStates = planned
@@ -316,9 +334,31 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 func (m *Manager) advanceService(ctx context.Context, j *journal, name string) error {
 	s := j.ServiceStates[name]
 	public := j.Config.Services[name].HTTP != nil
+	if s.Phase == "prepared" && s.Candidate.Config.Volume != nil {
+		if err := m.multiEnsureRuntime(ctx, j, s.Candidate, true); err != nil {
+			return err
+		}
+		if public && !s.Unavailable {
+			s.Phase = "withdrawing"
+			if err := m.save(j); err != nil {
+				return err
+			}
+		}
+	}
+	if s.Phase == "withdrawing" {
+		if err := m.promote(ctx, j); err != nil {
+			return err
+		}
+		s.Unavailable = true
+		j.OldCaddy, j.NewCaddy = "", ""
+		s.Phase = "prepared"
+		if err := m.save(j); err != nil {
+			return err
+		}
+	}
 	if s.Phase == "prepared" {
 		s.Phase = "starting"
-		if !public && s.Current != nil {
+		if (!public || s.Candidate.Config.Volume != nil) && s.Current != nil {
 			s.CurrentRetired = true
 			s.Phase = "retiring"
 		}
@@ -337,7 +377,7 @@ func (m *Manager) advanceService(ctx context.Context, j *journal, name string) e
 	}
 	if s.Phase == "starting" {
 		// Prove the old private writer remains stopped on every resumed attempt.
-		if !public && s.Current != nil {
+		if (!public || s.Candidate.Config.Volume != nil) && s.Current != nil {
 			if err := m.multiRetire(ctx, j, s.Current); err != nil {
 				return err
 			}
@@ -377,6 +417,8 @@ func (m *Manager) advanceService(ctx context.Context, j *journal, name string) e
 			return err
 		}
 		s.Retiring = s.Current
+		s.CurrentRetired = false
+		s.Unavailable = false
 		s.Current = s.Candidate
 		s.Candidate = nil
 		s.Phase = "draining"

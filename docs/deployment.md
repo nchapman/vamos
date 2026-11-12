@@ -1,8 +1,10 @@
-# Stateless deployment
+# deployment
+
+See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
 Implemented: up to eight Dockerfile-built public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
 
-Not implemented: prebuilt images, custom domain aliases, volumes, manual update policies, scoped deployment, service removal, public/private kind changes, rollback, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
+Not implemented: prebuilt images, custom domain aliases, manual update policies, scoped deployment, service removal, public/private kind changes, rollback, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
 
 ## Deploy an app
 
@@ -31,7 +33,7 @@ services:
       health: /healthz
 ```
 
-Literal `env` values and a `command` argument array are supported. An image's default CMD/ENTRYPOINT are retained unless CMD is explicitly replaced. Image-declared volumes are refused, even if the YAML has no volumes, because this slice does not support stateful replacement. The app must listen on `0.0.0.0` inside its container.
+Literal `env` values and a `command` argument array are supported. An image's default CMD/ENTRYPOINT are retained unless CMD is explicitly replaced. Image-declared volumes are refused, even if the YAML has no volumes, because mounts must be explicitly owned and declared. The app must listen on `0.0.0.0` inside its container.
 
 ### Target selection
 
@@ -90,6 +92,8 @@ Host teardown deliberately refuses active/incomplete app state or Docker workloa
 `soar logs` reads a bounded snapshot from the current release, not an unbounded stream. Use `--service NAME` to select a service and `--candidate` to inspect a pending replacement. Without selection, logs choose `web`, or the only service; ambiguous apps require an explicit name. The output identifies the selected container. Line count defaults to 100 (maximum 1000); byte limits may truncate further. Output includes timestamps. Failed build diagnostics are bounded tails in the journal and error response. Logs can contain application-controlled data or secrets; Soar does not redact arbitrary application output.
 
 ## Verification
+
+Historical evidence below predates storage lifecycle acceptance unless explicitly noted. See [persistent volumes](volumes.md) for the storage boundary; no new live/full-suite results are implied.
 
 Offline tests exercise Docker ignore behavior, safe/limited capture, protocol/transport boundaries, project bindings, candidate replacement ordering, preservation of the live app on build/readiness failures, run-side-effect recovery, supersede matching/captured archives, journal validation, Caddy reload recovery/drift refusal, and bounded diagnostics. Docker/Caddy/systemd boundaries are mocked in these tests.
 

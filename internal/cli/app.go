@@ -23,7 +23,7 @@ import (
 )
 
 const appHelp = `Usage:
-  soar deploy [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--executor FILE]
+  soar deploy [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--reuse-data] [--executor FILE]
   soar status [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
   soar logs [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
   soar resume [--server NAME --app APP] OPERATION
@@ -34,6 +34,8 @@ All commands accept --executor FILE. Cleanup/destroy preview unless --yes.
 Lifecycle --json emits the full response (including the exact plan).
 
 Deploy updates the whole app. Private services use stop/start replacement.
+--reuse-data authorizes exact retained volume reuse after destroy (deploy only).
+Volume-backed replacements use stop/start, including public services; data is not rolled back.
 Flags precede positional arguments. Resume uses captured inputs, not local edits.
 Without --server, a project's first contact binds it to the registered default.
 An explicit --server overrides only this invocation; it never changes the binding.
@@ -61,6 +63,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	service := flags.String("service", "", "service selector (status/logs only)")
 	candidate := flags.Bool("candidate", false, "candidate logs (logs only)")
 	supersede := flags.String("supersede", "", "replace a stopped pre-promotion operation with new inputs")
+	reuseData := flags.Bool("reuse-data", false, "authorize exact retained volume reuse after destroy (deploy only)")
 	yes := flags.Bool("yes", false, "apply cleanup or destroy (default: preview)")
 	maintenance := action == "cleanup" || action == "destroy"
 	asJSON := flags.Bool("json", false, "JSON status")
@@ -79,8 +82,12 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return 2
 	}
 	yesProvided := false
+	reuseDataProvided := false
 	serviceProvided, candidateProvided := false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "reuse-data" {
+			reuseDataProvided = true
+		}
 		if f.Name == "service" {
 			serviceProvided = true
 		}
@@ -93,6 +100,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	})
 	if (serviceProvided && (action != "status" && action != "logs" || *service == "")) || (candidateProvided && action != "logs") {
 		return usageError(stderr, "--service is status/logs only; --candidate is logs only; deploy is whole-app")
+	}
+	if reuseDataProvided && action != "deploy" {
+		return usageError(stderr, "--reuse-data is deploy only")
 	}
 	if *timeout <= 0 || *tail < 1 || *tail > 1000 {
 		return usageError(stderr, "invalid timeout, service, or log tail")
@@ -157,6 +167,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if action == "deploy" {
 		request.Config = app
 		request.Supersede = *supersede
+		request.ReuseData = *reuseData
 		var id [16]byte
 		if _, err := rand.Read(id[:]); err != nil {
 			return lifecycleError(stderr, err)
@@ -190,6 +201,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		if _, err := fmt.Fprintln(stdout, "Whole-app deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
 			return lifecycleError(stderr, err)
 		}
+	}
+	if err := printVolumeWarnings(stdout, action, *supersede, app); err != nil {
+		return lifecycleError(stderr, err)
 	}
 	if mutation && !*asJSON {
 		if _, err := fmt.Fprintf(stdout, "%s / %s: %s (operation %s)\n", server.Name, name, action, request.Operation); err != nil {
@@ -240,6 +254,14 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return 0
 	}
 	if response.Status != nil && !*asJSON {
+		for _, volume := range response.Status.Volumes {
+			if *service != "" && volume.Service != *service {
+				continue
+			}
+			if _, err := fmt.Fprintf(stdout, "Volume: service=%q name=%q mount=%q id=%q state=%q missing=%t data-may-have-changed=%t\n", volume.Service, volume.Name, volume.Mount, volume.ID, volume.State, volume.Missing, volume.DataMayHaveChanged); err != nil {
+				return lifecycleError(stderr, err)
+			}
+		}
 		for _, secret := range response.Status.Secrets {
 			if len(secret.AppliedVersions) > 0 {
 				if _, err := fmt.Fprintf(stdout, "Secret %s applied by service: %v\n", secret.Name, secret.AppliedVersions); err != nil {
@@ -303,7 +325,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 					return lifecycleError(stderr, err)
 				}
 			}
-			if _, err := fmt.Fprintf(stdout, "%s / %s / %s: kind=%q phase=%q running=%t available=%t\nURL: %s\nOperation: %q\nContainer: %q\n", server.Name, name, serviceName, ss.Kind, ss.Phase, ss.Running, ss.Available, ss.URL, ss.Operation, ss.Container); err != nil {
+			if _, err := fmt.Fprintf(stdout, "%s / %s / %s: kind=%q phase=%q running=%t available=%t unavailable=%t data-may-have-changed=%t\nURL: %s\nOperation: %q\nContainer: %q\n", server.Name, name, serviceName, ss.Kind, ss.Phase, ss.Running, ss.Available, ss.Unavailable, ss.DataMayHaveChanged, ss.URL, ss.Operation, ss.Container); err != nil {
 				return lifecycleError(stderr, err)
 			}
 		}
@@ -335,4 +357,37 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	return 0
+}
+
+// Resume uses captured remote inputs, never the possibly edited local config.
+func printVolumeWarnings(out io.Writer, action, supersede string, app *config.App) error {
+	if action == "deploy" && app != nil {
+		names := make([]string, 0, len(app.Services))
+		for name := range app.Services {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			service := app.Services[name]
+			if service.Volume == nil {
+				continue
+			}
+			if _, err := fmt.Fprintf(out, "Volume: service=%q name=%q mount=%q (identity resolved remotely). Replacement uses stop/start", name, service.Volume.Name, service.Volume.Mount); err != nil {
+				return err
+			}
+			if service.HTTP != nil {
+				if _, err := fmt.Fprint(out, "; public requests receive HTTP 503 during replacement"); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(out, ". Data is retained. Starting new code may change it; no automatic rollback."); err != nil {
+				return err
+			}
+		}
+	}
+	if action == "resume" || (action == "deploy" && supersede != "") {
+		_, err := fmt.Fprintln(out, "If the captured operation uses volumes: data is retained and may already have changed; starting new code may change it further. No automatic rollback. Code must tolerate current data. Volume-backed replacement uses stop/start, with HTTP 503 for public services.")
+		return err
+	}
+	return nil
 }

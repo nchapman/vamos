@@ -113,7 +113,7 @@ func reserveJournalHostnames(all []*journal, domain string) error {
 				}
 			}
 		}
-		if j.Version != 2 {
+		if !isMulti(j) {
 			if j.Current != nil || j.Candidate != nil {
 				if e := claimHostname(claims, j.App, "web", domain); e != nil {
 					return e
@@ -189,7 +189,7 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		if other.App != j.App && other.NewCaddy != "" {
 			return "", errors.New("another app has pending promotion; resume it first")
 		}
-		if other.Version != 2 {
+		if !isMulti(other) {
 			r := other.Current
 			if other.App == j.App && candidate {
 				r = j.Candidate
@@ -201,8 +201,18 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		}
 		for name, slot := range other.ServiceStates {
 			r := slot.Current
+			unavailable := slot.Unavailable
 			if other.App == j.App && candidate && name == j.ActiveService {
+				unavailable = slot.Phase == "withdrawing"
 				r = slot.Candidate
+			}
+			if unavailable {
+				host := strings.TrimPrefix(ServiceURL(other.App, name, domain), "https://")
+				if _, exists := routes[host]; exists {
+					return "", errors.New("duplicate unavailable route")
+				}
+				routes[host] = "unavailable"
+				continue
 			}
 			if r == nil {
 				continue
@@ -225,6 +235,10 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 	sort.Strings(keys)
 	out := baseCaddy
 	for _, k := range keys {
+		if routes[k] == "unavailable" {
+			out += fmt.Sprintf("\n%s {\n\trespond \"Service unavailable\" 503\n}\n", k)
+			continue
+		}
 		out += fmt.Sprintf("\n%s {\n\treverse_proxy 127.0.0.1:%s\n}\n", k, routes[k])
 	}
 	return out, nil
@@ -263,21 +277,25 @@ func (m *Manager) verifyRoutes(c context.Context, j *journal) error {
 }
 
 func (m *Manager) routeCandidateHealthy(c context.Context, j *journal) error {
-	if j.Version != 2 {
+	if !isMulti(j) {
 		return m.healthy(c, j, j.Candidate)
 	}
 	if e := validateRouteCandidate(j); e != nil {
 		return e
 	}
-	return m.multiHealthy(c, j, j.ServiceStates[j.ActiveService].Candidate)
+	slot := j.ServiceStates[j.ActiveService]
+	if slot.Phase == "withdrawing" {
+		return nil
+	}
+	return m.multiHealthy(c, j, slot.Candidate)
 }
 
 func validateRouteCandidate(j *journal) error {
-	if j.Version != 2 {
+	if !isMulti(j) {
 		return nil
 	}
 	slot := j.ServiceStates[j.ActiveService]
-	if j.Phase != "updating" || slot == nil || slot.Phase != "promoting" || slot.Candidate == nil || slot.Candidate.Config == nil || slot.Candidate.Config.HTTP == nil {
+	if j.Phase != "updating" || slot == nil || (slot.Phase != "promoting" && slot.Phase != "withdrawing") || slot.Candidate == nil || slot.Candidate.Config == nil || slot.Candidate.Config.HTTP == nil {
 		return errors.New("invalid service promotion")
 	}
 	return nil

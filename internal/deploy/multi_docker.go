@@ -97,7 +97,11 @@ func multiIdentity(j *journal, r *release) error {
 		return errors.New("captured runtime secrets mismatch")
 	}
 	if r.Config.Volume != nil {
-		return errors.New("runtime volumes are unsupported")
+		if j.Version != 3 || r.Service == "" || !operation.MatchString(r.VolumeID) {
+			return errors.New("invalid runtime volume identity")
+		}
+	} else if r.VolumeID != "" || r.ExecutionIntent {
+		return errors.New("unexpected runtime volume intent")
 	}
 	if r.Service == "" && r.Config.HTTP == nil {
 		return errors.New("invalid legacy runtime configuration")
@@ -223,8 +227,11 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 	if err != nil {
 		return nil, errors.New("inspect runtime container failed")
 	}
-	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Labels["soar.service"] != r.Service || (r.Service == "" && hasServiceLabel(v.Config.Labels)) || ((r.Service != "" || v.Name != "") && strings.TrimPrefix(v.Name, "/") != r.Container) || v.Config.Image != r.Image || len(v.Mounts) != 0 || len(v.Config.Volumes) != 0 {
+	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Labels["soar.service"] != r.Service || (r.Service == "" && hasServiceLabel(v.Config.Labels)) || ((r.Service != "" || v.Name != "") && strings.TrimPrefix(v.Name, "/") != r.Container) || v.Config.Image != r.Image || len(v.Config.Volumes) != 0 {
 		return nil, errors.New("foreign or unsafe runtime container")
+	}
+	if err := m.verifyRuntimeMounts(ctx, j, r, v); err != nil {
+		return nil, err
 	}
 	attached := len(v.NetworkSettings.Networks) == 1 && v.NetworkSettings.Networks[network(j)] != nil
 	if !attached && !(allowDetached && len(v.NetworkSettings.Networks) == 0) {
@@ -345,7 +352,10 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 				return nil, errors.New("unexpected runtime published port")
 			}
 		}
-		if attached && v.State.Running {
+		// Docker withdraws effective ports during restart backoff while reporting
+		// Running=true. Static bindings remain mandatory; start/health admission
+		// separately rejects Restarting. Inspection must still permit retirement.
+		if attached && v.State.Running && !v.State.Restarting {
 			effective := v.NetworkSettings.Ports[key]
 			expected := r.PublishPort
 			if expected == "" {
@@ -369,14 +379,20 @@ func unsafeMultiHostConfig(v *inspection) bool {
 func hasServiceLabel(labels map[string]string) bool { _, ok := labels["soar.service"]; return ok }
 
 func (m *Manager) multiEnsureCandidate(ctx context.Context, j *journal, r *release) error {
+	return m.multiEnsureRuntime(ctx, j, r, false)
+}
+
+// Volume candidates are created stopped and inspected before route withdrawal
+// or retiring a writer. The same captured identity is later started explicitly.
+func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release, prepareOnly bool) error {
 	if err := multiIdentity(j, r); err != nil {
 		return err
 	}
 	slot := j.ServiceStates[r.Service]
-	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || slot.Candidate.Container != r.Container || slot.Phase != "starting" {
+	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || slot.Candidate.Container != r.Container || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (r.Config.Volume == nil || slot.Phase != "prepared")) {
 		return errors.New("candidate creation requires starting intent")
 	}
-	if r.Config.HTTP == nil && slot.Current != nil {
+	if !prepareOnly && (r.Config.HTTP == nil || r.Config.Volume != nil) && slot.Current != nil {
 		if !slot.CurrentRetired {
 			return errors.New("private retirement intent missing")
 		}
@@ -437,6 +453,9 @@ func (m *Manager) multiEnsureCandidate(ctx context.Context, j *journal, r *relea
 			return errors.New("private service publishes ports")
 		}
 		args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j)}
+		if r.Config.Volume != nil {
+			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", network(j), "--mount", volumeMountArgument("soar-vol-"+r.VolumeID, r.Config.Volume.Mount)}
+		}
 		if r.Config.HTTP != nil {
 			args = append(args, "--publish", fmt.Sprintf("127.0.0.1:%s:%d", r.PublishPort, r.Config.HTTP.Port))
 		} else {
@@ -460,6 +479,36 @@ func (m *Manager) multiEnsureCandidate(ctx context.Context, j *journal, r *relea
 	v, err := m.multiInspect(ctx, j, r, false, r.Config.HTTP == nil)
 	if err != nil {
 		return err
+	}
+	if prepareOnly {
+		if v.State.Running || v.State.Restarting || v.HostConfig.RestartPolicy.Name != "no" || r.ExecutionIntent {
+			return errors.New("volume candidate executed before preparation completed")
+		}
+		return nil
+	}
+	if r.Config.Volume != nil {
+		if err := m.checkVolumeWriters(ctx, j, r); err != nil {
+			return err
+		}
+		if !r.ExecutionIntent {
+			if v.State.Running || v.State.Restarting || v.HostConfig.RestartPolicy.Name != "no" {
+				return errors.New("volume candidate execution was not captured")
+			}
+			r.ExecutionIntent = true
+			slot.DataMayHaveChanged = true
+			if err := m.save(j); err != nil {
+				return err
+			}
+		}
+		if v.HostConfig.RestartPolicy.Name == "no" {
+			if _, err := m.cmd(ctx, "docker", "update", "--restart=unless-stopped", r.Container); err != nil {
+				return err
+			}
+			v, err = m.multiInspect(ctx, j, r, false, r.Config.HTTP == nil)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	if v.HostConfig.RestartPolicy.Name != "unless-stopped" {
 		return errors.New("candidate retirement has begun")
@@ -589,7 +638,7 @@ func (m *Manager) multiAdmitAlias(ctx context.Context, j *journal, r *release) e
 	// Compare with the fully verified pre-admission object. Effective port/IP
 	// drift is precisely a reason to withdraw, not permission to ignore a
 	// different container, labels, environment, or configured publish intent.
-	if verifyErr != nil || beforeWithdrawal.ID != v.ID || beforeWithdrawal.Name != v.Name || !reflect.DeepEqual(beforeWithdrawal.Config, v.Config) || !reflect.DeepEqual(beforeWithdrawal.HostConfig, v.HostConfig) || len(beforeWithdrawal.Mounts) != 0 {
+	if verifyErr != nil || beforeWithdrawal.ID != v.ID || beforeWithdrawal.Name != v.Name || !reflect.DeepEqual(beforeWithdrawal.Config, v.Config) || !reflect.DeepEqual(beforeWithdrawal.HostConfig, v.HostConfig) || !reflect.DeepEqual(beforeWithdrawal.Mounts, v.Mounts) {
 		return errors.New("candidate readiness failed; endpoint withdrawal unconfirmed")
 	}
 	if len(beforeWithdrawal.NetworkSettings.Networks) == 0 {
@@ -678,7 +727,7 @@ func (m *Manager) multiStop(ctx context.Context, j *journal, r *release, allowDe
 	if err != nil {
 		return err
 	}
-	if v.State.Running || v.State.Restarting || v.HostConfig.RestartPolicy.Name != "no" {
+	if v.State.Running || v.State.Restarting || v.State.Paused || v.HostConfig.RestartPolicy.Name != "no" {
 		return errors.New("runtime retirement not proven")
 	}
 	return nil

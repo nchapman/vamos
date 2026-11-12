@@ -4,16 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    env:
-      DATABASE_PATH: /data/journal.sqlite
-      UPLOAD_PATH: /data/uploads
-    secrets:
-      SESSION_SECRET: session-secret
     volume:
       name: data
       mount: /data
     http:
       port: 8080
       health: /readyz
-      domains:
-        - journal.example.com

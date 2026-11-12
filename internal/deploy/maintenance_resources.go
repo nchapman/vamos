@@ -76,7 +76,7 @@ func resourceContainer(v *resourceInspection, j *journal, r resourceRow) error {
 	if service, present := v.Config.Labels["soar.service"]; present && service == "" {
 		return errors.New("empty maintenance service label")
 	}
-	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || len(v.Mounts) != 0 || len(v.Config.Volumes) != 0 || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
+	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (j.Version != 3 && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || len(v.Config.Volumes) != 0 || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
 		return errors.New("unsafe or changed maintenance container")
 	}
 	return nil
@@ -205,6 +205,9 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		return nil, errors.New("invalid maintenance request")
 	}
 	w := &maintenance{Action: action, Operation: op, Plan: Plan{Action: action, App: j.App}}
+	if err := m.maintenanceVolumes(ctx, j, &w.Plan); err != nil {
+		return nil, err
+	}
 	keep := map[string]bool{j.Operation: true}
 	for _, snapshot := range []*completedRelease{j.Completed, j.PreviousCompleted} {
 		if snapshot != nil {
@@ -238,7 +241,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 			}
 			continue
 		}
-		if e = resourceContainer(v, j, r); e != nil {
+		if e = m.verifyResourceContainer(ctx, v, j, r); e != nil {
 			return nil, e
 		}
 		o := v.Config.Labels["soar.operation"]
@@ -425,7 +428,7 @@ func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p pl
 	if e != nil {
 		return nil, e
 	}
-	if e = resourceContainer(v, j, resourceRow{ID: p.ID, Name: p.Name}); e != nil {
+	if e = m.verifyResourceContainer(ctx, v, j, resourceRow{ID: p.ID, Name: p.Name}); e != nil {
 		return nil, e
 	}
 	if v.Image != p.Image || v.Config.Labels["soar.operation"] != p.Operation || v.Config.Labels["soar.service"] != p.Service {
@@ -463,6 +466,9 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 	if w.Action != "cleanup" && w.Action != "destroy" {
 		return errors.New("invalid maintenance action")
 	}
+	if err := m.maintenanceVolumes(ctx, j, nil); err != nil {
+		return err
+	}
 	for _, p := range w.Containers {
 		if w.Network != nil && p.NetworkID != w.Network.ID {
 			return errors.New("planned container network identity mismatch")
@@ -481,6 +487,9 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			}
 			if w.Action == "cleanup" && v.State.Running {
 				return errors.New("cleanup container started since planning")
+			}
+			if j.Version == 3 && args[1] == "rm" && (v.State.Running || v.State.Restarting || v.State.Paused || (w.Action == "destroy" && v.HostConfig.RestartPolicy.Name != "no")) {
+				return errors.New("container writers are not proven stopped")
 			}
 			if _, e = m.cmd(ctx, "docker", args...); e != nil {
 				return e
@@ -593,6 +602,116 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 		}
 		if e = syncResourceDir(m.dir(j.App)); e != nil {
 			return e
+		}
+	}
+	return nil
+}
+
+// Validate historical candidates by registry binding plus immutable image and
+// container provenance, without recursively enumerating volume references.
+func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspection, j *journal, row resourceRow) error {
+	if err := resourceContainer(v, j, row); err != nil {
+		return err
+	}
+	if j.Version != 3 {
+		return nil
+	}
+	s, err := m.volumeStore().Load(j.App, j.HostID)
+	if err != nil {
+		return err
+	}
+	service := v.Config.Labels["soar.service"]
+	if s == nil || s.Records[service].ID == "" {
+		if len(v.Mounts)+len(v.HostConfig.Mounts)+len(v.HostConfig.VolumesFrom) != 0 {
+			return errors.New("unregistered maintenance mounts")
+		}
+		return nil
+	}
+	rec := s.Records[service]
+	if rec.State != "created" {
+		return errors.New("maintenance volume is not created")
+	}
+	if _, yes, err := m.inspectVolume(ctx, j, rec); err != nil {
+		return err
+	} else if !yes {
+		return errors.New("maintenance volume missing")
+	}
+	if err := validateVolumeMounts(&v.inspection, rec); err != nil {
+		return err
+	}
+	image, err := m.resourceInspect(ctx, "image", v.Image)
+	if err != nil {
+		return err
+	}
+	if image.ID != v.Image || len(image.Config.Volumes) != 0 {
+		return errors.New("maintenance volume container image provenance differs")
+	}
+	proven := false
+	op := v.Config.Labels["soar.operation"]
+	for _, rel := range retainedReleases(j) {
+		if rel.Container == row.Name && rel.Service == service && rel.Operation == op && rel.VolumeID == rec.ID && rel.Image == v.Config.Image {
+			proven = true
+		}
+	}
+	if !proven {
+		entries, err := os.ReadDir(m.dir(j.App))
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			match := resourceFile.FindStringSubmatch(entry.Name())
+			if match == nil || match[1] != op || !strings.HasSuffix(match[2], "image.iid") {
+				continue
+			}
+			b, _, err := resourceRead(filepath.Join(m.dir(j.App), entry.Name()), 128)
+			if err != nil {
+				return err
+			}
+			if imageID.MatchString(v.Config.Image) && strings.TrimSpace(string(b)) == v.Config.Image {
+				proven = true
+			}
+		}
+	}
+	if !proven {
+		return errors.New("maintenance container lacks captured image provenance")
+	}
+	return nil
+}
+
+func (m *Manager) maintenanceVolumes(ctx context.Context, j *journal, plan *Plan) error {
+	if j.Version != 3 {
+		p := filepath.Join(m.volumeStore().Root, j.App+".json")
+		if _, err := os.Lstat(p); errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+	}
+	s, err := m.volumeStore().Load(j.App, j.HostID)
+	if err != nil || s == nil {
+		return err
+	}
+	names := make([]string, 0, len(s.Records))
+	for name := range s.Records {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		rec := s.Records[name]
+		if _, yes, e := m.inspectVolume(ctx, j, rec); e != nil {
+			return e
+		} else if !yes && rec.State == "created" {
+			return errors.New("retained volume missing")
+		}
+		if e := m.volumeReferences(ctx, j, rec, "", true); e != nil {
+			return e
+		}
+		if plan != nil {
+			plan.Retained = append(plan.Retained, "volume "+name+"/"+rec.Name+": retained; data is never deleted")
+		}
+	}
+	if plan != nil {
+		b, e := json.Marshal(plan)
+		if e != nil || len(b) > 8192 {
+			return errors.New("maintenance metadata exceeds plan limit")
 		}
 	}
 	return nil

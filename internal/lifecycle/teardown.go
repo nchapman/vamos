@@ -62,6 +62,9 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if s.Config.Name != name {
 		return nil, errors.New("server name does not match the host ownership manifest")
 	}
+	if err := m.rejectRetainedVolumes(); err != nil {
+		return nil, err
+	}
 	if s.Phase == "removed" {
 		return s, nil
 	}

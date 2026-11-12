@@ -19,14 +19,14 @@ func maintenanceStatus(j *journal, domain string) Status {
 	} else if j.LastMaintenanceOperation != "" {
 		s.Operation = j.LastMaintenanceOperation
 	}
-	if j.Version == 2 {
+	if isMulti(j) {
 		s.URL, s.Container, s.Running = "", "", false
 		s.Services = map[string]ServiceStatus{}
 		for name, slot := range j.ServiceStates {
 			if slot == nil {
 				continue
 			}
-			status := ServiceStatus{Phase: slot.Phase}
+			status := ServiceStatus{Phase: slot.Phase, Unavailable: slot.Unavailable, DataMayHaveChanged: slot.DataMayHaveChanged}
 			if r := slot.Current; r != nil {
 				status.Kind = "private"
 				status.Operation, status.Container, status.Image, status.Port = r.Operation, r.Container, r.Image, r.Port
@@ -210,7 +210,7 @@ func (m *Manager) destroyRoutes(j *journal) (string, string, error) {
 	clone.Candidate = nil
 	// Do not mutate the original slots: their current releases still authorize
 	// resource checks after all public routes have been withdrawn.
-	if j.Version == 2 {
+	if isMulti(j) {
 		clone.ServiceStates = nil
 	}
 	next, e := m.routes(&clone, true)
@@ -303,7 +303,7 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 					s.LastError = diagnostic(x.Error())
 				}
 			}
-			if j.Version == 2 {
+			if isMulti(j) {
 				s.Running = len(j.ServiceStates) > 0
 				for name, slot := range j.ServiceStates {
 					if slot == nil || slot.Current == nil {
@@ -316,7 +316,7 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 					v, x := m.multiInspect(c, j, slot.Current, false, true)
 					status := s.Services[name]
 					status.Running = x == nil && v.State.Running
-					status.Available = status.Running && runtimeRunning(v) && !slot.CurrentRetired && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
+					status.Available = status.Running && runtimeRunning(v) && !slot.CurrentRetired && !slot.Unavailable && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
 					s.Services[name] = status
 					s.Running = s.Running && status.Running
 					if x != nil && j.Phase != "destroying" && s.LastError == "" {
@@ -339,7 +339,7 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 			action = "destroy"
 		}
 		resp.Plan = &Plan{Action: action, App: j.App}
-		return resp, nil
+		return resp, m.maintenanceVolumes(c, j, resp.Plan)
 	}
 	if r.Action == "resume" && j.Maintenance == nil {
 		if r.Operation != j.LastMaintenanceOperation {

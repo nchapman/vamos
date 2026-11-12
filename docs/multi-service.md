@@ -1,4 +1,6 @@
-# Stateless multi-service apps
+# multi-service apps
+
+See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
 Soar supports **1–8 Dockerfile-built services per app**. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing. No database/storage semantics are implied.
 
@@ -34,7 +36,7 @@ soar deploy --supersede OPERATION_ID
 
 Flags precede positional arguments. Deploy is **whole-app**; `--service` is currently supported only by status/logs. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
 
-Prebuilt `image`, volumes, `update: manual`, custom domains, scoped deploy, service removal, public/private kind changes, rollback, and migration/one-off commands remain unsupported. Omitting an effective service is an error, never deletion authorization.
+Prebuilt `image`, `update: manual`, custom domains, scoped deploy, service removal, public/private kind changes, rollback, and migration/one-off commands remain unsupported. Omitting an effective service is an error, never deletion authorization.
 
 ## Deployment and partial success
 
@@ -79,6 +81,8 @@ The supported host uses Soar's Docker-managed bridge/NAT configuration. Deployme
 - Local Docker inspection remains bounded at 8 MiB per stream. Mutations retain the existing global host lock and worker deadlines. This milestone does not add a scheduler or background control-plane daemon.
 
 ## Verification
+
+Historical evidence below predates storage lifecycle acceptance unless explicitly noted. See [persistent volumes](volumes.md) for the storage boundary; no new live/full-suite results are implied.
 
 Offline tests cover bundle integrity/deduplication, aggregate bounds, hostname collisions, multi-route promotion and drift, captured secrets across partial success, public alias admission/lost responses, cancellation of proven-old pending promotions (including interrupted candidate removal), refusal of uncertain cancellation, private stop-before-start/restart-loop detection, supersede, meaningful completed snapshots, legacy migration, status/log selection, cross-app resource references, and multi-service cleanup/destruction.
 
