@@ -103,7 +103,9 @@ func (m *Manager) checkMounts() error {
 	if err != nil {
 		return fmt.Errorf("cannot verify owned paths are not mounted: %w", err)
 	}
-	return checkMountInfo(data, dataPaths)
+	// Completed app receipts are also explicitly removed during host purge,
+	// but are not recursive dataPaths: each receipt is validated separately.
+	return checkMountInfo(data, append(append([]string{}, dataPaths...), "/var/lib/soar/apps"))
 }
 
 func checkMountInfo(data []byte, paths []string) error {

@@ -70,6 +70,22 @@ func (m *Manager) container(c context.Context, j *journal, r *release) (*inspect
 	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Image != r.Image || len(v.Mounts) != 0 || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
 		return nil, errors.New("foreign or unsafe container")
 	}
+	if r.PublishPort != "" {
+		key := ""
+		for k := range v.HostConfig.PortBindings {
+			key = k
+		}
+		configured := v.HostConfig.PortBindings[key]
+		if len(v.HostConfig.PortBindings) != 1 || len(configured) != 1 || configured[0].HostIP != "127.0.0.1" || configured[0].HostPort != r.PublishPort {
+			return nil, errors.New("configured port differs from recorded intent")
+		}
+		if v.State.Running {
+			effective := v.NetworkSettings.Ports[key]
+			if len(effective) != 1 || effective[0].HostIP != "127.0.0.1" || effective[0].HostPort != r.PublishPort {
+				return nil, errors.New("effective port differs from recorded intent")
+			}
+		}
+	}
 	return v, nil
 }
 
@@ -159,6 +175,9 @@ func (m *Manager) healthy(c context.Context, j *journal, r *release) error {
 		p, e := strconv.Atoi(ports[0].HostPort)
 		if e != nil || p < 1 || p > 65535 {
 			return errors.New("invalid published port")
+		}
+		if r.PublishPort != "" && r.PublishPort != ports[0].HostPort {
+			return errors.New("published port differs from recorded intent")
 		}
 		if r.Port != "" && r.Port != ports[0].HostPort {
 			return errors.New("published port changed")
@@ -271,8 +290,27 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 			return e
 		}
 		if !yes {
-			if r.Port != "" {
+			if r.Port != "" && r.PublishPort == "" {
 				return errors.New("recorded endpoint missing; refusing recreation")
+			}
+			if r.PublishPort == "" {
+				allocator := m.AllocatePort
+				if allocator == nil {
+					allocator = allocatePort
+				}
+				port, err := allocator()
+				if err != nil {
+					return err
+				}
+				p, err := strconv.Atoi(port)
+				if err != nil || p < 1 || p > 65535 || strconv.Itoa(p) != port {
+					return errors.New("invalid allocated port")
+				}
+				r.PublishPort = port
+				// Persist intent before Docker can create anything, including a lost response.
+				if err := m.save(j); err != nil {
+					return err
+				}
 			}
 			v, e := m.inspect(c, "image", r.Image)
 			if e != nil {
@@ -281,7 +319,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 			if len(v.Config.Volumes) > 0 {
 				return errors.New("image declares volumes")
 			}
-			args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j), "--publish", fmt.Sprintf("127.0.0.1::%d", s.HTTP.Port), "--label", "soar.host=" + j.HostID, "--label", "soar.app=" + j.App, "--label", "soar.operation=" + j.Operation}
+			args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j), "--publish", fmt.Sprintf("127.0.0.1:%s:%d", r.PublishPort, s.HTTP.Port), "--label", "soar.host=" + j.HostID, "--label", "soar.app=" + j.App, "--label", "soar.operation=" + j.Operation}
 			keys := make([]string, 0, len(s.Env))
 			for k := range s.Env {
 				keys = append(keys, k)
@@ -343,6 +381,9 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 
 // Adoption requires a candidate that has not begun retirement.
 func (m *Manager) candidate(c context.Context, j *journal, r *release) (*inspection, error) {
+	if r.PublishPort == "" {
+		return nil, errors.New("legacy dynamic candidate requires ordinary redeployment")
+	}
 	v, e := m.verifyCandidate(c, j, r)
 	if e != nil {
 		return nil, e
@@ -401,7 +442,7 @@ func (m *Manager) verifyCandidate(c context.Context, j *journal, r *release) (*i
 		cmd = im.Config.Cmd
 	}
 	ports := v.HostConfig.PortBindings[fmt.Sprint(s.HTTP.Port)+"/tcp"]
-	if !reflect.DeepEqual(env, actual) || !reflect.DeepEqual(cmd, v.Config.Cmd) || v.HostConfig.Privileged || len(v.HostConfig.Binds) != 0 || v.HostConfig.NetworkMode != network(j) || len(v.HostConfig.PortBindings) != 1 || len(ports) != 1 || ports[0].HostIP != "127.0.0.1" {
+	if !reflect.DeepEqual(env, actual) || !reflect.DeepEqual(cmd, v.Config.Cmd) || v.HostConfig.Privileged || len(v.HostConfig.Binds) != 0 || v.HostConfig.NetworkMode != network(j) || len(v.HostConfig.PortBindings) != 1 || len(ports) != 1 || ports[0].HostIP != "127.0.0.1" || (r.PublishPort != "" && ports[0].HostPort != r.PublishPort) {
 		return nil, errors.New("candidate immutable configuration mismatch")
 	}
 	return v, nil

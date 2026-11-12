@@ -34,7 +34,13 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		if e != nil {
 			return "", e
 		}
-		if other.HostID != j.HostID || strings.TrimPrefix(other.URL, "https://"+other.App+".") != strings.TrimPrefix(j.URL, "https://"+j.App+".") {
+		if other.HostID != j.HostID {
+			return "", errors.New("foreign app journal")
+		}
+		if other.Phase == "destroyed" {
+			continue
+		}
+		if strings.TrimPrefix(other.URL, "https://"+other.App+".") != strings.TrimPrefix(j.URL, "https://"+j.App+".") {
 			return "", errors.New("foreign app journal")
 		}
 		if other.App != j.App && other.NewCaddy != "" {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,12 +18,14 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/nchapman/soar/internal/appstate"
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/lifecycle"
 	"github.com/nchapman/soar/internal/process"
 )
 
 type Request struct {
+	Apply     bool             `json:"apply,omitempty"`
 	Supersede string           `json:"supersede,omitempty"`
 	Version   int              `json:"version"`
 	Action    string           `json:"action"`
@@ -33,6 +36,7 @@ type Request struct {
 	Tail      int              `json:"tail,omitempty"`
 }
 type Response struct {
+	Plan    *Plan   `json:"plan,omitempty"`
 	Version int     `json:"version"`
 	Status  *Status `json:"status,omitempty"`
 	Logs    string  `json:"logs,omitempty"`
@@ -49,13 +53,17 @@ type Status struct {
 	Running   bool   `json:"running"`
 }
 type release struct {
-	Container string
-	Image     string
-	Port      string
-	Operation string
+	Container   string
+	Image       string
+	Port        string
+	PublishPort string
+	Operation   string
 }
 type journal struct {
-	Version int `json:"version"`
+	Maintenance              *maintenance `json:",omitempty"`
+	LastMaintenanceOperation string       `json:",omitempty"`
+	LastMaintenanceAction    string       `json:",omitempty"`
+	Version                  int          `json:"version"`
 	Status
 	Archive                      string
 	HostID                       string
@@ -65,11 +73,25 @@ type journal struct {
 }
 type Runner func(context.Context, string, []string, []byte) (process.Result, error)
 type Manager struct {
+	// AllocatePort selects an advisory loopback reservation. Docker's bind is authoritative.
+	AllocatePort  func() (string, error)
 	Root          string
 	Run           Runner
 	HTTP          *http.Client
 	HealthTimeout time.Duration
 	Drain         time.Duration
+}
+
+func allocatePort() (string, error) {
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	if err := l.Close(); err != nil {
+		return "", err
+	}
+	return port, nil
 }
 
 func NewManager() *Manager {
@@ -117,6 +139,9 @@ func ValidateRequest(r Request) error {
 	if r.Tail < 0 || r.Tail > 1000 {
 		return errors.New("tail must be between 0 and 1000")
 	}
+	if r.Apply && r.Action != "cleanup" && r.Action != "destroy" {
+		return errors.New("apply requires maintenance action")
+	}
 	switch r.Action {
 	case "deploy":
 		if !operation.MatchString(r.Operation) {
@@ -127,6 +152,10 @@ func ValidateRequest(r Request) error {
 		}
 		if r.Config.Name != r.App {
 			return errors.New("config app mismatch")
+		}
+	case "cleanup", "destroy":
+		if !operation.MatchString(r.Operation) || r.Config != nil {
+			return errors.New("maintenance requires operation ID and no config")
 		}
 	case "resume":
 		if !operation.MatchString(r.Operation) || r.Config != nil {
@@ -209,6 +238,9 @@ func (m *Manager) save(j *journal) error {
 	if e != nil {
 		return e
 	}
+	if len(b) > 2<<20 {
+		return errors.New("journal too large")
+	}
 	return atomic(filepath.Join(m.dir(j.App), "state.json"), b, 0600)
 }
 func (m *Manager) load(app string) (*journal, error) {
@@ -230,6 +262,20 @@ func (m *Manager) load(app string) (*journal, error) {
 	}
 	if len(b) > 2<<20 {
 		return nil, errors.New("journal too large")
+	}
+	var probe struct {
+		Phase  string
+		HostID string
+	}
+	if e = json.Unmarshal(b, &probe); e != nil {
+		return nil, e
+	}
+	if probe.Phase == "destroyed" {
+		t, x := appstate.Decode(strings.NewReader(string(b)), app, probe.HostID)
+		if x != nil {
+			return nil, x
+		}
+		return &journal{Version: t.Version, Status: Status{App: t.App, Operation: t.Operation, Phase: t.Phase}, HostID: t.HostID}, nil
 	}
 	var j journal
 	d := json.NewDecoder(strings.NewReader(string(b)))
@@ -264,7 +310,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	if err = ValidateRequest(r); err != nil {
 		return
 	}
-	mut := r.Action == "deploy" || r.Action == "resume"
+	mut := r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy"
 	if len(tar) > 32<<20 || (r.Action != "deploy" && len(tar) > 0) {
 		err = errors.New("invalid context archive size or action")
 		return
@@ -304,7 +350,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		err = e
 		return
 	}
-	if j != nil && (j.HostID != h.ID || j.URL != "https://"+r.App+"."+h.Config.Domain) {
+	if j != nil && (j.HostID != h.ID || (j.Phase != "destroyed" && j.URL != "https://"+r.App+"."+h.Config.Domain)) {
 		err = errors.New("foreign app journal")
 		return
 	}
@@ -315,13 +361,13 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			err = errors.New("app is unmanaged")
 			return
 		}
-		s := j.Status
+		s := maintenanceStatus(j, r.Host.Domain)
 		s.Active = !ok
 		if j.Current != nil {
 			s.Container = j.Current.Container
 			v, x := m.container(ctx, j, j.Current)
 			s.Running = x == nil && v.State.Running
-			if x != nil {
+			if x != nil && j.Phase != "destroying" {
 				s.LastError = diagnostic(x.Error())
 			}
 		}
@@ -344,9 +390,15 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		}
 		return
 	}
-	if j != nil && (j.HostID != h.ID || j.URL != "https://"+r.App+"."+h.Config.Domain) {
+	if j != nil && (j.HostID != h.ID || (j.Phase != "destroyed" && j.URL != "https://"+r.App+"."+h.Config.Domain)) {
 		err = errors.New("foreign app journal")
 		return
+	}
+	if err = m.maintenanceFence(r); err != nil {
+		return
+	}
+	if r.Action == "cleanup" || r.Action == "destroy" || (r.Action == "resume" && j != nil && (j.Maintenance != nil || j.Phase == "destroyed" || j.LastMaintenanceOperation == r.Operation)) {
+		return m.executeMaintenance(ctx, r, j)
 	}
 	if r.Action == "deploy" {
 		if len(tar) == 0 {
@@ -372,7 +424,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 				return
 			}
 		}
-		if j != nil && j.Phase != "ready" && r.Supersede == "" {
+		if j != nil && j.Phase != "ready" && j.Phase != "destroyed" && r.Supersede == "" {
 			err = errors.New("incomplete operation requires explicit resume")
 			return
 		}
@@ -397,7 +449,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			j.LastError = diagnostic(err.Error())
 			err = errors.Join(err, m.save(j))
 		}
-		s := j.Status
+		s := maintenanceStatus(j, r.Host.Domain)
 		s.Running = false
 		if j.Current != nil {
 			s.Container = j.Current.Container
@@ -478,6 +530,15 @@ func diagnostic(s string) string {
 }
 func validateJournal(j *journal, app string) error {
 	bad := errors.New("invalid app journal")
+	if j.Phase == "destroyed" {
+		if j.Config != nil || j.Current != nil || j.Previous != nil || j.Candidate != nil || j.Maintenance != nil || j.URL != "" || j.Archive != "" || j.OldCaddy != "" || j.NewCaddy != "" {
+			return bad
+		}
+		return (appstate.Tombstone{Version: j.Version, App: j.App, Operation: j.Operation, Phase: j.Phase, HostID: j.HostID}).Validate(app, j.HostID)
+	}
+	if err := validateMaintenance(j); err != nil {
+		return err
+	}
 	if j.Version != 1 || len(app) > 63 || !label.MatchString(app) || j.App != app || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" {
 		return bad
 	}
@@ -491,7 +552,7 @@ func validateJournal(j *journal, app string) error {
 		if j.Candidate == nil {
 			return bad
 		}
-	case "ready", "draining":
+	case "ready", "draining", "cleaning", "destroying":
 		if j.Current == nil {
 			return bad
 		}
@@ -508,11 +569,17 @@ func validateJournal(j *journal, app string) error {
 		if !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
 			return bad
 		}
-		if r.Port != "" {
-			p, e := strconv.Atoi(r.Port)
-			if e != nil || p < 1 || p > 65535 || strconv.Itoa(p) != r.Port {
+		for _, port := range []string{r.Port, r.PublishPort} {
+			if port == "" {
+				continue
+			}
+			p, e := strconv.Atoi(port)
+			if e != nil || p < 1 || p > 65535 || strconv.Itoa(p) != port {
 				return bad
 			}
+		}
+		if r.PublishPort != "" && r.Port != "" && r.PublishPort != r.Port {
+			return bad
 		}
 	}
 	if j.Current != nil && j.Current.Port == "" {

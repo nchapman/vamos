@@ -2,7 +2,7 @@
 
 ## Supported boundary
 
-Root SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm64. The client runs on macOS, Linux, or Windows and needs OpenSSH, not Docker or APT. Trust the SSH host key separately. No sudo escalation, distribution-independent installer, external package repository, or adoption of existing Docker/Caddy installations is implemented. The separate [deployment slice](deployment.md) can subsequently manage app routes; host teardown still refuses app state/workloads.
+Root SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm64. The client runs on macOS, Linux, or Windows and needs OpenSSH, not Docker or APT. Trust the SSH host key separately. No sudo escalation, distribution-independent installer, external package repository, or adoption of existing Docker/Caddy installations is implemented. The separate [deployment slice](deployment.md) can subsequently manage app routes; host teardown still refuses active/incomplete app state and workloads. It can purge only strict, matching-host [completed app destruction receipts](app-lifecycle.md) with no other app files.
 
 ```sh
 mise run build
@@ -34,14 +34,14 @@ A repeated add with the same name/domain verifies a ready host without reinstall
 
 Both `--yes` and `--purge` are required. The latter authorizes removal of owned runtime data and certificates; it **does not** authorize deleting workloads. Teardown checks the journal and name, then refuses:
 
-- Missing ownership evidence, unexpected Soar app/state files, symlinked managed paths, or mounts at/under owned data directories.
+- Missing ownership evidence, active/incomplete or unexpected Soar app/state files, symlinked managed paths, or mounts at/under owned data directories (including app receipts).
 - Changed managed configuration/executor, systemd overrides, service-account/group changes, or changed package versions.
 - Docker containers (including stopped ones), images, volumes, custom networks, or build cache.
 - Unmanaged containerd namespaces or containers/images/content in Docker's namespaces.
 - API-loaded Caddy configuration that differs from its managed file.
 - An APT purge plan that would remove anything outside the recorded package set.
 
-After approval it masks/stops owned services, purges only recorded packages **without autoremove**, removes fixed owned configuration/runtime directories, deletes recorded service accounts/groups, and removes its masks. Local registration is forgotten only after the host reports `removed`.
+After approval it masks/stops owned services, purges only recorded packages **without autoremove**, removes fixed owned configuration/runtime directories, deletes recorded service accounts/groups, removes its masks, and discards validated completed app receipts without recursively deleting app directories. Local registration is forgotten only after the host reports `removed`.
 
 The host receipt and runtime lock remain so a repeated teardown is safe. Reboot naturally clears `/run` locks. A subsequent add performs fresh-host checks again, creates a new installation identity, and re-registers the server. OS package indexes/caches, system journals, and authentication logs are retained. Kernel networking artifacts can outlive daemon removal until reboot; teardown never flushes the host firewall globally. This is installation removal, not a pristine-OS snapshot restore.
 

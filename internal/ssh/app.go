@@ -19,6 +19,9 @@ import (
 //go:embed app.sh
 var appScript string
 
+//go:embed app-read.sh
+var appReadScript string
+
 func RunApp(ctx context.Context, target string, request deploy.Request, binary, archive []byte) (deploy.Response, error) {
 	return runApp(ctx, target, request, binary, archive, process.Run)
 }
@@ -38,16 +41,16 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 	if len(encoded) > 64*1024 {
 		return response, errors.New("app request exceeds 64 KiB")
 	}
-	command := "/usr/local/lib/soar/executor internal-app-executor"
-	payload := encoded
-	mutation := request.Action == "deploy" || request.Action == "resume"
-	if mutation {
-		payload, err = appArchive(encoded, binary, archive, request.Action == "deploy")
-		if err != nil {
-			return response, err
-		}
-		command = "/bin/sh -c '" + strings.ReplaceAll(appScript, "'", "'\\''") + "'"
+	mutation := request.Action == "deploy" || request.Action == "resume" || request.Action == "cleanup" || request.Action == "destroy"
+	payload, err := appArchive(encoded, binary, archive, request.Action == "deploy")
+	if err != nil {
+		return response, err
 	}
+	script := appReadScript
+	if mutation {
+		script = appScript
+	}
+	command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
 	result, runErr := run(ctx, "ssh", arguments(target, command), payload)
 	decodeErr := decodeJSON(result.Stdout, &response)
 	if decodeErr == nil && response.Version == 1 && response.Error != "" {
@@ -60,7 +63,7 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 		}
 		return response, err
 	}
-	if decodeErr != nil || response.Version != 1 || (request.Action != "logs" && response.Status == nil) {
+	if decodeErr != nil || response.Version != 1 || (request.Action != "logs" && response.Status == nil && response.Plan == nil) {
 		return response, fmt.Errorf("invalid app response; inspect status before retrying (decode error: %v)", decodeErr)
 	}
 	return response, nil

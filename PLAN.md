@@ -1,6 +1,6 @@
 # Soar: a small app platform for one server
 
-**Status: platform design with a working first slice.** Configuration validation, host inspection/setup/teardown, and single-service stateless Dockerfile deployment with status/logs/resume/supersede are implemented. Broader workflows below remain proposed. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), and [deployment](docs/deployment.md) for the exact implemented boundary and verification limits.
+**Status: platform design with a working first slice.** Configuration validation, host inspection/setup/teardown, single-service stateless Dockerfile deployment with status/logs/resume/supersede, and preview-first app cleanup/destruction are implemented. Broader workflows below remain proposed. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), and [deployment](docs/deployment.md), and [app lifecycle](docs/app-lifecycle.md) for the exact implemented boundary and verification limits.
 
 ## 1. The goal
 

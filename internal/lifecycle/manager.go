@@ -134,6 +134,9 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 	if err != nil {
 		return nil, err
 	}
+	if _, err := m.appReceipts(s); err != nil {
+		return nil, err
+	}
 	if s != nil && s.Phase != "removed" {
 		if s.Config != config {
 			return nil, errors.New("host belongs to a different server name/domain; refusing to change its identity")

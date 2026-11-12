@@ -2,7 +2,7 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**The first deployment slice works:** one Dockerfile-built, stateless public web service per app, with remote builds, readiness-checked replacement, Caddy routing/automatic HTTPS, status, logs, and captured-input recovery. Root-only setup/teardown of dedicated Ubuntu hosts is also implemented. Multi-service apps, volumes, secrets, rollback, and app destruction remain planned in [PLAN.md](PLAN.md). See [the implemented deployment boundary](docs/deployment.md) before using it.
+**The first deployment slice works:** one Dockerfile-built, stateless public web service per app, with remote builds, readiness-checked replacement, Caddy routing/automatic HTTPS, status, logs, and captured-input recovery. Root-only setup/teardown of dedicated Ubuntu hosts is also implemented. Preview-first app cleanup/destruction and restart-stable ports are implemented. Multi-service apps, volumes, secrets, and rollback remain planned in [PLAN.md](PLAN.md). See [the implemented deployment boundary](docs/deployment.md) before using it.
 
 ## Platform scope
 
@@ -93,6 +93,19 @@ With a bootstrapped server, wildcard DNS pointing at it, and TCP 80/443 allowed:
 
 The first default-target contact creates a gitignored project binding under `.soar/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules, always omit `.git`/`.soar`, and are limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
 
+## Clean up or remove an app
+
+```sh
+./bin/soar cleanup -f examples/hello/soar.yaml        # Preview; deletes nothing
+./bin/soar cleanup -f examples/hello/soar.yaml --yes  # Apply a freshly computed plan
+./bin/soar destroy --server droplet --app temporary-app
+./bin/soar destroy --server droplet --app temporary-app --yes
+```
+
+Cleanup keeps the current and previous releases and never prunes shared Docker resources or volumes. Destruction proves the app route is gone before removing verified owned containers/network and known captured inputs. Both have durable recovery and explicit confirmation. See [the app lifecycle contract](docs/app-lifecycle.md) for retention limits, reboot verification, and upgrade notes. **Legacy deployments need a replacement deploy to gain pinned ports.**
+
+App status/logs now stage a matching trusted executor temporarily, without replacing the bootstrap-owned installed binary; keep the Linux artifacts beside your client. This remains a root-SSH administration interface, not a restricted read-only account API.
+
 ## Layout
 
 ```text
@@ -106,7 +119,8 @@ internal/executor/  Versioned JSON stdin/stdout host-operation protocol
 internal/lifecycle/ Ubuntu setup/teardown, ownership journal, and safety checks
 internal/registry/  Private, atomically written local server registrations
 internal/buildcontext/ Bounded build-context capture with Docker ignore rules
-internal/deploy/    Stateless deployment journal, Docker lifecycle, Caddy routing
+internal/deploy/    Stateless deployment/maintenance journals, Docker lifecycle, Caddy routing
+internal/appstate/  Minimal completed-destruction receipt shared with host teardown
 docs/               Implemented boundary and verification notes
 examples/          Five design fixtures plus a runnable hello app
 mise.toml          Pinned development tools and project tasks
@@ -151,4 +165,4 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-The next milestones build on the stateless path: multi-service apps, staged secrets, and explicit volume-backed update/recovery semantics. Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), and [deployment](docs/deployment.md#verification).
+The next milestones build on the stateless path: staged secrets, explicit volume-backed update/recovery semantics, then multi-service apps. Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).

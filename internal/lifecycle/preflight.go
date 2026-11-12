@@ -158,9 +158,19 @@ func (m *Manager) checkStateDirectory() error {
 	if err != nil {
 		return err
 	}
+	s, err := ReadState(m.path(StatePath))
+	if err != nil {
+		return err
+	}
 	for _, entry := range entries {
-		if entry.Name() != "host.json" {
-			return fmt.Errorf("unexpected Soar state %s; app/data teardown is not implemented", entry.Name())
+		switch entry.Name() {
+		case "host.json":
+		case "apps":
+			if _, err := m.appReceipts(s); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unexpected Soar state %s; refusing removal", entry.Name())
 		}
 	}
 	return nil

@@ -26,6 +26,11 @@ const appHelp = `Usage:
   soar status [-f soar.yaml] [--json] [--server NAME --app APP]
   soar logs [-f soar.yaml] [--tail 100] [--server NAME --app APP]
   soar resume [--server NAME --app APP] OPERATION
+  soar cleanup [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
+  soar destroy [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
+
+All commands accept --executor FILE. Cleanup/destroy preview unless --yes.
+Lifecycle --json emits the full response (including the exact plan).
 
 First slice: one Dockerfile-built, volume-free public web service.
 Flags precede positional arguments. Resume uses captured inputs, not local edits.
@@ -54,9 +59,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	executorFile := flags.String("executor", "", "Linux executor artifact override")
 	service := flags.String("service", "web", "service (only web is supported)")
 	supersede := flags.String("supersede", "", "replace a stopped pre-promotion operation with new inputs")
+	yes := flags.Bool("yes", false, "apply cleanup or destroy (default: preview)")
+	maintenance := action == "cleanup" || action == "destroy"
 	asJSON := flags.Bool("json", false, "JSON status")
 	tail := flags.Int("tail", 100, "log tail lines (1-1000, output also byte bounded)")
-	mutation := action == "deploy" || action == "resume"
+	mutation := action == "deploy" || action == "resume" || maintenance
 	deadline := 15 * time.Second
 	if mutation {
 		deadline = 25 * time.Minute
@@ -69,17 +76,23 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		return 2
 	}
+	yesProvided := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "yes" {
+			yesProvided = true
+		}
+	})
 	if *timeout <= 0 || *service != "web" || *tail < 1 || *tail > 1000 {
 		return usageError(stderr, "invalid timeout, service, or log tail")
 	}
 	if (action == "resume" && flags.NArg() != 1) || (action != "resume" && flags.NArg() != 0) {
 		return usageError(stderr, "resume requires one operation ID; other app commands have no positional arguments")
 	}
-	if (*supersede != "" && action != "deploy") || (*asJSON && action != "status") || (!mutation && *executorFile != "") || (action != "logs" && *tail != 100) {
+	if (*supersede != "" && action != "deploy") || (*asJSON && action != "status" && !maintenance) || (yesProvided && !maintenance) || (action != "logs" && *tail != 100) {
 		return usageError(stderr, "option does not apply to this app command")
 	}
 	if *appFlag != "" && (action == "deploy" || *serverFlag == "") {
-		return usageError(stderr, "--app is for status/logs/resume and requires an explicit --server")
+		return usageError(stderr, "--app is for status/logs/resume/cleanup/destroy and requires an explicit --server")
 	}
 	name := *appFlag
 	var app *config.App
@@ -118,7 +131,15 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return lifecycleError(stderr, err)
 	}
 	request := deploy.Request{Version: 1, Action: action, App: name, Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}}
+	request.Apply = *yes
 	var archive []byte
+	if maintenance {
+		var id [16]byte
+		if _, err := rand.Read(id[:]); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		request.Operation = hex.EncodeToString(id[:])
+	}
 	if action == "deploy" {
 		request.Config = app
 		request.Supersede = *supersede
@@ -150,10 +171,12 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	var binary []byte
-	if mutation {
+	if mutation && !*asJSON {
 		if _, err := fmt.Fprintf(stdout, "%s / %s / web: %s (operation %s)\n", server.Name, name, action, request.Operation); err != nil {
 			return lifecycleError(stderr, err)
 		}
+	}
+	{
 		inspectCtx, stop := context.WithTimeout(ctx, 15*time.Second)
 		report, err := deps.Inspect(inspectCtx, server.Target)
 		stop()
@@ -182,14 +205,40 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		return 0
 	}
-	if response.Status == nil {
-		return lifecycleError(stderr, errors.New("remote response has no app status"))
-	}
-	if *asJSON {
+	if action == "status" && *asJSON {
+		if response.Status == nil {
+			return lifecycleError(stderr, errors.New("remote response has no app status"))
+		}
 		if err := json.NewEncoder(stdout).Encode(response.Status); err != nil {
 			return lifecycleError(stderr, err)
 		}
 		return 0
+	}
+	if maintenance || response.Plan != nil || (response.Status != nil && response.Status.Phase == "destroyed") {
+		if *asJSON {
+			if err := json.NewEncoder(stdout).Encode(response); err != nil {
+				return lifecycleError(stderr, err)
+			}
+			return 0
+		}
+		message := "Maintenance completed."
+		if maintenance && !request.Apply {
+			message = "Preview only: no resources deleted."
+		} else if action == "destroy" || (response.Status != nil && response.Status.Phase == "destroyed") {
+			message = "App destroyed; no live route is configured."
+		}
+		if _, err := fmt.Fprintln(stdout, message); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		if p := response.Plan; p != nil {
+			if _, err := fmt.Fprintf(stdout, "Plan: %s / %s\nContainers: %q\nImages: %q\nArchives: %q\nNetwork: %q\nRetained: %q\n", p.Action, p.App, p.Containers, p.Images, p.Archives, p.Network, p.Retained); err != nil {
+				return lifecycleError(stderr, err)
+			}
+		}
+		return 0
+	}
+	if response.Status == nil {
+		return lifecycleError(stderr, errors.New("remote response has no app status"))
 	}
 	s := response.Status
 	if _, err := fmt.Fprintf(stdout, "%s / %s / web: phase=%q running=%t host-operation-active=%t\nURL: https://%s.%s\nOperation: %q\nContainer: %q\n", server.Name, name, s.Phase, s.Running, s.Active, name, server.Domain, s.Operation, s.Container); err != nil {

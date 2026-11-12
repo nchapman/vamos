@@ -67,24 +67,43 @@ func TestAppTransportUsesFixedCommandAndBoundedTar(t *testing.T) {
 	}
 }
 
-func TestAppQueriesDoNotUploadArtifacts(t *testing.T) {
+func TestAppQueriesUploadMatchingExecutorToTemporaryStage(t *testing.T) {
 	for _, action := range []string{"status", "logs"} {
 		r := appRequest()
 		r.Action = action
 		r.Config = nil
 		r.Operation = ""
 		run := func(_ context.Context, _ string, args []string, input []byte) (process.Result, error) {
-			if args[len(args)-1] != "/usr/local/lib/soar/executor internal-app-executor" {
+			command := args[len(args)-1]
+			if strings.Contains(command, "systemd-run") || strings.Contains(command, "/usr/local/lib/soar") || !strings.Contains(command, "mktemp") || !strings.Contains(command, "sha256sum") || !strings.Contains(command, "trap") {
 				t.Fatal("read query started worker")
 			}
+			files := map[string][]byte{}
+			tr := tar.NewReader(bytes.NewReader(input))
+			for {
+				h, err := tr.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				files[h.Name], err = io.ReadAll(tr)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if string(files["executor"]) != "binary" {
+				t.Fatal("missing executor")
+			}
 			var got deploy.Request
-			if err := json.Unmarshal(input, &got); err != nil || got.Action != action {
+			if err := json.Unmarshal(files["request.json"], &got); err != nil || got.Action != action {
 				t.Fatal("request", err)
 			}
 			data, _ := json.Marshal(deploy.Response{Version: 1, Status: &deploy.Status{App: "hello"}, Logs: "log\n"})
 			return process.Result{Stdout: data}, nil
 		}
-		if _, err := runApp(context.Background(), "root@home", r, nil, nil, run); err != nil {
+		if _, err := runApp(context.Background(), "root@home", r, []byte("binary"), nil, run); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -38,6 +38,7 @@ func flowSetup(t *testing.T) (*flowEngine, Request) {
 	f.image.Config.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
 	f.image.Config.Cmd = []string{"/app/server"}
 	m.Run = f.run
+	m.AllocatePort = func() (string, error) { return fmt.Sprint(12000 + len(f.containers)), nil }
 	m.HTTP.Transport = transport(func(r *http.Request) (*http.Response, error) {
 		code := 200
 		body := "ok"
@@ -158,9 +159,9 @@ func (f *flowEngine) run(_ context.Context, n string, a []string, b []byte) (pro
 			}
 			v.HostConfig.NetworkMode = arg("--network")
 			v.HostConfig.RestartPolicy.Name = arg("--restart")
-			v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: ""}}}
+			v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: strings.Split(arg("--publish"), ":")[1]}}}
 			v.NetworkSettings.Networks = map[string]json.RawMessage{"soar-notes": json.RawMessage(`{}`)}
-			v.NetworkSettings.Ports = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: fmt.Sprint(12000 + len(f.containers))}}}
+			v.NetworkSettings.Ports = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: strings.Split(arg("--publish"), ":")[1]}}}
 			v.State.Running = !f.stopped
 			f.containers[name] = v
 			if f.runError {
@@ -352,6 +353,11 @@ func TestFlowMissingRecordedCandidateRefusesCreation(t *testing.T) {
 	j := f.execute(r, "archive", true)
 	if j.Candidate.Port == "" {
 		t.Fatal("endpoint not recorded")
+	}
+	// Legacy dynamic endpoints have no durable publish intent and must not be recreated.
+	j.Candidate.PublishPort = ""
+	if err := f.m.save(j); err != nil {
+		t.Fatal(err)
 	}
 	delete(f.containers, j.Candidate.Container)
 	f.events = nil

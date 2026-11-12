@@ -248,6 +248,9 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if err := m.unmask(ctx); err != nil {
 		return nil, err
 	}
+	if err := m.removeAppReceipts(s); err != nil {
+		return nil, err
+	}
 	s.Phase = "removed"
 	if err := m.step(s, "complete"); err != nil {
 		return nil, err

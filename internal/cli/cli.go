@@ -19,7 +19,9 @@ Usage:
   soar deploy [-f soar.yaml]             Build and deploy one stateless web service
   soar status [--json]                   Inspect the app's actual running state
   soar logs [--tail 100]                 Read bounded web-container logs
-  soar resume OPERATION                 Resume a deployment's captured inputs
+  soar resume OPERATION                 Resume captured operation inputs
+  soar cleanup [--yes]                  Preview or remove obsolete app resources
+  soar destroy [--yes]                  Preview or remove an app
   soar validate [-f soar.yaml]           Validate local app configuration
   soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
@@ -62,7 +64,7 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return validate(args[1:], stdout, stderr)
 	case "server":
 		return server(ctx, args[1:], stdout, stderr)
-	case "deploy", "status", "logs", "resume":
+	case "deploy", "status", "logs", "resume", "cleanup", "destroy":
 		return appCommand(ctx, args[0], args[1:], stdout, stderr, defaultAppDeps())
 	case "internal-app-executor":
 		if len(args) != 1 {

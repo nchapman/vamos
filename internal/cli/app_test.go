@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -184,5 +185,83 @@ func TestBindingRefusesRetargetAndCorruptMetadata(t *testing.T) {
 	}
 	if _, err := readBinding(dir); err == nil {
 		t.Fatal("accepted invalid binding")
+	}
+}
+
+func TestMaintenancePreviewAndApply(t *testing.T) {
+	for _, action := range []string{"cleanup", "destroy"} {
+		for _, apply := range []bool{false, true} {
+			for _, asJSON := range []bool{false, true} {
+				path, _, deps := appFixture(t)
+				deps.Archive = nil
+				deps.Run = func(_ context.Context, _ string, r deploy.Request, b, a []byte) (deploy.Response, error) {
+					if r.Apply != apply || len(r.Operation) != 32 || r.Config != nil || len(a) != 0 || len(b) == 0 {
+						t.Fatalf("unsafe request: %+v", r)
+					}
+					response := deploy.Response{Version: 1, Plan: &deploy.Plan{Action: action, App: "hello", Containers: []string{"old-container"}, Images: []string{"sha256:old"}, Archives: []string{"old.tar"}, Network: "app-net", Retained: []string{"shared image: used elsewhere"}}}
+					if apply {
+						response.Status = &deploy.Status{Phase: "ready"}
+						if action == "destroy" {
+							response.Status.Phase = "destroyed"
+						}
+					}
+					return response, nil
+				}
+				args := []string{"-f", path}
+				if apply {
+					args = append(args, "--yes")
+				}
+				if asJSON {
+					args = append(args, "--json")
+				}
+				var out, diag bytes.Buffer
+				if code := appCommand(context.Background(), action, args, &out, &diag, deps); code != 0 {
+					t.Fatalf("%d: %s", code, &diag)
+				}
+				text := out.String()
+				if asJSON {
+					var r deploy.Response
+					if err := json.Unmarshal(out.Bytes(), &r); err != nil || r.Plan == nil {
+						t.Fatalf("full response JSON: %s", text)
+					}
+				} else {
+					for _, resource := range []string{"old-container", "sha256:old", "old.tar", "app-net", "shared image: used elsewhere"} {
+						if !strings.Contains(text, resource) {
+							t.Fatal(text)
+						}
+					}
+					if !apply && !strings.Contains(text, "no resources deleted") {
+						t.Fatal(text)
+					}
+					if strings.Contains(text, "Route configured") || strings.Contains(text, "https://") {
+						t.Fatal(text)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestDestroyedStatusPreservesJSONShape(t *testing.T) {
+	path, _, deps := appFixture(t)
+	deps.Run = func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error) {
+		return deploy.Response{Version: 1, Status: &deploy.Status{App: "hello", Phase: "destroyed"}}, nil
+	}
+	var out, diag bytes.Buffer
+	if code := appCommand(context.Background(), "status", []string{"-f", path, "--json"}, &out, &diag, deps); code != 0 {
+		t.Fatalf("%d: %s", code, &diag)
+	}
+	var status deploy.Status
+	if err := json.Unmarshal(out.Bytes(), &status); err != nil || status.Phase != "destroyed" {
+		t.Fatalf("status JSON changed shape: %s", &out)
+	}
+}
+
+func TestYesRejectedBeforeContact(t *testing.T) {
+	for _, action := range []string{"deploy", "resume", "status", "logs"} {
+		var out bytes.Buffer
+		if code := appCommand(context.Background(), action, []string{"--yes"}, &out, &out, appDeps{}); code != 2 {
+			t.Fatalf("%s: %d", action, code)
+		}
 	}
 }
