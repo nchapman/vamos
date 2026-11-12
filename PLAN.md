@@ -2,6 +2,8 @@
 
 **Status: stateless multi-service deployment is implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Storage, manual updates, scoped deployment, migration commands, rollback, and other broader workflows below remain proposed. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
 
+The next storage milestone has a narrower [volume lifecycle proposal](docs/volume-proposal.md), pending approval. It deliberately excludes the database/manual-update/scoped-deploy workflows described later in this broader plan.
+
 ## 1. The goal
 
 Rent a good Ubuntu 24.04+ server, install Soar once, and deploy our apps from Dockerfiles. Keep Fly's app-oriented experience without building a cloud provider.

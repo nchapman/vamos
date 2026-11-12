@@ -95,4 +95,17 @@ Tested from macOS against the dedicated Ubuntu 26.04 amd64 host with Docker 29.1
 - Cleanup retained exactly six containers: the three current and three previous completed service versions. Captured journals/archives contained no synthetic secret values; temporary staging/env files were absent.
 - Destroyed all three test apps. Their routes, containers, networks, and captured artifacts were removed; only destruction receipts and synthetic secret storage remained. The original version-1 hello deployment kept its container identity and pinned port and remained healthy. Its current/previous containers were the only containers left.
 
+### Final-readiness cancellation follow-up
+
+The recovery change in commit `1e79e18` was subsequently exercised against real Docker/Caddy on the same host, using disposable `promotion-probe` and `promotion-peer` apps:
+
+1. Deployed a healthy old version. Its operation was `ec2f4378cb41699fb4799e606649e301`.
+2. Deployed a replacement whose health endpoint returned 200 for the first three checks (initial readiness, pre-alias check, post-alias check), then permanently returned 503. Confirmed from logs and the journal that operation `876b01df841de61fb643dff6014c0cc2` failed at **final promotion readiness**, not initial startup or alias admission. The candidate remained running with its service alias, while both Caddy's durable file and live configuration matched the recorded old routes.
+3. Verified the original HTTPS endpoint still served the old version. Resume retried the captured unhealthy candidate and failed without changing that route.
+4. Superseded with corrected inputs. Operation `a5410d6c6fa4c62171b92c259e096958` completed; the failed candidate was absent, only the corrected endpoint remained on the app network, and the original successful deployment remained the previous completed snapshot. The old successful container was stopped with restart disabled.
+5. Deployed the separate peer app successfully, proving the promotion fence no longer blocked another app. Both public HTTPS endpoints and hello were healthy.
+6. Destroyed both probes and audited the host: their routes, networks, containers, and captured artifacts were removed; only destruction receipts remained. No probe secrets were staged. Hello retained its original version-1 journal, container identity, and port; its current/previous containers were the only containers left. No temporary staging/env files remained.
+
+The health-check count is a fixture for this implementation, not a public API contract. Uncertain/live-new route refusal and interrupted cancellation remain covered by local regressions; this follow-up did not repeat those cases remotely or perform another reboot.
+
 Local `mise run check` passed (formatting, vet, race tests, and native/Linux amd64/arm64 builds); Windows packages also cross-compiled. Native Windows/Linux client execution, arm64 host execution, forced power loss, and exhaustive remote worker-kill injection remain separate verification work.
