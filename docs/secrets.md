@@ -1,6 +1,6 @@
 # Staged runtime secrets
 
-Supported for the single Dockerfile-built, volume-free `web` service. Staging never builds an image, changes a route, or restarts a container. Values are applied only through deployment.
+Supported across Dockerfile-built, volume-free public and private services. Staging never builds an image, changes a route, or restarts a container. Values are applied only through deployment.
 
 ## Stage, inspect, deploy
 
@@ -9,7 +9,7 @@ Add environment-name to secret-name mappings under the service:
 ```yaml
 services:
   web:
-    # Existing build and http configuration remains required.
+    # Build configuration is required; http is optional (public services only).
     secrets:
       SESSION_SECRET: session-secret
 ```
@@ -40,7 +40,8 @@ Values must be nonempty, single-line UTF-8 without CR, LF, or NUL, at most **819
 - Deploy preflight resolves all required secrets **before** saving new deployment inputs, building, or superseding a failed candidate. Missing secrets fail without disturbing the existing deployment.
 - The deployment journal captures immutable references by environment key. Candidate, current, and previous releases retain their own mappings and version IDs, never the values.
 - Resume uses the captured versions. Newer staging during a stopped incomplete deployment does not repin that operation. Missing/corrupt pinned versions cause failure; there is no fallback to latest.
-- A failed deployment leaves the old current release and route intact. Its selected versions remain pending until successful promotion. A successful deployment can still have pending changes if newer values were staged after it captured its inputs.
+- A failed deployment preserves already-completed service transitions, not the entire old app. Public services may already use new secret versions while others retain older pins. A failed private replacement leaves its old version retired; it is not restarted implicitly. Check each service's applied version **and availability** before revoking an old credential.
+- Staging a corrected value does not repair a captured operation. Resume keeps that operation's pins; applying corrected inputs requires explicit supersede where permitted, or a fresh deployment after completion. A successful deployment can still have pending changes if newer values were staged after it captured its inputs.
 - Docker restart and host reboot use the existing container's pinned environment, not the latest staged values. Recreating a candidate also uses its captured references.
 - Staging shares the host mutation lock and refuses an active worker or pending maintenance. It is allowed during a stopped incomplete deployment.
 

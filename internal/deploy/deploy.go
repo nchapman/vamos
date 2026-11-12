@@ -599,7 +599,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			return
 		}
 		if r.Supersede != "" {
-			if j == nil || j.Operation != r.Supersede || (j.Phase != "building" && j.Phase != "starting") || j.OldCaddy != "" || j.NewCaddy != "" {
+			if j == nil || j.Operation != r.Supersede || (j.Phase != "building" && j.Phase != "starting" && j.Phase != "promoting") || (j.Phase == "promoting" && j.NewCaddy == "") {
 				err = errors.New("supersede does not match safe incomplete operation; resume instead")
 				return
 			}
@@ -660,6 +660,11 @@ func (m *Manager) supersede(c context.Context, j *journal) error {
 	if collision(j.Candidate, j.Current) || collision(j.Candidate, j.Previous) {
 		return errors.New("candidate aliases retained release")
 	}
+	if j.NewCaddy != "" {
+		if err := m.verifyUnservedPromotion(c, j); err != nil {
+			return err
+		}
+	}
 	old, e := m.routes(j, false)
 	if e != nil {
 		return e
@@ -691,7 +696,7 @@ func (m *Manager) supersede(c context.Context, j *journal) error {
 		return e
 	}
 	if !yes {
-		return nil
+		return m.recordCancelledPromotion(j)
 	}
 	if _, e = m.cleanupCandidate(c, j, j.Candidate); e != nil {
 		return e
@@ -701,7 +706,15 @@ func (m *Manager) supersede(c context.Context, j *journal) error {
 			return e
 		}
 	}
-	return nil
+	if j.NewCaddy != "" {
+		if yes, e = m.exists(c, "container", j.Candidate.Container); e != nil {
+			return e
+		}
+		if yes {
+			return errors.New("candidate removal not proven")
+		}
+	}
+	return m.recordCancelledPromotion(j)
 }
 
 const diagnosticLimit = 4096

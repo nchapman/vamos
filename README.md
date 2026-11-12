@@ -148,7 +148,7 @@ internal/deploy/    Stateless deployment/maintenance journals, Docker lifecycle,
 internal/appstate/  Minimal completed-destruction receipt shared with host teardown
 internal/secrets/   Private immutable secret versions and metadata-only selection
 docs/               Implemented boundary and verification notes
-examples/          Five design fixtures plus a runnable hello app
+examples/          Five design fixtures plus runnable hello and private-backend apps
 mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
@@ -160,13 +160,14 @@ The Go module is `github.com/nchapman/soar`. No persistent Soar daemon or separa
 | Config | Scenario |
 | --- | --- |
 | [hello](examples/hello/soar.yaml) | Runnable single-service Dockerfile app supported today |
+| [private-backend](examples/private-backend/soar.yaml) | Runnable public web/private backend sharing one Dockerfile build |
 | [studio](examples/studio/soar.yaml) | Stateless website and multiple domains |
 | [journal](examples/journal/soar.yaml) | SQLite and uploads; automatic updates with stop/start |
 | [ledger](examples/ledger/soar.yaml) | API and private, manually updated PostgreSQL |
 | [dispatch](examples/dispatch/soar.yaml) | Web, worker, PostgreSQL, and Redis |
 | [workspace](examples/workspace/soar.yaml) | Separate frontend/API builds and a private renderer |
 
-Only `hello` is a runnable application supported by the current deployment slice. The other five are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all six configurations.
+`hello` and `private-backend` are runnable applications supported by the current deployment implementation. The other five are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all seven configurations.
 
 ## Development
 
@@ -191,4 +192,4 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-The next milestones build on the stateless path: staged secrets, explicit volume-backed update/recovery semantics, then multi-service apps. Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).
+Staged secrets and stateless multi-service apps are implemented. Future milestones include explicit volume-backed update/recovery semantics; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).

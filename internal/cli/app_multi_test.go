@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/nchapman/soar/internal/deploy"
+	"os"
 	"strings"
 	"testing"
 )
@@ -19,6 +20,48 @@ func TestAppStatusShowsPendingOperationAndCandidate(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "pending-operation") || !strings.Contains(out.String(), "replacement-container") {
 		t.Fatal("recovery identities missing", out.String())
+	}
+}
+
+func TestMultiDeploymentCompletionExplainsPublicReadiness(t *testing.T) {
+	for _, kind := range []string{"public", "mixed", "private"} {
+		for _, action := range []string{"deploy", "resume", "status"} {
+			t.Run(kind+"/"+action, func(t *testing.T) {
+				path, _, deps := appFixture(t)
+				services := map[string]deploy.ServiceStatus{}
+				yaml := "app: hello\nservices:\n"
+				if kind != "private" {
+					services["web"] = deploy.ServiceStatus{Kind: "public", Phase: "ready", URL: "https://hello.example.com", Available: true}
+					yaml += "  web:\n    build: {context: ., dockerfile: Dockerfile}\n    http: {port: 80, health: /healthz}\n"
+				}
+				if kind != "public" {
+					services["backend"] = deploy.ServiceStatus{Kind: "private", Phase: "ready", Available: true}
+					yaml += "  backend:\n    build: {context: ., dockerfile: Dockerfile}\n"
+				}
+				if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
+					t.Fatal(err)
+				}
+				deps.Run = func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error) {
+					return deploy.Response{Status: &deploy.Status{Phase: "ready", Services: services}}, nil
+				}
+				args := []string{"-f", path}
+				if action == "resume" {
+					args = append(args, strings.Repeat("a", 32))
+				}
+				var out, diagnostic bytes.Buffer
+				if code := appCommand(context.Background(), action, args, &out, &diagnostic, deps); code != 0 {
+					t.Fatal(diagnostic.String())
+				}
+				hasWarning := strings.Contains(out.String(), "Public DNS and certificate readiness are not implied by deployment success.")
+				if hasWarning != (action != "status" && kind != "private") {
+					t.Fatal("incorrect public readiness feedback:", out.String())
+				}
+				privateNote := strings.Contains(out.String(), "Private-only app: no public route is configured.")
+				if privateNote != (action != "status" && kind == "private") {
+					t.Fatal("incorrect private completion feedback:", out.String())
+				}
+			})
+		}
 	}
 }
 

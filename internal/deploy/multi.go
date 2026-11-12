@@ -161,12 +161,21 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 }
 
 func (m *Manager) supersedeMulti(ctx context.Context, j *journal) error {
-	if j.NewCaddy != "" {
-		return errors.New("route promotion is unresolved; resume before superseding")
-	}
 	for _, s := range j.ServiceStates {
 		if s.Phase == "draining" {
 			return errors.New("public retirement is pending; resume before superseding")
+		}
+	}
+	if j.NewCaddy != "" {
+		if err := m.verifyUnservedPromotion(ctx, j); err != nil {
+			return err
+		}
+		s := j.ServiceStates[j.ActiveService]
+		if err := m.multiDiscard(ctx, j, s.Candidate, false); err != nil {
+			return err
+		}
+		if err := m.recordCancelledPromotion(j); err != nil {
+			return err
 		}
 	}
 	if err := m.verifyRoutes(ctx, j); err != nil {

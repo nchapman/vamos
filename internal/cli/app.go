@@ -287,8 +287,10 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 		names := make([]string, 0, len(s.Services))
-		for name := range s.Services {
+		hasPublic := false
+		for name, service := range s.Services {
 			names = append(names, name)
+			hasPublic = hasPublic || service.Kind == "public"
 		}
 		sort.Strings(names)
 		for _, serviceName := range names {
@@ -307,6 +309,15 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		if s.LastError != "" {
 			fmt.Fprintf(stdout, "Last error: %q\n", s.LastError)
+		}
+		if mutation {
+			message := "Private-only app: no public route is configured."
+			if hasPublic {
+				message = "Routes configured. Public DNS and certificate readiness are not implied by deployment success."
+			}
+			if _, err := fmt.Fprintln(stdout, message); err != nil {
+				return lifecycleError(stderr, err)
+			}
 		}
 		return 0
 	}

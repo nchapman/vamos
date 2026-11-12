@@ -53,13 +53,19 @@ Resume uses captured contexts, images, configuration, and secret versions. It sk
 
 Explicit supersede preserves effective mixed state and last successful snapshots, removes only verified unserved candidates, and starts a new captured operation. It cannot bypass an active worker, uncertain route promotion, or public drain. It can settle a previously recorded private retirement but cannot resurrect that worker. No completed snapshot is recorded for a partially successful operation.
 
+A pending public promotion may be cancelled only when the recorded intent matches the journals and **both the durable Caddyfile and live configuration are proven old**, distinct from the candidate routes. Supersede then disables restart, stops, and removes the verified candidate (including its DNS endpoint) before clearing promotion intent. This is not rollback of any already-promoted service.
+
+- New, unknown, or drifted routing remains blocked.
+- For a disk-before-reload interruption, use resume to reconcile first. Resume may still fail candidate readiness; once the old file and live configuration are proven, corrected supersede can cancel the promotion.
+- If cancellation is interrupted, repeat supersede against the original operation ID. After cancellation is durably recorded, resume can instead recreate the original captured candidate without its service alias.
+
 ## DNS and isolation
 
 Services use their service names, such as `backend:9000`, within their own app network. Separate app networks do not provide cross-app DNS or direct private reachability. Containers still have outbound internet access, and other apps can use intentionally public HTTPS endpoints. This is separation for trusted applications, not a sandbox against host administrators or Docker access.
 
 Public candidates receive **no stable service alias during initial startup**. Docker cannot atomically update an existing endpoint's aliases. After initial readiness, Soar journals intent, disconnects/reconnects only the candidate with its alias, verifies the same pinned loopback port, and rechecks readiness before Caddy promotion. This can interrupt candidate dependency connections and change its private IP.
 
-During promotion/drain, DNS can briefly return both old and new versions. Alias attachment precedes the second readiness sample, so this is **not atomic or continuously readiness-gated DNS**. A failed post-attachment readiness check attempts to withdraw the candidate endpoint; failed withdrawal remains explicit, not a claimed rollback. Resume recognizes a detached candidate only in the recorded aliasing transition. Clients must tolerate DNS caching, reconnects, and interrupted connections.
+During promotion/drain, DNS can return both old and new versions. This overlap is normally brief, but a failed or interrupted promotion can prolong it until resume or a permitted supersede settles the operation. Alias attachment precedes the second readiness sample, so this is **not atomic or continuously readiness-gated DNS**. A failed post-attachment readiness check attempts to withdraw the candidate endpoint; failed withdrawal remains explicit, not a claimed rollback. Resume recognizes a detached candidate only in the recorded aliasing transition. Clients must tolerate DNS caching, reconnects, and interrupted connections.
 
 The supported host uses Soar's Docker-managed bridge/NAT configuration. Deployment rejects changed daemon configuration and unsupported app-network options, including routed/unprotected gateways, custom direct-routing interfaces, and IPv6 app networks. It does not rewrite firewall rules or restart Docker to repair drift. Arbitrary manual daemon/firewall changes are unsupported; runtime ownership checks are not a complete firewall audit.
 
@@ -74,7 +80,7 @@ The supported host uses Soar's Docker-managed bridge/NAT configuration. Deployme
 
 ## Verification
 
-Offline tests cover bundle integrity/deduplication, aggregate bounds, hostname collisions, multi-route promotion and drift, captured secrets across partial success, public alias admission/lost responses, private stop-before-start/restart-loop detection, supersede, meaningful completed snapshots, legacy migration, status/log selection, cross-app resource references, and multi-service cleanup/destruction.
+Offline tests cover bundle integrity/deduplication, aggregate bounds, hostname collisions, multi-route promotion and drift, captured secrets across partial success, public alias admission/lost responses, cancellation of proven-old pending promotions (including interrupted candidate removal), refusal of uncertain cancellation, private stop-before-start/restart-loop detection, supersede, meaningful completed snapshots, legacy migration, status/log selection, cross-app resource references, and multi-service cleanup/destruction.
 
 ### Observed live results
 

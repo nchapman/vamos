@@ -134,6 +134,81 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 	return nil
 }
 
+// verifyUnservedPromotion deliberately accepts only old-disk/old-live state.
+// A disk-before-reload interruption must first be reconciled by resume; live-new,
+// equivalent old/new routes, drift, and unavailable inspection are not proof that
+// the candidate was never routed publicly.
+func (m *Manager) verifyUnservedPromotion(c context.Context, j *journal) error {
+	if j.NewCaddy == "" {
+		return errors.New("no pending promotion to cancel")
+	}
+	if err := validateRouteCandidate(j); err != nil {
+		return err
+	}
+	old, err := m.routes(j, false)
+	if err != nil {
+		return err
+	}
+	next, err := m.routes(j, true)
+	if err != nil {
+		return err
+	}
+	if old != j.OldCaddy || next != j.NewCaddy {
+		return errors.New("promotion intent differs from journals")
+	}
+	p := m.path("/etc/caddy/Caddyfile")
+	if err = safe(p); err != nil {
+		return err
+	}
+	file, err := os.ReadFile(p)
+	if err != nil {
+		return err
+	}
+	if string(file) != old {
+		return errors.New("promotion cancellation requires the old Caddyfile; resume to reconcile")
+	}
+	oldJSON, err := m.adapt(c, old)
+	if err != nil {
+		return err
+	}
+	newJSON, err := m.adapt(c, next)
+	if err != nil {
+		return err
+	}
+	live, err := m.live(c)
+	if err != nil {
+		return err
+	}
+	if !sameJSON(live, oldJSON) || sameJSON(live, newJSON) {
+		return errors.New("promotion is not proven unserved; resume before superseding")
+	}
+	return nil
+}
+
+// Keep the promotion fence until candidate removal is proven. If a response or
+// this save is lost, explicit supersede can repeat proof and removal. Once saved,
+// an interrupted supersede can also resume the original captured deployment,
+// recreating its candidate without an alias on the same reserved port.
+func (m *Manager) recordCancelledPromotion(j *journal) error {
+	if j.NewCaddy == "" {
+		return nil
+	}
+	candidate := j.Candidate
+	if j.Version == 2 {
+		slot := j.ServiceStates[j.ActiveService]
+		slot.Phase = "starting"
+		candidate = slot.Candidate
+	} else {
+		j.Phase = "starting"
+	}
+	if candidate.PublishPort == "" {
+		candidate.PublishPort = candidate.Port
+	}
+	candidate.Port = ""
+	j.OldCaddy, j.NewCaddy = "", ""
+	return m.save(j)
+}
+
 // Reconcile the disk-before-reload crash boundary even when readiness now fails.
 // Never replace an unrelated durable or runtime configuration.
 func (m *Manager) reconcilePending(c context.Context, j *journal) error {
