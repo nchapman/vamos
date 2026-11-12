@@ -60,9 +60,11 @@ This is permission-restricted plaintext storage, not an encrypted vault or a def
 
 Cleanup and app destruction retain **all secret versions**, including unreferenced ones. A destroyed receipt and retained store coexist; redeploy can reuse the staged values. Cleanup/destroy on a secret-only app has no deployment resources to remove and leaves the store unchanged.
 
-There is no secret deletion or automatic secret garbage collection in this slice. Per app, staging is bounded to **64 names, 256 retained versions, and 1 MiB of serialized storage**; deployments support at most 64 secret environment mappings. At capacity, staging fails without modifying authoritative state. This is a finite rotation budget, not a hidden pruning policy.
+There is no secret deletion or automatic secret garbage collection in this slice. Per app, staging is bounded to **64 names, 256 retained versions, and 1 MiB of serialized storage**; deployments support at most 64 secret environment mappings across the desired app configuration. Multi-service status reports each service's applied pins; partially completed operations can have mixed effective versions. Resume preserves all captured pins, and newer stages remain pending. At capacity, staging fails without modifying authoritative state. This is a finite rotation budget, not a hidden pruning policy.
 
 Host teardown/purge refuses retained secret state. A new bootstrap cannot silently adopt it under a different host identity. Removing retained secrets requires separate deliberate operator action after checking backups and required version references; `destroy --yes` and host `--purge` do not authorize it. Backups must protect the secret store along with deployment state. Future rollback must use retained references and may restore revoked credentials; rollback is not implemented yet.
+
+For multi-service deployment/recovery and metadata-response limits, see [multi-service apps](multi-service.md).
 
 ## Verification
 

@@ -1,6 +1,6 @@
 # Soar: a small app platform for one server
 
-**Status: platform design with a working first slice.** Configuration validation, host inspection/setup/teardown, single-service stateless Dockerfile deployment with status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Broader workflows below remain proposed. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact implemented boundary and verification limits.
+**Status: stateless multi-service deployment is implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Storage, manual updates, scoped deployment, migration commands, rollback, and other broader workflows below remain proposed. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
 
 ## 1. The goal
 
@@ -176,7 +176,7 @@ Build once per distinct build specification in a deploy; web and worker services
 6. Replace changed existing private services sequentially, respecting manual protection. They must stay running through a short startup observation window; this is not proof of functional readiness. Update stable private DNS during cutover.
 7. Record the completed release and clean up obsolete containers, retaining the previous release's images and configuration.
 
-While a public candidate is starting, the stable private service name continues to resolve to the active version. On promotion, update the alias; existing connections and DNS caches may outlive the change. A private service has a brief interruption during stop/start replacement.
+While a public candidate initially starts, the stable private service name continues to resolve to the active version. After readiness, journal a candidate-only endpoint reconnect to add its alias, verify its pinned port, and check readiness again before Caddy promotion. DNS can briefly include both old/new versions during promotion and drain; alias attachment precedes the second sample, so this is not an atomic readiness-gated DNS switch. Reconnect can interrupt candidate connections, and DNS caches may outlive the change. Clients must reconnect/retry. A private service has an interruption during stop/start replacement.
 
 An app deploy is **not an atomic transaction across containers or data**. If a later worker fails after web promotion, report a partial deployment and show each service's actual version. Retain the previous completed release and operation journal so a retry or rollback can reconcile safely. Web and worker versions must tolerate overlap.
 

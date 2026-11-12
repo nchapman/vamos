@@ -2,7 +2,7 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**The first deployment slice works:** one Dockerfile-built, stateless public web service per app, with remote builds, readiness-checked replacement, Caddy routing/automatic HTTPS, status, logs, and captured-input recovery. Root-only setup/teardown of dedicated Ubuntu hosts is also implemented. Preview-first app cleanup/destruction, restart-stable ports, and staged runtime secrets are implemented. Multi-service apps, volumes, and rollback remain planned in [PLAN.md](PLAN.md). See [the implemented deployment boundary](docs/deployment.md) before using it.
+**Stateless multi-service apps work:** up to eight Dockerfile-built public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Volumes, scoped deployment, and rollback remain planned in [PLAN.md](PLAN.md). See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
 
 ## Platform scope
 
@@ -91,11 +91,23 @@ With a bootstrapped server, wildcard DNS pointing at it, and TCP 80/443 allowed:
 
 `examples/hello` is a runnable nginx-based Dockerfile app. With base domain `pastime.gg`, its generated URL is `https://hello.pastime.gg`. No local Docker or image registry is required. Caddy route activation is verified; public DNS and certificate readiness must be checked separately.
 
-The first default-target contact creates a gitignored project binding under `.soar/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules, always omit `.git`/`.soar`, and are limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
+The first default-target contact creates a gitignored project binding under `.soar/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules and always omit `.git`/`.soar`. The aggregate multibuild bundle is limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
+
+## Add a private backend
+
+`examples/private-backend` is a runnable web/private-backend example. Both services share one build; only `web` gets a public route. The web process connects to `http://backend:9000` through its app network.
+
+```sh
+./bin/soar deploy -f examples/private-backend/soar.yaml
+./bin/soar status -f examples/private-backend/soar.yaml --service backend
+./bin/soar logs -f examples/private-backend/soar.yaml --service backend
+```
+
+Deployments are whole-app and **not atomic across services**. Private replacements have downtime; completed service changes survive later failure. See [multi-service deployment](docs/multi-service.md).
 
 ## Stage runtime secrets
 
-Map environment variables to app-scoped names under `services.web.secrets`. From that app directory, with the built CLI on your PATH:
+Map environment variables to app-scoped names under `services.<name>.secrets`. From that app directory, with the built CLI on your PATH:
 
 ```sh
 soar secrets stage session-secret  # No-echo prompt; flags precede the name
@@ -115,7 +127,7 @@ Use `--stdin` for automation, supplying values from a trusted secret producer—
 ./bin/soar destroy --server droplet --app temporary-app --yes
 ```
 
-Cleanup keeps the current and previous releases and never prunes shared Docker resources or volumes. Destruction proves the app route is gone before removing verified owned containers/network and known captured inputs. Both have durable recovery and explicit confirmation. See [the app lifecycle contract](docs/app-lifecycle.md) for retention limits, reboot verification, and upgrade notes. **Legacy deployments need a replacement deploy to gain pinned ports.**
+Cleanup keeps effective versions and the current/previous completed app snapshots and never prunes shared Docker resources or volumes. Destruction proves the app route is gone before removing verified owned containers/network and known captured inputs. Both have durable recovery and explicit confirmation. See [the app lifecycle contract](docs/app-lifecycle.md) for retention limits, reboot verification, and upgrade notes. **Legacy deployments need a replacement deploy to gain pinned ports.**
 
 App status/logs now stage a matching trusted executor temporarily, without replacing the bootstrap-owned installed binary; keep the Linux artifacts beside your client. This remains a root-SSH administration interface, not a restricted read-only account API.
 

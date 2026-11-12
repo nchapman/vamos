@@ -17,7 +17,7 @@ import (
 )
 
 var resourceID = regexp.MustCompile(`^[0-9a-f]{64}$`)
-var resourceFile = regexp.MustCompile(`^([0-9a-f]{32})\.(context\.tar|image\.iid)$`)
+var resourceFile = regexp.MustCompile(`^([0-9a-f]{32})\.(context\.tar|(?:[0-9a-f]{32}\.)?image\.iid)$`)
 
 type resourceInspection struct {
 	inspection
@@ -73,7 +73,10 @@ func (m *Manager) resourceList(ctx context.Context, kind string) ([]resourceRow,
 }
 func resourceContainer(v *resourceInspection, j *journal, r resourceRow) error {
 	op := v.Config.Labels["soar.operation"]
-	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || r.Name != "soar-"+j.App+"-"+op || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || len(v.Mounts) != 0 || len(v.Config.Volumes) != 0 || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
+	if service, present := v.Config.Labels["soar.service"]; present && service == "" {
+		return errors.New("empty maintenance service label")
+	}
+	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || len(v.Mounts) != 0 || len(v.Config.Volumes) != 0 || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
 		return errors.New("unsafe or changed maintenance container")
 	}
 	return nil
@@ -172,10 +175,13 @@ func (m *Manager) resourceReferences(ctx context.Context, j *journal, exclude ma
 		if e != nil {
 			return nil, e
 		}
-		for _, r := range []*release{other.Current, other.Previous, other.Candidate} {
+		for _, r := range retainedReleases(other) {
 			if r != nil {
 				refs[r.Image] = true
 			}
+		}
+		for _, id := range other.BuildImages {
+			refs[id] = true
 		}
 		// Decode the optional intent independently so this helper does not depend on orchestration fields.
 		b, _, e := resourceRead(filepath.Join(m.dir(d.Name()), "state.json"), 2<<20)
@@ -200,12 +206,20 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 	}
 	w := &maintenance{Action: action, Operation: op, Plan: Plan{Action: action, App: j.App}}
 	keep := map[string]bool{j.Operation: true}
+	for _, snapshot := range []*completedRelease{j.Completed, j.PreviousCompleted} {
+		if snapshot != nil {
+			keep[snapshot.Operation] = true
+		}
+	}
 	keepImages := map[string]bool{}
-	for _, r := range []*release{j.Current, j.Previous, j.Candidate} {
+	for _, r := range retainedReleases(j) {
 		if r != nil {
 			keep[r.Operation] = true
 			keepImages[r.Image] = true
 		}
+	}
+	for _, id := range j.BuildImages {
+		keepImages[id] = true
 	}
 	rows, e := m.resourceList(ctx, "container")
 	if e != nil {
@@ -219,7 +233,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		}
 		if !owned(v.Config.Labels, j, "") {
 			prefix := "soar-" + j.App + "-"
-			if strings.HasPrefix(r.Name, prefix) && operation.MatchString(strings.TrimPrefix(r.Name, prefix)) {
+			if retainedContainer(j, r.Name) || (strings.HasPrefix(r.Name, prefix) && operation.MatchString(strings.TrimPrefix(r.Name, prefix))) {
 				return nil, errors.New("foreign app container name")
 			}
 			continue
@@ -228,13 +242,13 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 			return nil, e
 		}
 		o := v.Config.Labels["soar.operation"]
-		if action == "cleanup" && (keep[o] || v.State.Running) {
+		if action == "cleanup" && (retainedContainer(j, r.Name) || v.State.Running) {
 			keep[o] = true
 			keepImages[v.Image] = true
 			w.Plan.Retained = append(w.Plan.Retained, r.Name+": active or retained release")
 			continue
 		}
-		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o})
+		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o, Service: v.Config.Labels["soar.service"]})
 		w.Plan.Containers = append(w.Plan.Containers, r.Name)
 		exclude[r.ID] = true
 	}
@@ -312,14 +326,14 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 			return nil, fmt.Errorf("unknown app file %s", n)
 		}
 		limit := int64(32 << 20)
-		if match[2] == "image.iid" {
+		if strings.HasSuffix(match[2], "image.iid") {
 			limit = 128
 		}
 		b, h, e := resourceRead(filepath.Join(m.dir(j.App), n), limit)
 		if e != nil {
 			return nil, e
 		}
-		if match[2] == "image.iid" {
+		if strings.HasSuffix(match[2], "image.iid") {
 			id := strings.TrimSpace(string(b))
 			if !imageID.MatchString(id) {
 				return nil, errors.New("invalid IID provenance")
@@ -385,7 +399,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 }
 
 func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p plannedContainer) (*resourceInspection, error) {
-	if !resourceID.MatchString(p.ID) || !resourceID.MatchString(p.NetworkID) || !imageID.MatchString(p.Image) || !operation.MatchString(p.Operation) || p.Name != "soar-"+j.App+"-"+p.Operation {
+	if !resourceID.MatchString(p.ID) || !resourceID.MatchString(p.NetworkID) || !imageID.MatchString(p.Image) || !operation.MatchString(p.Operation) || !maintenanceContainerIdentity(j, p.Name, p.Service, p.Operation) {
 		return nil, errors.New("invalid planned container")
 	}
 	rows, e := m.resourceList(ctx, "container")
@@ -414,7 +428,7 @@ func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p pl
 	if e = resourceContainer(v, j, resourceRow{ID: p.ID, Name: p.Name}); e != nil {
 		return nil, e
 	}
-	if v.Image != p.Image || v.Config.Labels["soar.operation"] != p.Operation {
+	if v.Image != p.Image || v.Config.Labels["soar.operation"] != p.Operation || v.Config.Labels["soar.service"] != p.Service {
 		return nil, errors.New("changed planned container")
 	}
 	nv, e := m.resourceInspect(ctx, "network", network(j))
@@ -500,7 +514,7 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 		proven := false
 		for _, entry := range entries {
 			match := resourceFile.FindStringSubmatch(entry.Name())
-			if match == nil || match[2] != "image.iid" {
+			if match == nil || !strings.HasSuffix(match[2], "image.iid") {
 				continue
 			}
 			b, _, e := resourceRead(filepath.Join(m.dir(j.App), entry.Name()), 128)
@@ -557,11 +571,11 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 		if match == nil || !resourceID.MatchString(p.SHA256) {
 			return errors.New("invalid planned file")
 		}
-		if w.Action == "cleanup" && match[2] == "image.iid" {
+		if w.Action == "cleanup" && strings.HasSuffix(match[2], "image.iid") {
 			return errors.New("cleanup cannot remove provenance")
 		}
 		limit := int64(32 << 20)
-		if match[2] == "image.iid" {
+		if strings.HasSuffix(match[2], "image.iid") {
 			limit = 128
 		}
 		path := filepath.Join(m.dir(j.App), p.Name)

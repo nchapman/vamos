@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/deploy"
 	"github.com/nchapman/soar/internal/host"
@@ -48,7 +49,11 @@ func TestDeployCapturesRequestAndBindsDefault(t *testing.T) {
 	var seen deploy.Request
 	deps.Run = func(_ context.Context, target string, r deploy.Request, b, a []byte) (deploy.Response, error) {
 		seen = r
-		if target != "root@home" || string(b) != "binary" || string(a) != "tar" {
+		payloads, err := buildcontext.ReadBundle(a, r.Config)
+		if err != nil || r.ContextFormat != "bundle-v1" || len(payloads) != 1 {
+			t.Fatalf("invalid bundle: %v", err)
+		}
+		if target != "root@home" || string(b) != "binary" {
 			t.Fatal("invalid transport inputs")
 		}
 		return deploy.Response{Version: 1, Status: &deploy.Status{App: r.App, Operation: r.Operation, Phase: "ready", Running: true}}, nil

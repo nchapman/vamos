@@ -19,6 +19,31 @@ func maintenanceStatus(j *journal, domain string) Status {
 	} else if j.LastMaintenanceOperation != "" {
 		s.Operation = j.LastMaintenanceOperation
 	}
+	if j.Version == 2 {
+		s.URL, s.Container, s.Running = "", "", false
+		s.Services = map[string]ServiceStatus{}
+		for name, slot := range j.ServiceStates {
+			if slot == nil {
+				continue
+			}
+			status := ServiceStatus{Phase: slot.Phase}
+			if r := slot.Current; r != nil {
+				status.Kind = "private"
+				status.Operation, status.Container, status.Image, status.Port = r.Operation, r.Container, r.Image, r.Port
+				if r.Config != nil && r.Config.HTTP != nil {
+					status.Kind = "public"
+					status.URL = ServiceURL(j.App, name, domain)
+				}
+			}
+			if slot.Candidate != nil {
+				status.Candidate = slot.Candidate.Container
+			}
+			s.Services[name] = status
+			if name == "web" {
+				s.URL, s.Container = status.URL, status.Container
+			}
+		}
+	}
 	if j.Phase == "destroyed" {
 		s.URL = "https://" + j.App + "." + domain
 		s.Container = ""
@@ -51,7 +76,28 @@ func (m *Manager) maintenanceFence(r Request) error {
 }
 
 var fullResourceID = regexp.MustCompile(`^[0-9a-f]{64}$`)
-var maintenanceFile = regexp.MustCompile(`^[0-9a-f]{32}\.(context\.tar|image\.iid)$`)
+var maintenanceFile = regexp.MustCompile(`^[0-9a-f]{32}\.(context\.tar|(?:[0-9a-f]{32}\.)?image\.iid)$`)
+
+// Empty Service is exclusively the legacy identity. Names or prefixes alone
+// never establish ownership; callers must also prove host/app/operation labels.
+func maintenanceContainerIdentity(j *journal, name, service, op string) bool {
+	return operation.MatchString(op) && (service == "" || appstate.ValidName(service)) &&
+		name == containerName(j.App, service, op)
+}
+
+// Snapshot operation identities also retain their archives, even when a mixed
+// snapshot's individual releases all originated in earlier operations.
+func maintenanceRetainedOperation(j *journal, op string) bool {
+	if j.Operation == op || retainedOperation(j, op) {
+		return true
+	}
+	for _, snapshot := range []*completedRelease{j.Completed, j.PreviousCompleted} {
+		if snapshot != nil && snapshot.Operation == op {
+			return true
+		}
+	}
+	return false
+}
 
 func validateMaintenance(j *journal) error {
 	bad := errors.New("invalid maintenance journal")
@@ -68,7 +114,7 @@ func validateMaintenance(j *journal) error {
 		}
 		return nil
 	}
-	if !operation.MatchString(w.Operation) || w.Operation == j.Operation || releaseOperation(j.Current, w.Operation) || releaseOperation(j.Previous, w.Operation) || releaseOperation(j.Candidate, w.Operation) || (w.Action != "cleanup" && w.Action != "destroy") || w.Plan.Action != w.Action || w.Plan.App != j.App {
+	if !operation.MatchString(w.Operation) || maintenanceRetainedOperation(j, w.Operation) || (w.Action != "cleanup" && w.Action != "destroy") || w.Plan.Action != w.Action || w.Plan.App != j.App {
 		return bad
 	}
 	pb, e := json.Marshal(w.Plan)
@@ -79,7 +125,7 @@ func validateMaintenance(j *journal) error {
 	if w.Action == "destroy" {
 		phase = "destroying"
 	}
-	if j.Phase != phase || j.Current == nil || j.OldCaddy != "" || j.NewCaddy != "" {
+	if j.Phase != phase || !hasCurrent(j) || j.OldCaddy != "" || j.NewCaddy != "" {
 		return bad
 	}
 	if w.Action == "cleanup" && (w.OldCaddy != "" || w.NewCaddy != "" || w.Network != nil) {
@@ -93,11 +139,11 @@ func validateMaintenance(j *journal) error {
 	}
 	seen := map[string]bool{}
 	for _, v := range w.Containers {
-		if !operation.MatchString(v.Operation) || v.Name != "soar-"+j.App+"-"+v.Operation || !fullResourceID.MatchString(v.ID) || !fullResourceID.MatchString(v.NetworkID) || !imageID.MatchString(v.Image) || seen[v.ID] {
+		if !operation.MatchString(v.Operation) || !maintenanceContainerIdentity(j, v.Name, v.Service, v.Operation) || !fullResourceID.MatchString(v.ID) || !fullResourceID.MatchString(v.NetworkID) || !imageID.MatchString(v.Image) || seen[v.ID] {
 			return bad
 		}
 		seen[v.ID] = true
-		if w.Action == "cleanup" && (releaseOperation(j.Current, v.Operation) || releaseOperation(j.Previous, v.Operation) || releaseOperation(j.Candidate, v.Operation)) {
+		if w.Action == "cleanup" && retainedContainer(j, v.Name) {
 			return bad
 		}
 	}
@@ -106,7 +152,12 @@ func validateMaintenance(j *journal) error {
 			return bad
 		}
 		if w.Action == "cleanup" {
-			for _, r := range []*release{j.Current, j.Previous, j.Candidate} {
+			for _, image := range j.BuildImages {
+				if image == v {
+					return bad
+				}
+			}
+			for _, r := range retainedReleases(j) {
 				if r != nil && r.Image == v {
 					return bad
 				}
@@ -123,7 +174,7 @@ func validateMaintenance(j *journal) error {
 		if !maintenanceFile.MatchString(v.Name) || !fullResourceID.MatchString(v.SHA256) {
 			return bad
 		}
-		if w.Action == "cleanup" && (v.Name == j.Archive || strings.HasSuffix(v.Name, ".image.iid") || releaseOperation(j.Current, strings.Split(v.Name, ".")[0]) || releaseOperation(j.Previous, strings.Split(v.Name, ".")[0]) || releaseOperation(j.Candidate, strings.Split(v.Name, ".")[0])) {
+		if w.Action == "cleanup" && (v.Name == j.Archive || strings.HasSuffix(v.Name, ".image.iid") || maintenanceRetainedOperation(j, strings.Split(v.Name, ".")[0])) {
 			return bad
 		}
 	}
@@ -155,7 +206,13 @@ func (m *Manager) destroyRoutes(j *journal) (string, string, error) {
 		return "", "", e
 	}
 	clone := *j
+	clone.Current = nil
 	clone.Candidate = nil
+	// Do not mutate the original slots: their current releases still authorize
+	// resource checks after all public routes have been withdrawn.
+	if j.Version == 2 {
+		clone.ServiceStates = nil
+	}
 	next, e := m.routes(&clone, true)
 	return old, next, e
 }
@@ -246,6 +303,27 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 					s.LastError = diagnostic(x.Error())
 				}
 			}
+			if j.Version == 2 {
+				s.Running = len(j.ServiceStates) > 0
+				for name, slot := range j.ServiceStates {
+					if slot == nil || slot.Current == nil {
+						s.Running = false
+						continue
+					}
+					// Current slots have known immutable config. Historical
+					// snapshots used for removal need only resource ownership
+					// proof and never pass through this status inspection.
+					v, x := m.multiInspect(c, j, slot.Current, false, true)
+					status := s.Services[name]
+					status.Running = x == nil && v.State.Running
+					status.Available = status.Running && runtimeRunning(v) && !slot.CurrentRetired && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
+					s.Services[name] = status
+					s.Running = s.Running && status.Running
+					if x != nil && j.Phase != "destroying" && s.LastError == "" {
+						s.LastError = "maintenance current container inspection failed"
+					}
+				}
+			}
 			resp.Status = &s
 		}
 	}()
@@ -274,7 +352,7 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		if j.Phase != "ready" || j.Maintenance != nil {
 			return resp, errors.New("maintenance requires ready app")
 		}
-		if r.Operation == j.Operation || r.Operation == j.LastMaintenanceOperation || releaseOperation(j.Current, r.Operation) || releaseOperation(j.Previous, r.Operation) {
+		if r.Operation == j.LastMaintenanceOperation || maintenanceRetainedOperation(j, r.Operation) {
 			return resp, errors.New("operation ID already used")
 		}
 		w, e := m.planMaintenance(c, j, r.Action, r.Operation)

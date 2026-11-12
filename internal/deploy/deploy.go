@@ -1,4 +1,4 @@
-// Package deploy implements the single-service, stateless remote deployment journal.
+// Package deploy implements recoverable stateless app deployment journals.
 package deploy
 
 import (
@@ -20,6 +20,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/nchapman/soar/internal/appstate"
+	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/lifecycle"
 	"github.com/nchapman/soar/internal/process"
@@ -27,18 +28,24 @@ import (
 )
 
 type Request struct {
-	SecretName string           `json:"secret_name,omitempty"`
-	Apply      bool             `json:"apply,omitempty"`
-	Supersede  string           `json:"supersede,omitempty"`
-	Version    int              `json:"version"`
-	Action     string           `json:"action"`
-	App        string           `json:"app"`
-	Operation  string           `json:"operation,omitempty"`
-	Config     *config.App      `json:"config,omitempty"`
-	Host       lifecycle.Config `json:"host"`
-	Tail       int              `json:"tail,omitempty"`
+	ContextFormat string           `json:"context_format,omitempty"`
+	Service       string           `json:"service,omitempty"`
+	Candidate     bool             `json:"candidate,omitempty"`
+	SecretName    string           `json:"secret_name,omitempty"`
+	Apply         bool             `json:"apply,omitempty"`
+	Supersede     string           `json:"supersede,omitempty"`
+	Version       int              `json:"version"`
+	Action        string           `json:"action"`
+	App           string           `json:"app"`
+	Operation     string           `json:"operation,omitempty"`
+	Config        *config.App      `json:"config,omitempty"`
+	Host          lifecycle.Config `json:"host"`
+	Tail          int              `json:"tail,omitempty"`
 }
 type Response struct {
+	LogService     string          `json:"log_service,omitempty"`
+	LogContainer   string          `json:"log_container,omitempty"`
+	LogCandidate   bool            `json:"log_candidate,omitempty"`
 	Secret         *secrets.Entry  `json:"secret,omitempty"`
 	SecretVersions []secrets.Entry `json:"secret_versions,omitempty"`
 	Plan           *Plan           `json:"plan,omitempty"`
@@ -48,25 +55,29 @@ type Response struct {
 	Error          string          `json:"error,omitempty"`
 }
 type SecretStatus struct {
-	Name           string   `json:"name"`
-	StagedVersion  string   `json:"staged_version"`
-	AppliedVersion string   `json:"applied_version,omitempty"`
-	Pending        bool     `json:"pending"`
-	Services       []string `json:"services"`
+	AppliedVersions map[string]string `json:"applied_versions,omitempty"`
+	Name            string            `json:"name"`
+	StagedVersion   string            `json:"staged_version"`
+	AppliedVersion  string            `json:"applied_version,omitempty"`
+	Pending         bool              `json:"pending"`
+	Services        []string          `json:"services"`
 }
 
 type Status struct {
-	Secrets   []SecretStatus `json:"secrets,omitempty"`
-	App       string         `json:"app"`
-	URL       string         `json:"url"`
-	Phase     string         `json:"phase"`
-	Operation string         `json:"operation"`
-	Active    bool           `json:"active"`
-	Container string         `json:"container"`
-	LastError string         `json:"last_error"`
-	Running   bool           `json:"running"`
+	Services  map[string]ServiceStatus `json:"services,omitempty"`
+	Secrets   []SecretStatus           `json:"secrets,omitempty"`
+	App       string                   `json:"app"`
+	URL       string                   `json:"url"`
+	Phase     string                   `json:"phase"`
+	Operation string                   `json:"operation"`
+	Active    bool                     `json:"active"`
+	Container string                   `json:"container"`
+	LastError string                   `json:"last_error"`
+	Running   bool                     `json:"running"`
 }
 type release struct {
+	Service     string                 `json:",omitempty"`
+	Config      *config.Service        `json:",omitempty"`
 	SecretRefs  map[string]secrets.Ref `json:",omitempty"`
 	Container   string
 	Image       string
@@ -75,11 +86,17 @@ type release struct {
 	Operation   string
 }
 type journal struct {
-	SecretRefs               map[string]secrets.Ref `json:",omitempty"`
-	Maintenance              *maintenance           `json:",omitempty"`
-	LastMaintenanceOperation string                 `json:",omitempty"`
-	LastMaintenanceAction    string                 `json:",omitempty"`
-	Version                  int                    `json:"version"`
+	ServiceStates                map[string]*serviceState `json:",omitempty"`
+	BuildImages                  map[string]string        `json:",omitempty"`
+	BundleSHA                    string                   `json:",omitempty"`
+	ServiceOrder                 []string                 `json:",omitempty"`
+	ActiveService                string                   `json:",omitempty"`
+	Completed, PreviousCompleted *completedRelease        `json:",omitempty"`
+	SecretRefs                   map[string]secrets.Ref   `json:",omitempty"`
+	Maintenance                  *maintenance             `json:",omitempty"`
+	LastMaintenanceOperation     string                   `json:",omitempty"`
+	LastMaintenanceAction        string                   `json:",omitempty"`
+	Version                      int                      `json:"version"`
 	Status
 	Archive                      string
 	HostID                       string
@@ -92,12 +109,13 @@ type Manager struct {
 	// RuntimeDir is the private worker staging directory for transient env files.
 	RuntimeDir string
 	// AllocatePort selects an advisory loopback reservation. Docker's bind is authoritative.
-	AllocatePort  func() (string, error)
-	Root          string
-	Run           Runner
-	HTTP          *http.Client
-	HealthTimeout time.Duration
-	Drain         time.Duration
+	AllocatePort   func() (string, error)
+	Root           string
+	Run            Runner
+	HTTP           *http.Client
+	HealthTimeout  time.Duration
+	PrivateObserve time.Duration
+	Drain          time.Duration
 }
 
 func allocatePort() (string, error) {
@@ -123,7 +141,7 @@ func NewManager() *Manager {
 			return process.RunLimited(c, n, a, b, 8<<20)
 		}
 		return process.Run(c, n, a, b)
-	}, HTTP: &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, HealthTimeout: 30 * time.Second, Drain: 2 * time.Second}
+	}, HTTP: &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, HealthTimeout: 30 * time.Second, PrivateObserve: 2 * time.Second, Drain: 2 * time.Second}
 }
 
 var label = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
@@ -137,12 +155,32 @@ func ValidateApp(a *config.App) error {
 	if err := a.Validate(); err != nil {
 		return err
 	}
-	s, ok := a.Services["web"]
-	if !ok || len(a.Services) != 1 || s.Build == nil || s.Image != "" || s.HTTP == nil || len(s.HTTP.Domains) > 0 || len(s.Volumes) > 0 || s.Update == config.UpdateManual {
-		return errors.New("only one build-only public HTTP web service without volumes, manual updates or custom domains is supported")
+	if len(a.Services) > MaxServices {
+		return fmt.Errorf("at most %d services are supported", MaxServices)
 	}
-	if len(s.Secrets) > secrets.MaxNames {
-		return errors.New("at most 64 secret environment mappings are supported")
+	mappings := 0
+	for name, s := range a.Services {
+		if s.Build == nil || s.Image != "" || len(s.Volumes) > 0 || s.Update == config.UpdateManual || (s.HTTP != nil && len(s.HTTP.Domains) > 0) {
+			return fmt.Errorf("service %s: only Dockerfile-built stateless services without manual updates or custom domains are supported", name)
+		}
+		if s.HTTP != nil && name != "web" && len(a.Name+"-"+name) > 63 {
+			return fmt.Errorf("service %s: generated hostname label exceeds 63 bytes", name)
+		}
+		mappings += len(s.Secrets)
+	}
+	if mappings > secrets.MaxNames {
+		return errors.New("at most 64 secret environment mappings across the app are supported")
+	}
+	return nil
+}
+
+func validateLegacyApp(a *config.App) error {
+	if err := ValidateApp(a); err != nil {
+		return err
+	}
+	s, ok := a.Services["web"]
+	if !ok || len(a.Services) != 1 || s.HTTP == nil {
+		return errors.New("legacy protocol supports only one public web service; use a current client with a captured build bundle")
 	}
 	return nil
 }
@@ -151,6 +189,15 @@ func (r Request) Mutating() bool {
 }
 
 func ValidateRequest(r Request) error {
+	if r.ContextFormat != "" && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
+		return errors.New("unsupported context format or action")
+	}
+	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs")) {
+		return errors.New("service selection requires status or logs and a valid service name")
+	}
+	if r.Candidate && r.Action != "logs" {
+		return errors.New("candidate selection requires logs")
+	}
 	if r.SecretName != "" && r.Action != "secrets-stage" {
 		return errors.New("secret name requires secrets-stage")
 	}
@@ -182,6 +229,16 @@ func ValidateRequest(r Request) error {
 		}
 		if err := ValidateApp(r.Config); err != nil {
 			return err
+		}
+		if r.ContextFormat == "" {
+			if err := validateLegacyApp(r.Config); err != nil {
+				return err
+			}
+		}
+		for name, s := range r.Config.Services {
+			if s.HTTP != nil && len(strings.TrimPrefix(ServiceURL(r.App, name, r.Host.Domain), "https://")) > 253 {
+				return errors.New("generated service hostname too long")
+			}
 		}
 		if r.Config.Name != r.App {
 			return errors.New("config app mismatch")
@@ -269,8 +326,15 @@ func atomic(p string, b []byte, mode os.FileMode) error {
 	return d.Sync()
 }
 func (m *Manager) save(j *journal) error {
-	j.Version = 1
+	if j.Version == 0 {
+		j.Version = 1
+	}
 	j.LastError = diagnostic(j.LastError)
+	if j.Version == 2 {
+		if err := validateMultiJournal(j, j.App); err != nil {
+			return err
+		}
+	}
 	b, e := json.Marshal(j)
 	if e != nil {
 		return e
@@ -415,6 +479,13 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			err = errors.New("app is unmanaged")
 			return
 		}
+		if j != nil && j.Version == 2 {
+			return m.readMulti(ctx, r, j, secretState, !ok)
+		}
+		if r.Service != "" && (r.Service != "web" || j == nil || j.Phase == "destroyed") {
+			err = errors.New("service has no recorded deployment")
+			return
+		}
 		s := secretOnlyStatus(r.App, r.Host.Domain)
 		if j != nil {
 			s = maintenanceStatus(j, r.Host.Domain)
@@ -434,11 +505,20 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			resp.SecretVersions = secretState.List()
 		}
 		if r.Action == "logs" {
-			if j == nil || j.Current == nil {
+			var target *release
+			if j != nil {
+				target = j.Current
+				if r.Candidate && j.Phase != "draining" {
+					target = j.Candidate
+				} else if r.Candidate {
+					target = nil
+				}
+			}
+			if target == nil {
 				err = errors.New("app has no current release")
 				return
 			}
-			if _, err = m.container(ctx, j, j.Current); err != nil {
+			if _, err = m.container(ctx, j, target); err != nil {
 				return
 			}
 			n := r.Tail
@@ -446,7 +526,10 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 				n = 100
 			}
 			var out process.Result
-			out, err = m.Run(ctx, "docker", []string{"logs", "--timestamps", "--tail", fmt.Sprint(n), j.Current.Container}, nil)
+			resp.LogService = "web"
+			resp.LogContainer = target.Container
+			resp.LogCandidate = r.Candidate
+			out, err = m.Run(ctx, "docker", []string{"logs", "--timestamps", "--tail", fmt.Sprint(n), target.Container}, nil)
 			resp.Logs = diagnostic(string(out.Stdout) + string(out.Stderr))
 		}
 		return
@@ -479,6 +562,21 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			resp.Status.Secrets = secretStatuses(secretState, j)
 		}
 		return
+	}
+	// A current client must still be able to correct a failed legacy web
+	// deployment. Finish that operation through its original state machine;
+	// upgrade only on a later deployment from a ready journal.
+	if r.Action == "deploy" && r.ContextFormat == BundleFormat && r.Supersede != "" && j != nil && j.Version == 1 && j.Phase != "ready" && j.Phase != "destroyed" && validateLegacyApp(r.Config) == nil {
+		archives, x := buildcontext.ReadBundle(tar, r.Config)
+		if x != nil {
+			err = x
+			return
+		}
+		tar = archives[buildcontext.BuildKey(*r.Config.Services["web"].Build)]
+		r.ContextFormat = ""
+	}
+	if r.ContextFormat == BundleFormat || (j != nil && j.Version == 2) {
+		return m.executeMulti(ctx, r, tar, j, h, secretState)
 	}
 	if r.Action == "deploy" {
 		if len(tar) == 0 {
@@ -615,6 +713,12 @@ func diagnostic(s string) string {
 	return s
 }
 func validateJournal(j *journal, app string) error {
+	if j.Version == 2 {
+		return validateMultiJournal(j, app)
+	}
+	if len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+		return errors.New("invalid legacy app journal")
+	}
 	bad := errors.New("invalid app journal")
 	if j.Phase == "destroyed" {
 		if len(j.SecretRefs) != 0 || j.Config != nil || j.Current != nil || j.Previous != nil || j.Candidate != nil || j.Maintenance != nil || j.URL != "" || j.Archive != "" || j.OldCaddy != "" || j.NewCaddy != "" {
@@ -625,7 +729,7 @@ func validateJournal(j *journal, app string) error {
 	if err := validateMaintenance(j); err != nil {
 		return err
 	}
-	if j.Version != 1 || len(app) > 63 || !label.MatchString(app) || j.App != app || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" {
+	if j.Version != 1 || len(app) > 63 || !label.MatchString(app) || j.App != app || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || validateLegacyApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" {
 		return bad
 	}
 	if !matchingSecretRefs(j.SecretRefs, j.Config.Services["web"].Secrets) {
@@ -661,7 +765,7 @@ func validateJournal(j *journal, app string) error {
 		if r == nil {
 			continue
 		}
-		if !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
+		if r.Service != "" || r.Config != nil || !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
 			return bad
 		}
 		for _, port := range []string{r.Port, r.PublishPort} {

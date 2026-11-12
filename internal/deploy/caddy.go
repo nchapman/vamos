@@ -4,14 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
-	"strings"
 )
 
 const baseCaddy = "{\n\tadmin 127.0.0.1:2019\n}\n"
@@ -19,51 +16,6 @@ const baseCaddy = "{\n\tadmin 127.0.0.1:2019\n}\n"
 func sameJSON(a, b []byte) bool {
 	var x, y any
 	return json.Unmarshal(a, &x) == nil && json.Unmarshal(b, &y) == nil && reflect.DeepEqual(x, y)
-}
-func (m *Manager) routes(j *journal, candidate bool) (string, error) {
-	entries, e := os.ReadDir(m.path("/var/lib/soar/apps"))
-	if e != nil {
-		return "", e
-	}
-	routes := map[string]string{}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			return "", errors.New("unexpected app journal entry")
-		}
-		other, e := m.load(entry.Name())
-		if e != nil {
-			return "", e
-		}
-		if other.HostID != j.HostID {
-			return "", errors.New("foreign app journal")
-		}
-		if other.Phase == "destroyed" {
-			continue
-		}
-		if strings.TrimPrefix(other.URL, "https://"+other.App+".") != strings.TrimPrefix(j.URL, "https://"+j.App+".") {
-			return "", errors.New("foreign app journal")
-		}
-		if other.App != j.App && other.NewCaddy != "" {
-			return "", errors.New("another app has pending promotion; resume it first")
-		}
-		r := other.Current
-		if other.App == j.App && candidate {
-			r = j.Candidate
-		}
-		if r != nil {
-			routes[strings.TrimPrefix(other.URL, "https://")] = r.Port
-		}
-	}
-	keys := make([]string, 0, len(routes))
-	for k := range routes {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := baseCaddy
-	for _, k := range keys {
-		out += fmt.Sprintf("\n%s {\n\treverse_proxy 127.0.0.1:%s\n}\n", k, routes[k])
-	}
-	return out, nil
 }
 func (m *Manager) adapt(c context.Context, text string) ([]byte, error) {
 	p := m.path("/etc/caddy/.soar-adapt.Caddyfile")
@@ -87,6 +39,9 @@ func (m *Manager) live(c context.Context) ([]byte, error) {
 	return b, e
 }
 func (m *Manager) promote(c context.Context, j *journal) error {
+	if e := validateRouteCandidate(j); e != nil {
+		return e
+	}
 	old, e := m.routes(j, false)
 	if e != nil {
 		return e
@@ -129,7 +84,11 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 	if !pending {
 		j.OldCaddy = old
 		j.NewCaddy = next
-		j.Phase = "promoting"
+		if j.Version == 2 {
+			j.Phase = "updating"
+		} else {
+			j.Phase = "promoting"
+		}
 		if e = m.save(j); e != nil {
 			return e
 		}
@@ -142,7 +101,7 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 	if _, e = m.cmd(c, "caddy", "validate", "--config", temp, "--adapter", "caddyfile"); e != nil {
 		return e
 	}
-	if e = m.healthy(c, j, j.Candidate); e != nil {
+	if e = m.routeCandidateHealthy(c, j); e != nil {
 		return e
 	}
 	if string(file) != next {
@@ -180,6 +139,9 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 func (m *Manager) reconcilePending(c context.Context, j *journal) error {
 	if j.NewCaddy == "" {
 		return nil
+	}
+	if e := validateRouteCandidate(j); e != nil {
+		return e
 	}
 	old, e := m.routes(j, false)
 	if e != nil {

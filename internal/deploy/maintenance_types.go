@@ -12,7 +12,7 @@ type Plan struct {
 	Retained   []string `json:"retained"`
 }
 
-type plannedContainer struct{ Name, ID, Image, Operation, NetworkID string }
+type plannedContainer struct{ Name, ID, Image, Operation, Service, NetworkID string }
 type plannedNetwork struct{ Name, ID string }
 type plannedFile struct{ Name, SHA256 string }
 

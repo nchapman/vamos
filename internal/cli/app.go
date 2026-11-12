@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/nchapman/soar/internal/buildcontext"
@@ -23,8 +24,8 @@ import (
 
 const appHelp = `Usage:
   soar deploy [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--executor FILE]
-  soar status [-f soar.yaml] [--json] [--server NAME --app APP]
-  soar logs [-f soar.yaml] [--tail 100] [--server NAME --app APP]
+  soar status [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
+  soar logs [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
   soar resume [--server NAME --app APP] OPERATION
   soar cleanup [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
   soar destroy [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
@@ -32,7 +33,7 @@ const appHelp = `Usage:
 All commands accept --executor FILE. Cleanup/destroy preview unless --yes.
 Lifecycle --json emits the full response (including the exact plan).
 
-First slice: one Dockerfile-built, volume-free public web service.
+Deploy updates the whole app. Private services use stop/start replacement.
 Flags precede positional arguments. Resume uses captured inputs, not local edits.
 Without --server, a project's first contact binds it to the registered default.
 An explicit --server overrides only this invocation; it never changes the binding.
@@ -57,7 +58,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	serverFlag := flags.String("server", "", "registered server override")
 	appFlag := flags.String("app", "", "app name for operations outside a project")
 	executorFile := flags.String("executor", "", "Linux executor artifact override")
-	service := flags.String("service", "web", "service (only web is supported)")
+	service := flags.String("service", "", "service selector (status/logs only)")
+	candidate := flags.Bool("candidate", false, "candidate logs (logs only)")
 	supersede := flags.String("supersede", "", "replace a stopped pre-promotion operation with new inputs")
 	yes := flags.Bool("yes", false, "apply cleanup or destroy (default: preview)")
 	maintenance := action == "cleanup" || action == "destroy"
@@ -77,12 +79,22 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return 2
 	}
 	yesProvided := false
+	serviceProvided, candidateProvided := false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "service" {
+			serviceProvided = true
+		}
+		if f.Name == "candidate" {
+			candidateProvided = true
+		}
 		if f.Name == "yes" {
 			yesProvided = true
 		}
 	})
-	if *timeout <= 0 || *service != "web" || *tail < 1 || *tail > 1000 {
+	if (serviceProvided && (action != "status" && action != "logs" || *service == "")) || (candidateProvided && action != "logs") {
+		return usageError(stderr, "--service is status/logs only; --candidate is logs only; deploy is whole-app")
+	}
+	if *timeout <= 0 || *tail < 1 || *tail > 1000 {
 		return usageError(stderr, "invalid timeout, service, or log tail")
 	}
 	if (action == "resume" && flags.NArg() != 1) || (action != "resume" && flags.NArg() != 0) {
@@ -132,6 +144,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	request := deploy.Request{Version: 1, Action: action, App: name, Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}}
 	request.Apply = *yes
+	request.Service = *service
+	request.Candidate = *candidate
 	var archive []byte
 	if maintenance {
 		var id [16]byte
@@ -148,7 +162,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 		request.Operation = hex.EncodeToString(id[:])
-		archive, err = deps.Archive(*filename, *app.Services["web"].Build)
+		request.ContextFormat = "bundle-v1"
+		archive, err = buildcontext.Bundle(*filename, app, deps.Archive)
 		if err != nil {
 			return lifecycleError(stderr, err)
 		}
@@ -171,8 +186,13 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	var binary []byte
+	if action == "deploy" {
+		if _, err := fmt.Fprintln(stdout, "Whole-app deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
+			return lifecycleError(stderr, err)
+		}
+	}
 	if mutation && !*asJSON {
-		if _, err := fmt.Fprintf(stdout, "%s / %s / web: %s (operation %s)\n", server.Name, name, action, request.Operation); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s / %s: %s (operation %s)\n", server.Name, name, action, request.Operation); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}
@@ -200,6 +220,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return code
 	}
 	if action == "logs" {
+		if response.LogService != "" || response.LogContainer != "" {
+			if _, err := fmt.Fprintf(stdout, "Logs: service=%q container=%q candidate=%t\n", response.LogService, response.LogContainer, response.LogCandidate); err != nil {
+				return lifecycleError(stderr, err)
+			}
+		}
 		if _, err := io.WriteString(stdout, response.Logs); err != nil {
 			return lifecycleError(stderr, err)
 		}
@@ -216,6 +241,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	if response.Status != nil && !*asJSON {
 		for _, secret := range response.Status.Secrets {
+			if len(secret.AppliedVersions) > 0 {
+				if _, err := fmt.Fprintf(stdout, "Secret %s applied by service: %v\n", secret.Name, secret.AppliedVersions); err != nil {
+					return lifecycleError(stderr, err)
+				}
+			}
 			if _, err := fmt.Fprintf(stdout, "Secret %s: staged=%s applied=%s pending=%t services=%v\n", secret.Name, secret.StagedVersion, secret.AppliedVersion, secret.Pending, secret.Services); err != nil {
 				return lifecycleError(stderr, err)
 			}
@@ -252,6 +282,34 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return lifecycleError(stderr, errors.New("remote response has no app status"))
 	}
 	s := response.Status
+	if len(s.Services) > 0 {
+		if _, err := fmt.Fprintf(stdout, "%s / %s: phase=%q operation=%q host-operation-active=%t\n", server.Name, name, s.Phase, s.Operation, s.Active); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		names := make([]string, 0, len(s.Services))
+		for name := range s.Services {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, serviceName := range names {
+			if *service != "" && serviceName != *service {
+				continue
+			}
+			ss := s.Services[serviceName]
+			if ss.Candidate != "" {
+				if _, err := fmt.Fprintf(stdout, "%s candidate: %q\n", serviceName, ss.Candidate); err != nil {
+					return lifecycleError(stderr, err)
+				}
+			}
+			if _, err := fmt.Fprintf(stdout, "%s / %s / %s: kind=%q phase=%q running=%t available=%t\nURL: %s\nOperation: %q\nContainer: %q\n", server.Name, name, serviceName, ss.Kind, ss.Phase, ss.Running, ss.Available, ss.URL, ss.Operation, ss.Container); err != nil {
+				return lifecycleError(stderr, err)
+			}
+		}
+		if s.LastError != "" {
+			fmt.Fprintf(stdout, "Last error: %q\n", s.LastError)
+		}
+		return 0
+	}
 	if _, err := fmt.Fprintf(stdout, "%s / %s / web: phase=%q running=%t host-operation-active=%t\nURL: https://%s.%s\nOperation: %q\nContainer: %q\n", server.Name, name, s.Phase, s.Running, s.Active, name, server.Domain, s.Operation, s.Container); err != nil {
 		return lifecycleError(stderr, err)
 	}

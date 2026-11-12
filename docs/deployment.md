@@ -1,8 +1,8 @@
-# First stateless deployment slice
+# Stateless deployment
 
-Implemented: one Dockerfile-built public `web` service per app, remote Buildx builds, candidate readiness, Caddy routing with automatic HTTPS, repeat deployment, captured-input resume, explicit pre-promotion supersede, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md).
+Implemented: up to eight Dockerfile-built public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
 
-Not implemented: multiple services, prebuilt images, custom domain aliases, volumes, manual update policies, rollback, streaming logs, `init`, or automatic image/context/container garbage collection. These configurations fail explicitly; they are not partially applied. Multiple single-service apps can share a host, with separate networks and merged Caddy routes.
+Not implemented: prebuilt images, custom domain aliases, volumes, manual update policies, scoped deployment, service removal, public/private kind changes, rollback, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
 
 ## Deploy an app
 
@@ -48,21 +48,21 @@ Flags precede positional arguments. `--app` is for commands that do not require 
 
 ## Build and runtime boundaries
 
-- No local Docker daemon or registry is required. The client sends a tar context and matching Linux executor over strict OpenSSH; Buildx runs on the host.
-- Contexts are limited to **32 MiB including tar overhead**. Docker ignore patterns use Moby's parser/matcher, including Dockerfile-specific ignore-file precedence and negations. Dockerfile/selected ignore file are included for the builder. `.git` and `.soar` are always excluded, even if an ignore rule attempts to reinclude them.
+- No local Docker daemon or registry is required. The client sends a versioned build bundle and matching Linux executor over strict OpenSSH; Buildx runs on the host.
+- The complete bundle is limited to **32 MiB including all tar payloads and manifest overhead**. Identical normalized build specifications are captured and built once per deployment. Docker ignore patterns use Moby's parser/matcher, including Dockerfile-specific ignore-file precedence and negations. Dockerfile/selected ignore file are included for the builder. `.git` and `.soar` are always excluded, even if an ignore rule attempts to reinclude them.
 - Symlinks cannot escape the context; absolute, dangling, or reserved-directory links are refused. Special files are refused. Directory symlinks are archived, not traversed. Do not edit the tree during capture; archiving is not an atomic filesystem snapshot.
 - Sensitive files such as `.env` are **not automatically detected**. Exclude them explicitly. Source archives are retained privately on the host for recovery.
 - Docker commands use argument arrays, bounded subprocess output, and structured JSON inspection. No app value becomes shell source. This slice uses the existing CLI boundary rather than adding a second Docker SDK dependency surface.
 - **Build commands use host networking** because bootstrap disables Docker's shared default bridge. This supports Dockerfile `RUN` instructions and dependency downloads, but builds can reach host-local services. Only build trusted Dockerfiles; this is not an untrusted-build sandbox.
-- Each app gets a labeled user-defined bridge network. The only published service port is selected on `127.0.0.1` and recorded explicitly before container creation; Caddy proxies to that stable endpoint. Containers retain outbound internet access. Private service aliases and multi-service networking are deferred.
-- Containers use `unless-stopped` and the host's bounded `local` Docker log driver. Superseded containers have restart disabled before being stopped with a 30-second grace period. A short drain interval precedes that stop; long-lived requests may be interrupted.
-- Deployment retains images, stopped prior containers, and captured contexts. Explicit `cleanup` preserves current/previous releases while removing safely identified older resources; it does not run a broad prune. Monitor disk usage; automatic retention/garbage collection remains a later feature.
+- Each app gets a labeled user-defined bridge network and service-name DNS. Each public service's only published port is selected on `127.0.0.1` and recorded before container creation; Caddy proxies to that stable endpoint. Private services publish no ports. Containers retain outbound internet access. See the [DNS and isolation boundary](multi-service.md#dns-and-isolation).
+- Containers use `unless-stopped` and the host's bounded `local` Docker log driver. Superseded containers have restart disabled before being stopped with a 30-second grace period. A short drain interval precedes public-service retirement; long-lived requests may be interrupted. Private services stop before their replacements start.
+- Deployment retains images, stopped prior containers, and captured contexts. Explicit `cleanup` preserves effective versions and current/previous completed app snapshots while removing safely identified older resources; it does not run a broad prune. Monitor disk usage; automatic retention/garbage collection remains a later feature.
 
 ## Deployment and recovery
 
-A transient `soar-host-operation.service` worker survives client disconnection, as with host lifecycle operations. App mutations share the host kernel lock; the first slice serializes them globally. Status/logs temporarily stage a matching trusted executor and run directly without the mutation worker, so they remain available while a worker runs and can read newer journal fields. The bootstrap-owned installed executor is not replaced. Client mutation deadlines default to 25 minutes, executor work to 20 minutes, and the systemd hard limit to 21 minutes.
+A transient `soar-host-operation.service` worker survives client disconnection, as with host lifecycle operations. App mutations share the host kernel lock and remain globally serialized. Status/logs temporarily stage a matching trusted executor and run directly without the mutation worker, so they remain available while a worker runs and can read newer journal fields. The bootstrap-owned installed executor is not replaced. Client mutation deadlines default to 25 minutes, executor work to 20 minutes, and the systemd hard limit to 21 minutes.
 
-Before building, a private versioned journal under `/var/lib/soar/apps/<app>/state.json` records the operation, its operation-specific source archive, and immutable secret-version references. Required secrets are resolved before build or supersede; values stay outside release history. Builds produce immutable image IDs. The old container and route remain unchanged while building and checking candidate HTTP readiness.
+Before building, a private versioned journal under `/var/lib/soar/apps/<app>/state.json` records the operation, its operation-specific source archive, and immutable secret-version references. Required secrets are resolved before build or supersede; values stay outside release history. Builds produce immutable image IDs. Every required build and image validation completes before runtime changes. Public services retain their old container and route while checking candidate HTTP readiness; private replacement has explicit downtime.
 
 Promotion records its old/new Caddy intent durably, verifies the existing file and live admin API configuration against known app routes, validates the new configuration, and checks the candidate again. It then replaces/reloads Caddy and verifies the actual configuration before retiring the old container. Manual file/runtime drift blocks promotion; Soar does not take over unrelated Caddy configuration. On a proven reload failure with the runtime still old, the old durable file is restored. An uncertain reload remains explicitly pending for reconciliation.
 
@@ -77,7 +77,7 @@ Promotion records its old/new Caddy intent durably, verifies the existing file a
 ./bin/soar deploy -f examples/hello/soar.yaml --supersede OPERATION_ID
 ```
 
-A new deploy refuses an incomplete operation unless `--supersede` names it exactly. Supersede is limited to pre-promotion building/starting states, preserves the current route/release, and removes only a verified owned failed candidate. It never supersedes an active worker or a pending promotion/drain; resume those first. Old captured archives remain intact, so interruption while selecting new inputs cannot silently change what an old operation resumes.
+A new deploy refuses an incomplete operation unless `--supersede` names it exactly. Supersede preserves effective services, including any already-promoted services from a partially successful operation, and removes only verified unserved candidates. Retired private containers are never restarted implicitly. It never supersedes an active worker, an unresolved route promotion, or public drain; resume those first. Legacy version-1 journals keep their original building/starting supersede restrictions. Old captured archives remain intact, so interruption while selecting new inputs cannot silently change what an old operation resumes.
 
 Resume discovers a candidate whose creation succeeded before a lost response and can start that same verified stopped container. It refuses foreign resources and reused operation identities. A missing candidate with explicit port intent can be recreated only with the same port. Legacy dynamically allocated endpoints still refuse recreation after their port was recorded; no silent route substitution is allowed. An interrupted initial capture before the first journal exists can leave an unjournaled app directory; automatic adoption is refused. Diagnose it rather than deleting arbitrary state.
 
@@ -87,13 +87,13 @@ Host teardown deliberately refuses active/incomplete app state or Docker workloa
 
 ## Logs
 
-`soar logs` reads a bounded snapshot from the current release, not an unbounded stream. Line count defaults to 100 (maximum 1000); byte limits may truncate further. Output includes timestamps. Failed build diagnostics are bounded tails in the journal and error response. Logs can contain application-controlled data or secrets; Soar does not redact arbitrary application output.
+`soar logs` reads a bounded snapshot from the current release, not an unbounded stream. Use `--service NAME` to select a service and `--candidate` to inspect a pending replacement. Without selection, logs choose `web`, or the only service; ambiguous apps require an explicit name. The output identifies the selected container. Line count defaults to 100 (maximum 1000); byte limits may truncate further. Output includes timestamps. Failed build diagnostics are bounded tails in the journal and error response. Logs can contain application-controlled data or secrets; Soar does not redact arbitrary application output.
 
 ## Verification
 
 Offline tests exercise Docker ignore behavior, safe/limited capture, protocol/transport boundaries, project bindings, candidate replacement ordering, preservation of the live app on build/readiness failures, run-side-effect recovery, supersede matching/captured archives, journal validation, Caddy reload recovery/drift refusal, and bounded diagnostics. Docker/Caddy/systemd boundaries are mocked in these tests.
 
-### Observed real-host results
+### Observed real-host results (original single-service milestone)
 
 The macOS client tested the disposable Ubuntu 26.04 amd64 droplet as root, using Docker 29.1.3/Buildx 0.30.1 and Caddy 2.6.2:
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/soar/internal/process"
 	"github.com/nchapman/soar/internal/secrets"
 )
 
@@ -73,12 +74,26 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 	if err != nil {
 		return appFailure(stdout, err, 1)
 	}
+	return writeAppResponse(stdout, response)
+}
+
+func writeAppResponse(stdout io.Writer, response deploy.Response) int {
 	// JSON escaping can expand each byte sixfold. Leave headroom under the
 	// transport's 64 KiB per-stream limit even for control-heavy application logs.
 	if len(response.Logs) > 8*1024 {
 		response.Logs = "[log tail truncated to 8 KiB]\n" + response.Logs[len(response.Logs)-8*1024:]
 	}
-	if err := json.NewEncoder(stdout).Encode(response); err != nil {
+	data, err := json.Marshal(response)
+	if err != nil {
+		return appFailure(stdout, err, 1)
+	}
+	// Mixed effective versions can have more secret metadata than the desired
+	// config. Fail with a complete, actionable response rather than letting SSH
+	// truncate JSON and obscure the operation's outcome.
+	if len(data)+1 > process.OutputLimit {
+		return appFailure(stdout, errors.New("app response exceeds 64 KiB; request status or logs with --service NAME, or secrets list separately"), 1)
+	}
+	if _, err = stdout.Write(append(data, '\n')); err != nil {
 		return 1
 	}
 	return 0

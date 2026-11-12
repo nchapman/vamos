@@ -1,6 +1,6 @@
 # Stateless app lifecycle
 
-Soar supports app-scoped cleanup and destruction for the single-service, volume-free deployment slice. These commands never run Docker prune, remove volumes, or force-delete images/containers.
+Soar supports app-scoped cleanup and destruction for stateless public/private multi-service apps, including legacy single-service journals. These commands never run Docker prune, remove volumes, or force-delete images/containers.
 
 ## Preview, then explicitly apply
 
@@ -22,9 +22,9 @@ Only a ready deployed app can begin maintenance. A secret-only app has no record
 
 Cleanup preserves:
 
-- The current and immediately previous releases and their source archives.
+- Effective service versions, pending work, current/previous completed app snapshots, and their source archives. A partial operation is not a completed snapshot; cleanup does not discard the last successful app state.
 - Any running historical container, even if it is otherwise old.
-- Images referenced by any Docker container, including stopped/foreign containers, or another app's current, previous, candidate, or pending maintenance state.
+- Images referenced by any Docker container, including stopped/foreign containers, or another app's effective slots, completed snapshots, candidates, captured builds, or pending maintenance state.
 - Tagged images and images with repository digests.
 - Image-ID provenance files, so a later cleanup can reconsider safely retained build outputs.
 - All [secret versions](secrets.md), in a separate private store outside release history.

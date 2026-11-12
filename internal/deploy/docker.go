@@ -17,26 +17,53 @@ import (
 )
 
 type inspection struct {
-	ID         string `json:"Id"`
-	Driver     string
-	Internal   bool
-	Labels     map[string]string
-	Containers map[string]json.RawMessage
-	Config     struct {
-		Env     []string
-		Cmd     []string
-		Image   string
-		Labels  map[string]string
-		Volumes map[string]json.RawMessage
+	ID           string `json:"Id"`
+	Name         string
+	RestartCount int
+	Driver       string
+	Scope        string
+	EnableIPv6   bool
+	EnableIPv4   *bool
+	Ingress      bool
+	Options      map[string]string
+	Internal     bool
+	Labels       map[string]string
+	Containers   map[string]json.RawMessage
+	Config       struct {
+		Env        []string
+		Cmd        []string
+		Entrypoint []string
+		User       string
+		WorkingDir string
+		Image      string
+		Labels     map[string]string
+		Volumes    map[string]json.RawMessage
 	}
 	HostConfig struct {
-		NetworkMode   string
-		Privileged    bool
-		Binds         []string
-		RestartPolicy struct{ Name string }
-		PortBindings  map[string][]struct{ HostIP, HostPort string }
+		NetworkMode                    string
+		Privileged                     bool
+		PublishAllPorts                bool
+		ReadonlyRootfs                 bool
+		CapAdd, CapDrop                []string
+		Devices                        []json.RawMessage
+		DeviceRequests                 []json.RawMessage
+		VolumesFrom, Links, ExtraHosts []string
+		DNS                            []string `json:"Dns"`
+		DNSOptions                     []string `json:"DnsOptions"`
+		DNSSearch                      []string `json:"DnsSearch"`
+		SecurityOpt                    []string
+		PidMode, IpcMode, UTSMode      string
+		Binds                          []string
+		RestartPolicy                  struct{ Name string }
+		PortBindings                   map[string][]struct{ HostIP, HostPort string }
 	}
-	State           struct{ Running bool }
+	State struct {
+		Running    bool
+		Restarting bool
+		Paused     bool
+		Dead       bool
+		StartedAt  string
+	}
 	Mounts          []json.RawMessage
 	NetworkSettings struct {
 		Networks map[string]json.RawMessage
@@ -118,7 +145,12 @@ func (m *Manager) exists(c context.Context, kind, name string) (bool, error) {
 	}
 	return false, nil
 }
-func (m *Manager) ensureNetwork(c context.Context, j *journal) error {
+func (m *Manager) ensureNetwork(c context.Context, j *journal) (err error) {
+	defer func() {
+		if err != nil && j.ServiceStates != nil {
+			err = errors.New("ensure app network failed")
+		}
+	}()
 	n := network(j)
 	yes, e := m.exists(c, "network", n)
 	if e != nil {
@@ -133,8 +165,28 @@ func (m *Manager) ensureNetwork(c context.Context, j *journal) error {
 	if e != nil {
 		return e
 	}
-	if !owned(v.Labels, j, "") || v.Driver != "bridge" || v.Internal {
+	return m.validateAppNetwork(c, j, v)
+}
+
+// Empty optional fields are accepted for older daemons and legacy test fixtures.
+// Non-default bridge policy must not silently weaken app isolation.
+func (m *Manager) validateAppNetwork(c context.Context, j *journal, v *inspection) error {
+	if !owned(v.Labels, j, "") || v.Driver != "bridge" || v.Internal || v.EnableIPv6 || v.Ingress || (v.EnableIPv4 != nil && !*v.EnableIPv4) || (v.Scope != "" && v.Scope != "local") {
 		return errors.New("foreign or unsafe app network")
+	}
+	defaults := map[string]string{
+		"com.docker.network.bridge.enable_icc":           "true",
+		"com.docker.network.bridge.enable_ip_masquerade": "true",
+		"com.docker.network.bridge.gateway_mode_ipv4":    "nat",
+		"com.docker.network.bridge.gateway_mode_ipv6":    "nat",
+		"com.docker.network.bridge.host_binding_ipv4":    "0.0.0.0",
+		"com.docker.network.bridge.inhibit_ipv4":         "false",
+		"com.docker.network.bridge.enable_ip_forwarding": "true",
+	}
+	for key, value := range v.Options {
+		if expected, ok := defaults[key]; !ok || value != expected {
+			return errors.New("unsupported app network options")
+		}
 	}
 	for id := range v.Containers {
 		v, e := m.inspect(c, "container", id)
@@ -143,6 +195,11 @@ func (m *Manager) ensureNetwork(c context.Context, j *journal) error {
 		}
 		if !owned(v.Config.Labels, j, "") {
 			return errors.New("foreign container on app network")
+		}
+		if j.ServiceStates != nil {
+			if e := validateMultiEndpoint(j, v); e != nil {
+				return e
+			}
 		}
 	}
 	return nil

@@ -1,0 +1,17 @@
+app: private-demo
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: [python, app.py, web]
+    env:
+      BACKEND_URL: http://backend:9000
+    http:
+      port: 8080
+      health: /healthz
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: [python, app.py, backend]
