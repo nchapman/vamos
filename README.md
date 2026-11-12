@@ -115,4 +115,4 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-The next milestone is idempotent Ubuntu host setup, followed by one end-to-end stateless deployment: transfer a build context over SSH, build with Docker, start one service, and serve it through Caddy. Real-host inspection should be smoke-tested on a disposable Ubuntu 24.04 machine before provisioning is built on it.
+The next milestone is idempotent Ubuntu host setup, followed by one end-to-end stateless deployment: transfer a build context over SSH, build with Docker, start one service, and serve it through Caddy. Inspection has passed a real-host smoke test from macOS against a fresh Ubuntu 26.04 amd64 droplet as root. Ubuntu 24.04, non-root access, and the other outstanding cases are tracked in [the verification notes](docs/host-inspection.md#observed-real-host-results).
