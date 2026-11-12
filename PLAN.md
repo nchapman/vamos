@@ -1,8 +1,12 @@
 # Soar: a small app platform for one server
 
-**Status: multi-service deployment and persistent local volumes are implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Manual updates, scoped deployment, migration commands, rollback, and other broader workflows below remain proposed. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
+**Status: multi-service deployment, persistent local volumes and the PostgreSQL workflow are implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built or prebuilt-image services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Protected manual updates, scoped deployment and noninteractive one-off migration commands work. Rollback, exec, custom domains, backup/restore and other broader workflows below remain proposed. Examples below that use these deferred commands describe design targets, not available CLI APIs. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
 
-The implemented [storage lifecycle](docs/volumes.md) supersedes the original volume proposal. It uses immutable owned local volumes, single-writer stop/start, durable public 503 routes, retained data, and explicit `--reuse-data` after destroy. Storage journals use v3; ready/incomplete v1/v2 remain recoverable. Backup/restore/preparation and data deletion are deferred. Database/manual-update/scoped-deploy, prebuilt images, custom domains and rollback workflows below remain proposed; acceptance scenarios are not claims of completed live or full-suite validation.
+The implemented [storage lifecycle](docs/volumes.md) supersedes the original volume proposal. It uses immutable owned local volumes, single-writer stop/start, durable public 503 routes, retained data, and explicit `--reuse-data` after destroy. Storage journals use v3; ready/incomplete v1/v2 remain recoverable. Backup/restore/preparation and data deletion are deferred. Database/manual-update/scoped-deploy and prebuilt images are implemented; custom domains and rollback remain proposed; acceptance scenarios are not claims of completed live or full-suite validation.
+
+See [PostgreSQL](docs/postgres.md), the [runnable Ledger recipe](examples/ledger/README.md)
+and [run recovery and limits](docs/deployment.md#one-off-commands) for the current contract.
+Implementation completion is separate from live acceptance evidence.
 
 ## 1. The goal
 
@@ -128,10 +132,10 @@ App names and server defaults keep infrastructure out of the file. Secret values
 **`update: manual`:** normal deploy creates a missing service but never updates an existing one. Use this for databases and durable Redis queues. Changes to a protected service's image, command, environment, secrets, or mounts fail app-deploy preflight with the exact next command. Do not silently ignore requested changes or refresh a mutable image tag on an ordinary deploy.
 
 ```sh
-soar deploy --service db   # Explicitly update only db; show downtime and require confirmation.
+soar deploy --service db --yes  # Approve an existing manual db update; omit --yes to preview.
 ```
 
-`deploy --service` is also the simple bootstrap primitive: start just the database before initializing a schema. It validates the whole file's structure but requires secrets/builds only for the selected service, never starts dependencies implicitly, and never applies other services' pending changes. It records the resulting effective app state as a release; unchanged services retain their actual versions. Noninteractive protected-service updates require `--yes` after the same plan is printed.
+`deploy --service` is also the simple bootstrap primitive: start just the database before initializing a schema. It validates the whole file's structure but requires secrets/builds only for the selected service, never starts dependencies implicitly, and never applies other services' pending changes. It records the resulting effective app state as a release; unchanged services retain their actual versions. Existing selected manual-service updates require `--yes`; without it the command previews. Newly selected database creation needs no `--yes`. Ordinary deploy may still archive a manually built protected service’s context; it does not refresh or restart that service. Protected policy changes also fail preflight with the exact scoped approval command.
 
 **A volume always implies single-writer replacement, not manual updates.** Reject shared volume mounts across services initially. Build/pull and validate before stopping the old container. For public stop/start services, temporarily return unavailable, wait for replacement HTTP readiness, then update Caddy to its new loopback port. Record the container, route, and effective version for recovery. If startup fails, retain data and report the failed operation; never automatically start an old binary against potentially changed data.
 
@@ -194,7 +198,7 @@ soar deploy
 
 `run` builds/pulls the selected service image from the current project, attaches a temporary container to the existing app network, and injects that service's configured environment and latest staged secrets. It replaces CMD, retains ENTRYPOINT, publishes no port, mounts no volumes, and starts no dependencies. It requires only that service's referenced secrets; it does not require a running or healthy instance of that service. This handles PostgreSQL migrations and administrative clients that live in the app image. The image must support the supplied command.
 
-Return the command's exit code and record the operation/result without changing the active release. `run` does not apply staged values to running services. Serialize it with other app mutations. Do not automatically retry it after interruption: schema/data side effects may already have occurred. The operator checks the result and chooses whether rerunning is safe. `exec` remains for an existing container and its current configuration; both commands forward stdin, with an explicit `--tty` for interactive clients and no implicit shell.
+Return the command's exit code and record the operation/result without changing the active release. `run` does not apply staged values to running services. Serialize it with other app mutations. Do not automatically retry it after interruption: schema/data side effects may already have occurred. The operator checks the result and chooses whether rerunning is safe. `run` is noninteractive in this milestone: no stdin, TTY or implicit shell. `exec` remains deferred. Runs have no service aliases and reject all image-declared volumes; use a volume-free client image. Output is bounded to 8 KiB from the last 100 log lines, with a 20-minute worker deadline and 25-minute default client deadline. Disconnect/timeout does not stop the container. Use `status --run OP` and `logs --run OP`; ordinary status discovers the latest run. Pending/running/unknown runs block mutations; building-phase failure permits a new explicit command. A definitively unknown start intent requires operator host reconciliation, not automatic rerun. There is no cancel/attach API. Cleanup removes terminal containers, keeps the latest 32 terminal results and prunes at most 32 older records per cleanup against a 256-record limit; IID replay receipts remain retained.
 
 For SQLite, a volume-free temporary container cannot migrate the database. The SQLite example's entrypoint initializes its own data (no migrations) before starting HTTP, while single-writer stop/start guarantees exclusive access. This is explicit application behavior, not framework detection. Automatic release hooks are outside v1; use backward-compatible schemas when rollback matters.
 
@@ -226,7 +230,7 @@ A fresh `deploy` refuses to start while an incomplete deployment exists and poin
 
 ## 5. Five configurations to test the model
 
-These are design scenarios; journal is implemented, while the broader workflows in the other four remain proposed. Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `soar.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Soar.
+These are design scenarios; journal and Ledger are runnable, while the broader custom-domain/rollback workflows remain proposed. Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `soar.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Soar.
 
 ### 1. A stateless website with two custom domains
 
@@ -294,6 +298,11 @@ These targets are not a claim that live tests have passed.
 
 ### 3. An API with private PostgreSQL
 
+The variant below illustrates a complete connection-URL secret. The current
+[runnable Ledger](examples/ledger/README.md) instead uses literal HOST/DB/USER
+and one shared `database-password`, and has no custom domains. Follow that README
+for the implemented empty-host recipe.
+
 ```yaml
 app: ledger
 services:
@@ -334,7 +343,7 @@ soar deploy
 
 **Tests:** web and database share a private network; `db` has no public port or URL. Enter a `database-url` of the form `postgresql://ledger:<URL-encoded-password>@db:5432/ledger`, matching `database-password`. Soar does not generate or interpolate it. The migration command retries until Postgres accepts connections and exits nonzero on failure; only proceed to deploy after success. The API readiness endpoint checks connectivity and required schema. This works on an empty server without first deploying an unhealthy API.
 
-The standard PostgreSQL image uses these initialization variables only for an empty data directory. Changing `database-password` does not change an existing role password. For a simple rotation with an accepted interruption: open `soar exec --service db --tty -- psql -U ledger -d ledger`, use psql's `\password ledger` prompt, stage the matching password and URL, explicitly `soar deploy --service db` to align its stored initialization configuration, then `soar deploy` to update the API. Do not put credentials in SQL arguments or shell history. Production role privileges and zero-interruption rotation remain operator concerns.
+The standard PostgreSQL image uses these initialization variables only for an empty data directory. Changing `database-password` does not change an existing role password. For rotation with an accepted interruption, use an operator-controlled SQL client outside Soar (`exec` and interactive runs are not implemented), change the role password securely, stage matching credentials, explicitly `soar deploy --service db --yes` to align initialization configuration, then deploy the API. Do not put credentials in SQL arguments or shell history. Production role privileges and zero-interruption rotation remain operator concerns.
 
 ### 4. Web, background worker, PostgreSQL, and Redis
 
@@ -453,7 +462,7 @@ On later deployments, API and renderer versions must tolerate overlap. If a rend
 | --- | --- |
 | “Can I add Postgres or Redis?” | Yes: private image-based services with volumes and explicit update protection. |
 | “Can my worker reach them?” | Yes: app-local service DNS, without public ports or link declarations. |
-| “Can I attach several domains?” | Yes: aliases on a public service, TLS and uniqueness handled centrally. |
+| “Can I attach several domains?” | Planned: custom aliases and domain commands remain deferred. |
 | “Can one app expose web and API?” | Yes: opt-in HTTP per service; everything else stays private. |
 | “Do volume-backed apps use normal deploy?” | Yes, with stop/start downtime; manual update protection is a separate choice. |
 | “Does rollback restore my database?” | No: code/config rollback and data recovery are separate operations. |
@@ -461,6 +470,21 @@ On later deployments, API and renderer versions must tolerate overlap. If a rend
 | “Can I share one Redis across unrelated apps?” | Not through an implicit cross-app network in v1. |
 
 ## 7. Build order and acceptance checks
+
+Current implementation checklist (not a live-test completion checklist):
+
+- [x] Remote builds and pulled image references resolved to immutable identity.
+- [x] Private multi-service networking, staged secrets and persistent owned volumes.
+- [x] Manual-service preflight protection and preview/approval for scoped updates.
+- [x] Scoped captures preserve actual unselected configuration and select only required builds/secrets.
+- [x] Noninteractive one-off commands with bounded results and explicit unknown-outcome recovery.
+- [x] Terminal run cleanup and bounded result retention; destroy retains volumes/secrets.
+- [ ] Custom domains, rollback, exec/interactive commands and service removal.
+- [ ] Backup/restore tooling and tested off-host recovery for important data.
+- [ ] New PostgreSQL live acceptance evidence; do not infer it from earlier volume tests.
+
+The sequence below retains design/acceptance targets, including deferred features:
+
 
 1. **One stateless app end to end.** Setup, target binding, build transfer, generated URL, HTTPS, logs, status. Follow example 1 from a fresh Ubuntu 24.04 host; verify explicit target overrides do not silently change future targets. Check that older Ubuntu, other distributions, and missing OS metadata fail before host mutation. Ubuntu 24.04 is the host CI baseline; newer Ubuntu releases remain within the host support scope. Native macOS/Linux/Windows client CI is configured for command behavior, configuration paths, subprocesses, and SSH option acceptance; client support is not limited to the host CI image. These offline tests do not replace a real Ubuntu SSH smoke test.
 2. **Safe replacement and routing.** Readiness, domain edits, rollback, locks, interrupted-operation recovery. A bad build/readiness check leaves the old volume-free route live. Duplicate hostnames fail safely; incorrect custom DNS leaves generated URLs usable and reports pending, not HTTPS success. Confirm web/API domains route to the correct services.

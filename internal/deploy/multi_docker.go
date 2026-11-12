@@ -24,19 +24,19 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 	if j.Config == nil || !operation.MatchString(j.Operation) {
 		return errors.New("invalid captured build configuration")
 	}
-	builds := buildcontext.Builds(j.Config)
-	if len(builds) == 0 || len(archives) != len(builds) {
+	sources := activeSources(j)
+	if len(archives) != len(buildcontext.Builds(bundleConfig(j))) {
 		return errors.New("build archive set mismatch")
 	}
-	keys := make([]string, 0, len(builds))
-	for key := range builds {
-		if !operation.MatchString(key) || len(archives[key]) == 0 {
+	keys := make([]string, 0, len(sources))
+	for key, cfg := range sources {
+		if !operation.MatchString(key) || (cfg.Build != nil && len(archives[key]) == 0) {
 			return errors.New("missing build archive")
 		}
 		keys = append(keys, key)
 	}
 	for key := range j.BuildImages {
-		if _, ok := builds[key]; !ok {
+		if _, ok := sources[key]; !ok {
 			return errors.New("unexpected captured build image")
 		}
 	}
@@ -45,7 +45,15 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 		j.BuildImages = map[string]string{}
 	}
 	for _, key := range keys {
+		cfg := sources[key]
 		id := j.BuildImages[key]
+		if id == "" && cfg.Image != "" {
+			var err error
+			id, err = m.resolvePrebuilt(ctx, j, cfg)
+			if err != nil {
+				return err
+			}
+		}
 		if id == "" {
 			p := filepath.Join(m.dir(j.App), j.Operation+"."+key+".image.iid")
 			if safe(p) != nil {
@@ -55,7 +63,7 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 				return errors.New("remove build image file failed")
 			}
 			// Only build archives, never runtime environment or secrets, enter builds.
-			out, err := m.Run(ctx, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", builds[key].Dockerfile, "-"}, archives[key])
+			out, err := m.Run(ctx, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", cfg.Build.Dockerfile, "-"}, archives[key])
 			if err != nil {
 				return fmt.Errorf("image build: %w: %s", err, diagnostic(string(out.Stderr)))
 			}
@@ -75,8 +83,18 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 		if err != nil {
 			return errors.New("inspect build image failed")
 		}
-		if im.ID != id || len(im.Config.Volumes) != 0 {
-			return errors.New("image declares volumes or mismatched identity")
+		if im.ID != id {
+			return errors.New("image identity mismatch")
+		}
+		for name, service := range j.Config.Services {
+			if slot := j.ServiceStates[name]; slot != nil && slot.Skipped {
+				continue
+			}
+			if imageKey(service) == key {
+				if err := imageVolumesAllowed(im, &service, true); err != nil {
+					return err
+				}
+			}
 		}
 		if j.BuildImages[key] == "" {
 			j.BuildImages[key] = id
@@ -97,7 +115,7 @@ func multiIdentity(j *journal, r *release) error {
 		return errors.New("captured runtime secrets mismatch")
 	}
 	if r.Config.Volume != nil {
-		if j.Version != 3 || r.Service == "" || !operation.MatchString(r.VolumeID) {
+		if !supportsVolumes(j) || r.Service == "" || !operation.MatchString(r.VolumeID) {
 			return errors.New("invalid runtime volume identity")
 		}
 	} else if r.VolumeID != "" || r.ExecutionIntent {
@@ -227,7 +245,7 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 	if err != nil {
 		return nil, errors.New("inspect runtime container failed")
 	}
-	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Labels["soar.service"] != r.Service || (r.Service == "" && hasServiceLabel(v.Config.Labels)) || ((r.Service != "" || v.Name != "") && strings.TrimPrefix(v.Name, "/") != r.Container) || v.Config.Image != r.Image || len(v.Config.Volumes) != 0 {
+	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Labels["soar.service"] != r.Service || (r.Service == "" && hasServiceLabel(v.Config.Labels)) || ((r.Service != "" || v.Name != "") && strings.TrimPrefix(v.Name, "/") != r.Container) || v.Config.Image != r.Image || imageVolumesAllowed(v, r.Config, true) != nil {
 		return nil, errors.New("foreign or unsafe runtime container")
 	}
 	if err := m.verifyRuntimeMounts(ctx, j, r, v); err != nil {
@@ -266,7 +284,7 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 	if err != nil {
 		return nil, errors.New("inspect runtime image failed")
 	}
-	if im.ID != r.Image || len(im.Config.Volumes) != 0 {
+	if im.ID != r.Image || imageVolumesAllowed(im, r.Config, true) != nil {
 		return nil, errors.New("unsafe runtime image")
 	}
 	labels := map[string]string{}
@@ -416,7 +434,7 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 	if err != nil {
 		return errors.New("inspect candidate image failed")
 	}
-	if im.ID != r.Image || len(im.Config.Volumes) != 0 {
+	if im.ID != r.Image || imageVolumesAllowed(im, r.Config, true) != nil {
 		return errors.New("unsafe candidate image")
 	}
 	if err := m.ensureNetwork(ctx, j); err != nil {

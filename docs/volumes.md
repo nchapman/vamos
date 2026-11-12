@@ -3,7 +3,10 @@
 The storage lifecycle supports Dockerfile-built public/private services with a
 singular `volume: {name: data, mount: /data}`: one per service, no sharing across
 services or apps. Volumes are owned, named Docker `local` volumes, not host bind
-mounts, anonymous storage, external adoption, or image-declared `VOLUME` mounts.
+mounts, anonymous storage, or external adoption. An image-declared `VOLUME` is
+allowed only at the exact configured singular owned named-volume mount; additional
+or anonymous image mounts remain rejected. One-off `run` rejects all image-declared
+volumes, so use a volume-free client image.
 The runnable [journal demo](../examples/journal/README.md) stores SQLite and
 uploads under one mount. It is unauthenticated and not a production application.
 
@@ -64,9 +67,9 @@ an explicit new deployment, not by weakening old no-mount invariants.
 
 There is no data deletion command, backup, restore, preparation command,
 replication, or data rollback in this milestone. Local persistence is not a
-backup. Prebuilt images/database workflows, manual updates, scoped deploy,
-custom domains, service removal, one-off migration commands and rollback remain
-unsupported. Existing stateless candidate routing, secrets pinning, bounded
+backup. Prebuilt images, manual updates, scoped deploy and noninteractive one-off
+migration commands are now implemented; see [PostgreSQL](postgres.md). Custom
+domains, service removal and rollback remain unsupported. Existing stateless candidate routing, secrets pinning, bounded
 retention and recovery guarantees remain in place.
 
 The [original proposal](volume-proposal.md) is superseded by this implemented
@@ -74,7 +77,11 @@ lifecycle boundary; its acceptance scenarios remain useful validation targets.
 Historical test evidence elsewhere documents the versions tested then, not proof
 of storage coverage.
 
-### Verification — 2026-11-12
+### Verification — 2026-11-12 (earlier volume milestone)
+
+These results predate PostgreSQL workflow support; image-declared `VOLUME` was
+unsupported in that milestone. The current exception above does not imply new
+live verification.
 
 Full formatting/vet/race-test checks and native/Linux amd64/arm64 builds passed,
 as did Windows test cross-compilation and the journal example's Python tests.

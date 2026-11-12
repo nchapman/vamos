@@ -1,5 +1,10 @@
 package deploy
 
+// Public previews leave headroom for response metadata within the 64 KiB transport.
+// The private journal retains its independent 2 MiB limit.
+const maxMaintenancePlanBytes = 32 << 10
+const maxMaintenancePlanItems = 1024
+
 // Plan is a bounded preview. --yes authorizes a freshly recomputed plan under
 // the host lock, rather than binding an earlier preview to mutable resources.
 type Plan struct {

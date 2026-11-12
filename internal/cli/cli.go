@@ -16,6 +16,7 @@ import (
 const help = `Soar — a small app platform for one server
 
 Usage:
+  soar run --service NAME -- COMMAND    Run a noninteractive command
   soar deploy [-f soar.yaml]             Build and deploy the app's services
   soar status [--json]                   Inspect the app's actual running state
   soar logs [--tail 100]                 Read bounded service-container logs
@@ -31,8 +32,9 @@ Usage:
   soar version                          Print the build version
   soar help                             Show this help
 
-Setup/teardown require explicit authorization. Deploy supports 1–8 Dockerfile-built public/private
-services, with one optional named volume per service. Data-backed updates stop/start; data is retained.
+Setup/teardown require explicit authorization. Deploy supports 1–8 built or prebuilt public/private
+services, with one optional named volume per service. Use deploy --service NAME for scoped updates;
+existing manual services require --yes. Data-backed updates stop/start; data is retained.
 Run a command with --help for options.
 `
 
@@ -42,7 +44,8 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 }
 
 // RunContext returns 0 for success, 1 for validation/inspection failures or an
-// unsupported host, and 2 for usage errors. The internal protocol has its own
+// unsupported host, and 2 for usage errors. A known one-off command returns its
+// captured exit code. The internal protocol has its own
 // documented exit semantics. Context cancellation is propagated to subprocesses.
 func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, version string) int {
 	if len(args) == 0 {
@@ -68,7 +71,7 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return secretsCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "server":
 		return server(ctx, args[1:], stdout, stderr)
-	case "deploy", "status", "logs", "resume", "cleanup", "destroy":
+	case "run", "deploy", "status", "logs", "resume", "cleanup", "destroy":
 		return appCommand(ctx, args[0], args[1:], stdout, stderr, defaultAppDeps())
 	case "internal-app-executor":
 		if len(args) != 1 {

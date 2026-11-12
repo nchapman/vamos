@@ -2,7 +2,7 @@
 
 See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
-Soar supports **1–8 Dockerfile-built services per app**. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing. No database/storage semantics are implied.
+Soar supports **1–8 services per app**, each built from a Dockerfile or pulled from a registry image reference. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing. No database/storage semantics are implied.
 
 The runnable [private-backend example](../examples/private-backend/soar.yaml) uses one shared build for public `web` and private `backend`. No local Docker daemon or registry is needed.
 
@@ -34,26 +34,26 @@ soar resume OPERATION_ID
 soar deploy --supersede OPERATION_ID
 ```
 
-Flags precede positional arguments. Deploy is **whole-app**; `--service` is currently supported only by status/logs. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
+Flags precede positional arguments. Deploy defaults to the whole app; `deploy --service NAME` selects one service without applying other local changes. Existing `update: manual` services require scoped deployment with `--yes` to update; ordinary deploy creates missing manual services but leaves unchanged existing ones pinned. Changed protected configuration or staged secrets cause preflight refusal. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
 
-Prebuilt `image`, `update: manual`, custom domains, scoped deploy, service removal, public/private kind changes, rollback, and migration/one-off commands remain unsupported. Omitting an effective service is an error, never deletion authorization.
+See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. Custom domains, service removal, public/private kind changes, rollback, and interactive command attachment remain unsupported. Omitting an effective service is an error, never deletion authorization.
 
 ## Deployment and partial success
 
 1. Validate all configuration, transitions, secrets, hostname ownership, and supported daemon policy. Capture immutable secret references before superseding anything.
-2. Capture each distinct normalized build specification once in a checksummed bundle. Build sequentially and inspect every immutable image before runtime changes; image-declared volumes are refused. Runtime command/env/secrets do not split shared builds.
+2. Capture selected distinct normalized build specifications once in a checksummed bundle. Build or pull sequentially and inspect every immutable image before runtime changes. An image-declared volume is allowed only when it exactly matches the service's owned named mount; extra or anonymous volumes are refused. Runtime command/env/secrets do not split shared builds.
 3. Create missing private services first, alphabetically, with service-name DNS. Observe each process for two seconds without a restart. This is **startup observation, not functional readiness**.
 4. Update public services alphabetically: start a candidate without its service alias, check HTTP readiness, admit its DNS alias, recheck readiness, switch its Caddy route, drain for two seconds, then disable old restart and stop it.
 5. Replace changed existing private services alphabetically. Record retirement intent, disable the old restart policy, stop with a 30-second grace period, and prove it stopped **before** starting its replacement. Private clients experience downtime and must retry.
-6. Check that effective containers are running, then record the completed app snapshot. A no-op does not evict the previous meaningful completed snapshot.
+6. Check that selected containers are running, then record the completed app snapshot including the actual unchanged versions of skipped services. Skipped service health is reported separately. A no-op does not evict the previous meaningful completed snapshot.
 
-All services are rebuilt from captured inputs, with BuildKit caching. A matching effective configuration, immutable image, and secret pins avoids container replacement. There is no dependency graph or implicit ordering beyond these stages. Existing public services must tolerate old/new private versions; readiness checks that require a not-yet-updated private dependency can block promotion. Functional dependency health and retry behavior are application responsibilities.
+Selected automatic or explicitly scoped services resolve their images from captured inputs, with BuildKit caching for builds. Unchanged existing manual services are not rebuilt or pulled. A matching effective configuration, immutable image, and secret pins avoids container replacement. There is no dependency graph or implicit ordering beyond these stages. Existing public services must tolerate old/new private versions; readiness checks that require a not-yet-updated private dependency can block promotion. Functional dependency health and retry behavior are application responsibilities.
 
 **A deploy is not a transaction.** If two public services succeed and a private replacement fails, the public services stay promoted. The old private container stays retired; Soar never implicitly restarts it. Status separates the overall operation, per-service transition, effective container, candidate, running state, and availability. `available` is a process/restart/retirement observation, not continuous HTTP or application-level health monitoring.
 
 Resume uses captured contexts, images, configuration, and secret versions. It skips completed transitions, reconciles uncertain route/alias effects, and continues the remaining work. Staging newer secrets does not change those captured inputs. Secret status reports applied versions per service when effective versions differ.
 
-Explicit supersede preserves effective mixed state and last successful snapshots, removes only verified unserved candidates, and starts a new captured operation. It cannot bypass an active worker, uncertain route promotion, or public drain. It can settle a previously recorded private retirement but cannot resurrect that worker. No completed snapshot is recorded for a partially successful operation.
+Explicit supersede must preserve the captured service scope. It preserves effective mixed state and last successful snapshots, removes only verified unserved candidates, and starts a new captured operation. It cannot bypass an active worker, uncertain route promotion, or public drain. It can settle a previously recorded private retirement but cannot resurrect that worker. No completed snapshot is recorded for a partially successful operation.
 
 A pending public promotion may be cancelled only when the recorded intent matches the journals and **both the durable Caddyfile and live configuration are proven old**, distinct from the candidate routes. Supersede then disables restart, stops, and removes the verified candidate (including its DNS endpoint) before clearing promotion intent. This is not rollback of any already-promoted service.
 
@@ -75,6 +75,7 @@ The supported host uses Soar's Docker-managed bridge/NAT configuration. Deployme
 
 - Existing version-1 `web` deployments remain readable and resumable. A new client upgrades a **ready** legacy journal on deployment, preserving actual resource identities and the old route until replacement succeeds. Finish an incomplete legacy deployment with resume, or supersede it using a corrected single-public-`web` configuration first. That recovery remains version 1; the next ordinary deployment upgrades it. Merely querying/uploading the executor never restarts hello or adds aliases to its existing endpoint.
 - Version-2 journals keep each effective service configuration separately from the latest desired app configuration. Cleanup protects effective slots, pending work, and current/previous completed app snapshots. Shared operation IDs are not treated as container identities. Cleanup/destruction continue using exact ownership proofs; no prefix-based deletion or broad prune is introduced.
+- Version-4 journals capture registry image identities, protected-service skips and explicit deployment scope. Version-1/2/3 recovery stays supported; older journal versions do not acquire these new fields implicitly.
 - Destruction removes all app public routes before containers/network. Secret versions remain retained. See [app lifecycle](app-lifecycle.md) and [secrets](secrets.md).
 - The **32 MiB aggregate bundle limit** includes all tar payloads and manifest overhead. Hash/length/entry validation happens before runtime mutation; a journal checksum detects changed saved bundles on resume. Docker ignore semantics are unchanged.
 - At most **64 secret environment mappings across the desired app configuration**; existing per-value/store limits remain. Partial operations can temporarily retain more effective mappings. Metadata-only SSH responses remain capped at **64 KiB**: oversized aggregate responses fail with complete, actionable JSON, not truncated JSON. Query `status --service NAME` for large mixed states; `secrets list` returns retained metadata separately.

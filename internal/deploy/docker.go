@@ -197,6 +197,12 @@ func (m *Manager) validateAppNetwork(c context.Context, j *journal, v *inspectio
 		if !owned(v.Config.Labels, j, "") {
 			return errors.New("foreign container on app network")
 		}
+		if _, run := v.Config.Labels["soar.run"]; run {
+			if e := m.verifyRunEndpoint(c, j, v); e != nil {
+				return e
+			}
+			continue
+		}
 		if j.ServiceStates != nil {
 			if e := validateMultiEndpoint(j, v); e != nil {
 				return e

@@ -25,6 +25,7 @@ type ServiceStatus struct {
 // Each slot describes effective state, not just the last requested app config.
 // Retirement intent survives stopped workers and must never resurrect them.
 type serviceState struct {
+	Skipped                      bool   `json:",omitempty"`
 	VolumeID                     string `json:",omitempty"`
 	Unavailable                  bool   `json:",omitempty"`
 	DataMayHaveChanged           bool   `json:",omitempty"`

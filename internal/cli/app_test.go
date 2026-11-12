@@ -117,9 +117,9 @@ func TestAppRefusalsBeforeRemoteContact(t *testing.T) {
 			t.Fatalf("accepted %v", args)
 		}
 	}
-	t.Run("unsupported service scope", func(t *testing.T) {
+	t.Run("invalid service config", func(t *testing.T) {
 		path, _, deps := appFixture(t)
-		os.WriteFile(path, []byte("app: hello\nservices:\n  db: {image: postgres:17}\n"), 0600)
+		os.WriteFile(path, []byte("app: hello\nservices:\n  db: {}\n"), 0600)
 		deps.Archive = nil
 		deps.Inspect = nil
 		deps.Run = nil

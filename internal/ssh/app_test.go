@@ -128,3 +128,37 @@ func TestAppTransportRejectsInvalidAndFailedResponses(t *testing.T) {
 		t.Fatal("unsafe target accepted")
 	}
 }
+
+func TestRunTransportPreservesKnownFailure(t *testing.T) {
+	request := appRequest()
+	request.Action = "run"
+	request.Service = "web"
+	request.Command = []string{"./migrate", "a b", "$(not-a-shell)"}
+	request.ContextFormat = "bundle-v1"
+	code := 19
+	run := func(_ context.Context, _ string, _ []string, input []byte) (process.Result, error) {
+		reader := tar.NewReader(bytes.NewReader(input))
+		found := false
+		for {
+			h, err := reader.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if h.Name == "context.tar" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("missing run context")
+		}
+		data, _ := json.Marshal(deploy.Response{Version: 1, Run: &deploy.RunResult{Operation: request.Operation, ExitCode: &code, Output: "failure output"}})
+		return process.Result{Stdout: data}, errors.New("exit status 19")
+	}
+	response, err := runApp(context.Background(), "root@home", request, []byte("binary"), []byte("bundle"), run)
+	if err != nil || response.Run == nil || *response.Run.ExitCode != code {
+		t.Fatalf("response=%+v err=%v", response, err)
+	}
+}

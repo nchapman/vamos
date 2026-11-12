@@ -14,10 +14,12 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/nchapman/soar/internal/config"
 )
 
 var resourceID = regexp.MustCompile(`^[0-9a-f]{64}$`)
-var resourceFile = regexp.MustCompile(`^([0-9a-f]{32})\.(context\.tar|(?:[0-9a-f]{32}\.)?image\.iid)$`)
+var resourceFile = regexp.MustCompile(`^([0-9a-f]{32})\.(run\.json|context\.tar|(?:[0-9a-f]{32}\.)?image\.iid)$`)
 
 type resourceInspection struct {
 	inspection
@@ -76,7 +78,7 @@ func resourceContainer(v *resourceInspection, j *journal, r resourceRow) error {
 	if service, present := v.Config.Labels["soar.service"]; present && service == "" {
 		return errors.New("empty maintenance service label")
 	}
-	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (j.Version != 3 && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || len(v.Config.Volumes) != 0 || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
+	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (!supportsVolumes(j) && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || (!supportsVolumes(j) && len(v.Config.Volumes) != 0) || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
 		return errors.New("unsafe or changed maintenance container")
 	}
 	return nil
@@ -204,6 +206,12 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 	if (action != "cleanup" && action != "destroy") || !operation.MatchString(op) {
 		return nil, errors.New("invalid maintenance request")
 	}
+	if err := m.preflightRuns(ctx, j); err != nil {
+		return nil, err
+	}
+	if err := m.maintenanceRuns(ctx, j); err != nil {
+		return nil, err
+	}
 	w := &maintenance{Action: action, Operation: op, Plan: Plan{Action: action, App: j.App}}
 	if err := m.maintenanceVolumes(ctx, j, &w.Plan); err != nil {
 		return nil, err
@@ -228,6 +236,11 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 	if e != nil {
 		return nil, e
 	}
+	prune, e := m.maintenanceRunPrune(j)
+	if e != nil {
+		return nil, e
+	}
+	runBatch := 0
 	exclude := map[string]bool{}
 	for _, r := range rows {
 		v, e := m.resourceInspect(ctx, "container", r.ID)
@@ -250,6 +263,16 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 			keepImages[v.Image] = true
 			w.Plan.Retained = append(w.Plan.Retained, r.Name+": active or retained release")
 			continue
+		}
+		// Select prunable runs first; never discard provenance for a container
+		// deferred to a later cleanup. Once pruning is exhausted, drain retained runs.
+		if action == "cleanup" && v.Config.Labels["soar.run"] != "" {
+			record := v.Config.Labels["soar.run"] + ".run.json"
+			if runBatch >= maintenanceRunPruneBatch || (len(prune) > 0 && !prune[record]) {
+				delete(prune, record)
+				continue
+			}
+			runBatch++
 		}
 		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o, Service: v.Config.Labels["soar.service"]})
 		w.Plan.Containers = append(w.Plan.Containers, r.Name)
@@ -332,6 +355,17 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		if strings.HasSuffix(match[2], "image.iid") {
 			limit = 128
 		}
+		if match[2] == "run.json" {
+			limit = runRecordLimit
+		}
+		if match[2] == "run.json" {
+			if _, err := m.loadRun(j, match[1]); err != nil {
+				return nil, err
+			}
+			if action == "cleanup" && !prune[n] {
+				continue
+			}
+		}
 		b, h, e := resourceRead(filepath.Join(m.dir(j.App), n), limit)
 		if e != nil {
 			return nil, e
@@ -339,14 +373,23 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		if strings.HasSuffix(match[2], "image.iid") {
 			id := strings.TrimSpace(string(b))
 			if !imageID.MatchString(id) {
-				return nil, errors.New("invalid IID provenance")
-			}
-			proof[id] = true
-			if keep[match[1]] {
-				keepImages[id] = true
-			}
-			if action == "cleanup" {
-				continue
+				// BuildKit may leave an empty IID on a failed, never-started run.
+				// It grants no image authority, and is removed only with that run's
+				// record. All unexplained/corrupt provenance still fails closed.
+				if id != "" || !m.emptyUnstartedRunIID(ctx, j, match[1], n) {
+					return nil, errors.New("invalid IID provenance")
+				}
+				if action == "cleanup" && !prune[match[1]+".run.json"] {
+					continue
+				}
+			} else {
+				proof[id] = true
+				if keep[match[1]] {
+					keepImages[id] = true
+				}
+				if action == "cleanup" {
+					continue
+				}
 			}
 		} else if action == "cleanup" && keep[match[1]] {
 			continue
@@ -385,7 +428,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		w.Images = append(w.Images, id)
 		w.Plan.Images = append(w.Plan.Images, id)
 	}
-	if len(w.Containers)+len(w.Images)+len(w.Files)+len(w.Plan.Retained) > 256 {
+	if len(w.Containers)+len(w.Images)+len(w.Files)+len(w.Plan.Retained) > maxMaintenancePlanItems {
 		return nil, errors.New("maintenance plan too large")
 	}
 	sort.Strings(w.Images)
@@ -395,7 +438,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 	if e != nil {
 		return nil, e
 	}
-	if len(b) > 8192 {
+	if len(b) > maxMaintenancePlanBytes {
 		return nil, errors.New("maintenance output too large")
 	}
 	return w, nil
@@ -466,6 +509,9 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 	if w.Action != "cleanup" && w.Action != "destroy" {
 		return errors.New("invalid maintenance action")
 	}
+	if err := m.maintenanceRuns(ctx, j); err != nil {
+		return err
+	}
 	if err := m.maintenanceVolumes(ctx, j, nil); err != nil {
 		return err
 	}
@@ -474,7 +520,7 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			return errors.New("planned container network identity mismatch")
 		}
 		commands := [][]string{{"container", "rm", p.ID}}
-		if w.Action == "destroy" {
+		if w.Action == "destroy" && !strings.HasPrefix(p.Name, "soar-run-") {
 			commands = [][]string{{"container", "update", "--restart=no", p.ID}, {"container", "stop", p.ID}, {"container", "rm", p.ID}}
 		}
 		for _, args := range commands {
@@ -488,7 +534,7 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			if w.Action == "cleanup" && v.State.Running {
 				return errors.New("cleanup container started since planning")
 			}
-			if j.Version == 3 && args[1] == "rm" && (v.State.Running || v.State.Restarting || v.State.Paused || (w.Action == "destroy" && v.HostConfig.RestartPolicy.Name != "no")) {
+			if supportsVolumes(j) && args[1] == "rm" && (v.State.Running || v.State.Restarting || v.State.Paused || (w.Action == "destroy" && v.HostConfig.RestartPolicy.Name != "no")) {
 				return errors.New("container writers are not proven stopped")
 			}
 			if _, e = m.cmd(ctx, "docker", args...); e != nil {
@@ -580,12 +626,15 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 		if match == nil || !resourceID.MatchString(p.SHA256) {
 			return errors.New("invalid planned file")
 		}
-		if w.Action == "cleanup" && strings.HasSuffix(match[2], "image.iid") {
+		if w.Action == "cleanup" && (strings.HasSuffix(match[2], "image.iid")) {
 			return errors.New("cleanup cannot remove provenance")
 		}
 		limit := int64(32 << 20)
 		if strings.HasSuffix(match[2], "image.iid") {
 			limit = 128
+		}
+		if match[2] == "run.json" {
+			limit = runRecordLimit
 		}
 		path := filepath.Join(m.dir(j.App), p.Name)
 		_, h, e := resourceRead(path, limit)
@@ -593,6 +642,11 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			return e
 		}
 		if e == nil {
+			if match[2] == "run.json" {
+				if _, err := m.loadRun(j, match[1]); err != nil {
+					return err
+				}
+			}
 			if h != p.SHA256 {
 				return errors.New("maintenance file changed")
 			}
@@ -610,10 +664,13 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 // Validate historical candidates by registry binding plus immutable image and
 // container provenance, without recursively enumerating volume references.
 func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspection, j *journal, row resourceRow) error {
+	if v.Config.Labels["soar.run"] != "" || strings.HasPrefix(row.Name, "soar-run-") {
+		return m.maintenanceRunContainer(ctx, j, v, row)
+	}
 	if err := resourceContainer(v, j, row); err != nil {
 		return err
 	}
-	if j.Version != 3 {
+	if !supportsVolumes(j) {
 		return nil
 	}
 	s, err := m.volumeStore().Load(j.App, j.HostID)
@@ -622,7 +679,7 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 	}
 	service := v.Config.Labels["soar.service"]
 	if s == nil || s.Records[service].ID == "" {
-		if len(v.Mounts)+len(v.HostConfig.Mounts)+len(v.HostConfig.VolumesFrom) != 0 {
+		if len(v.Mounts)+len(v.HostConfig.Mounts)+len(v.HostConfig.VolumesFrom)+len(v.Config.Volumes) != 0 {
 			return errors.New("unregistered maintenance mounts")
 		}
 		return nil
@@ -643,7 +700,8 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 	if err != nil {
 		return err
 	}
-	if image.ID != v.Image || len(image.Config.Volumes) != 0 {
+	cfg := &config.Service{Volume: &config.Volume{Mount: rec.Mount}}
+	if image.ID != v.Image || imageVolumesAllowed(&image.inspection, cfg, true) != nil || imageVolumesAllowed(&v.inspection, cfg, true) != nil {
 		return errors.New("maintenance volume container image provenance differs")
 	}
 	proven := false
@@ -679,7 +737,7 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 }
 
 func (m *Manager) maintenanceVolumes(ctx context.Context, j *journal, plan *Plan) error {
-	if j.Version != 3 {
+	if !supportsVolumes(j) {
 		p := filepath.Join(m.volumeStore().Root, j.App+".json")
 		if _, err := os.Lstat(p); errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -710,7 +768,7 @@ func (m *Manager) maintenanceVolumes(ctx context.Context, j *journal, plan *Plan
 	}
 	if plan != nil {
 		b, e := json.Marshal(plan)
-		if e != nil || len(b) > 8192 {
+		if e != nil || len(b) > maxMaintenancePlanBytes {
 			return errors.New("maintenance metadata exceeds plan limit")
 		}
 	}

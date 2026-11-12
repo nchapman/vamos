@@ -23,9 +23,10 @@ import (
 )
 
 const appHelp = `Usage:
-  soar deploy [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--reuse-data] [--executor FILE]
-  soar status [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
-  soar logs [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
+  soar deploy [--service NAME] [--yes] [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--reuse-data] [--executor FILE]
+  soar run [-f soar.yaml] --service NAME -- COMMAND [ARG...]
+  soar status [--run OPERATION] [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
+  soar logs [--run OPERATION] [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
   soar resume [--server NAME --app APP] OPERATION
   soar cleanup [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
   soar destroy [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
@@ -33,7 +34,11 @@ const appHelp = `Usage:
 All commands accept --executor FILE. Cleanup/destroy preview unless --yes.
 Lifecycle --json emits the full response (including the exact plan).
 
-Deploy updates the whole app. Private services use stop/start replacement.
+Deploy updates automatic services, or only --service NAME.
+--yes approves an existing manual service update and requires --service.
+Run is noninteractive: no stdin, TTY, or implicit shell. The remote worker has a
+20-minute deadline; an unknown outcome must be inspected with status --run, not rerun.
+Private services use stop/start replacement.
 --reuse-data authorizes exact retained volume reuse after destroy (deploy only).
 Volume-backed replacements use stop/start, including public services; data is not rolled back.
 Flags precede positional arguments. Resume uses captured inputs, not local edits.
@@ -60,7 +65,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	serverFlag := flags.String("server", "", "registered server override")
 	appFlag := flags.String("app", "", "app name for operations outside a project")
 	executorFile := flags.String("executor", "", "Linux executor artifact override")
-	service := flags.String("service", "", "service selector (status/logs only)")
+	service := flags.String("service", "", "service selector")
+	runOperation := flags.String("run", "", "captured run operation (status/logs only)")
 	candidate := flags.Bool("candidate", false, "candidate logs (logs only)")
 	supersede := flags.String("supersede", "", "replace a stopped pre-promotion operation with new inputs")
 	reuseData := flags.Bool("reuse-data", false, "authorize exact retained volume reuse after destroy (deploy only)")
@@ -68,7 +74,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	maintenance := action == "cleanup" || action == "destroy"
 	asJSON := flags.Bool("json", false, "JSON status")
 	tail := flags.Int("tail", 100, "log tail lines (1-1000, output also byte bounded)")
-	mutation := action == "deploy" || action == "resume" || maintenance
+	mutation := action == "deploy" || action == "run" || action == "resume" || maintenance
 	deadline := 15 * time.Second
 	if mutation {
 		deadline = 25 * time.Minute
@@ -83,8 +89,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	yesProvided := false
 	reuseDataProvided := false
-	serviceProvided, candidateProvided := false, false
+	serviceProvided, candidateProvided, runProvided := false, false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "run" {
+			runProvided = true
+		}
 		if f.Name == "reuse-data" {
 			reuseDataProvided = true
 		}
@@ -98,8 +107,14 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			yesProvided = true
 		}
 	})
-	if (serviceProvided && (action != "status" && action != "logs" || *service == "")) || (candidateProvided && action != "logs") {
-		return usageError(stderr, "--service is status/logs only; --candidate is logs only; deploy is whole-app")
+	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" || *service == "")) || (candidateProvided && action != "logs") {
+		return usageError(stderr, "--service requires deploy/run/status/logs; --candidate is logs only")
+	}
+	if runProvided && (*runOperation == "" || (action != "status" && action != "logs") || serviceProvided || candidateProvided) {
+		return usageError(stderr, "--run is status/logs only and cannot be combined with --service or --candidate")
+	}
+	if action == "run" && (*service == "" || flags.NArg() == 0) {
+		return usageError(stderr, "run requires --service and a nonempty command after --")
 	}
 	if reuseDataProvided && action != "deploy" {
 		return usageError(stderr, "--reuse-data is deploy only")
@@ -107,13 +122,13 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if *timeout <= 0 || *tail < 1 || *tail > 1000 {
 		return usageError(stderr, "invalid timeout, service, or log tail")
 	}
-	if (action == "resume" && flags.NArg() != 1) || (action != "resume" && flags.NArg() != 0) {
+	if (action == "resume" && flags.NArg() != 1) || (action != "resume" && action != "run" && flags.NArg() != 0) {
 		return usageError(stderr, "resume requires one operation ID; other app commands have no positional arguments")
 	}
-	if (*supersede != "" && action != "deploy") || (*asJSON && action != "status" && !maintenance) || (yesProvided && !maintenance) || (action != "logs" && *tail != 100) {
+	if (*supersede != "" && action != "deploy") || (*asJSON && action != "status" && !maintenance) || (yesProvided && !maintenance && !(action == "deploy" && *service != "")) || (action != "logs" && *tail != 100) {
 		return usageError(stderr, "option does not apply to this app command")
 	}
-	if *appFlag != "" && (action == "deploy" || *serverFlag == "") {
+	if *appFlag != "" && (action == "deploy" || action == "run" || *serverFlag == "") {
 		return usageError(stderr, "--app is for status/logs/resume/cleanup/destroy and requires an explicit --server")
 	}
 	name := *appFlag
@@ -135,7 +150,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if err := lifecycle.ValidateConfig(lifecycle.Config{Name: name, Domain: "validation.invalid"}); err != nil {
 		return usageError(stderr, "invalid app name")
 	}
-	if action == "deploy" {
+	if action == "deploy" || action == "run" {
 		if err := deploy.ValidateApp(app); err != nil {
 			return lifecycleError(stderr, err)
 		}
@@ -156,6 +171,10 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	request.Apply = *yes
 	request.Service = *service
 	request.Candidate = *candidate
+	request.RunOperation = *runOperation
+	if action == "run" {
+		request.Command = flags.Args()
+	}
 	var archive []byte
 	if maintenance {
 		var id [16]byte
@@ -164,7 +183,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		request.Operation = hex.EncodeToString(id[:])
 	}
-	if action == "deploy" {
+	if action == "deploy" || action == "run" {
 		request.Config = app
 		request.Supersede = *supersede
 		request.ReuseData = *reuseData
@@ -174,7 +193,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		request.Operation = hex.EncodeToString(id[:])
 		request.ContextFormat = "bundle-v1"
-		archive, err = buildcontext.Bundle(*filename, app, deps.Archive)
+		selected, selectErr := buildcontext.Select(app, *service)
+		if selectErr != nil {
+			return lifecycleError(stderr, selectErr)
+		}
+		archive, err = buildcontext.Bundle(*filename, selected, deps.Archive)
 		if err != nil {
 			return lifecycleError(stderr, err)
 		}
@@ -197,12 +220,26 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	var binary []byte
-	if action == "deploy" {
+	if action == "deploy" && *service == "" {
 		if _, err := fmt.Fprintln(stdout, "Whole-app deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}
-	if err := printVolumeWarnings(stdout, action, *supersede, app); err != nil {
+	warningApp := app
+	if app != nil && *service == "" && action == "deploy" {
+		copyApp := *app
+		copyApp.Services = make(map[string]config.Service)
+		for n, s := range app.Services {
+			if s.Update != config.UpdateManual {
+				copyApp.Services[n] = s
+			}
+		}
+		warningApp = &copyApp
+	}
+	if app != nil && *service != "" {
+		warningApp, _ = buildcontext.Select(app, *service)
+	}
+	if err := printVolumeWarnings(stdout, action, *supersede, warningApp); err != nil {
 		return lifecycleError(stderr, err)
 	}
 	if mutation && !*asJSON {
@@ -228,10 +265,50 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	response, err := deps.Run(ctx, server.Target, request, binary, archive)
 	if err != nil {
 		code := lifecycleError(stderr, err)
-		if mutation {
+		if action == "run" {
+			fmt.Fprintf(stderr, "Inspect: soar status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
+		} else if mutation {
 			fmt.Fprintf(stderr, "Inspect: soar status --server %s --app %s\nIf recorded, resume: soar resume --server %s --app %s %s\n", server.Name, name, server.Name, name, request.Operation)
 		}
 		return code
+	}
+	if p := response.DeployPreview; p != nil {
+		if _, err := fmt.Fprintf(stdout, "Deploy service=%q current-image=%q desired-image=%q downtime=%t\n", p.Service, p.CurrentImage, p.DesiredImage, p.Downtime); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		if p.NeedsConfirmation && !request.Apply {
+			if _, err := fmt.Fprintf(stdout, "Approve: soar deploy --service %s --yes\n", p.Service); err != nil {
+				return lifecycleError(stderr, err)
+			}
+			return 0
+		}
+	}
+	result := response.Run
+	if result == nil && response.Status != nil {
+		result = response.Status.Run
+	}
+	if result != nil && !*asJSON {
+		if _, err := fmt.Fprintf(stdout, "Run: operation=%q service=%q phase=%q container=%q image=%q\n", result.Operation, result.Service, result.Phase, result.Container, result.Image); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		if _, err := fmt.Fprint(stdout, result.Output); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		if result.Error != "" {
+			fmt.Fprintf(stderr, "Run error: %q\n", result.Error)
+		}
+		if result.ExitCode != nil {
+			if _, err := fmt.Fprintf(stdout, "Run exit code: %d\n", *result.ExitCode); err != nil {
+				return lifecycleError(stderr, err)
+			}
+			if action == "run" {
+				return *result.ExitCode
+			}
+		}
+	}
+	if action == "run" {
+		fmt.Fprintf(stderr, "Run outcome unknown. Inspect: soar status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
+		return 1
 	}
 	if action == "logs" {
 		if response.LogService != "" || response.LogContainer != "" {
@@ -325,7 +402,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 					return lifecycleError(stderr, err)
 				}
 			}
-			if _, err := fmt.Fprintf(stdout, "%s / %s / %s: kind=%q phase=%q running=%t available=%t unavailable=%t data-may-have-changed=%t\nURL: %s\nOperation: %q\nContainer: %q\n", server.Name, name, serviceName, ss.Kind, ss.Phase, ss.Running, ss.Available, ss.Unavailable, ss.DataMayHaveChanged, ss.URL, ss.Operation, ss.Container); err != nil {
+			if _, err := fmt.Fprintf(stdout, "%s / %s / %s: kind=%q phase=%q running=%t available=%t unavailable=%t data-may-have-changed=%t\nURL: %s\nOperation: %q\nContainer: %q\nImage: %q\n", server.Name, name, serviceName, ss.Kind, ss.Phase, ss.Running, ss.Available, ss.Unavailable, ss.DataMayHaveChanged, ss.URL, ss.Operation, ss.Container, ss.Image); err != nil {
 				return lifecycleError(stderr, err)
 			}
 		}

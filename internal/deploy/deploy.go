@@ -1,4 +1,4 @@
-// Package deploy implements recoverable stateless app deployment journals.
+// Package deploy implements recoverable app deployments and recorded one-off commands.
 package deploy
 
 import (
@@ -28,6 +28,8 @@ import (
 )
 
 type Request struct {
+	Command       []string         `json:"command,omitempty"`
+	RunOperation  string           `json:"run_operation,omitempty"`
 	ReuseData     bool             `json:"reuse_data,omitempty"`
 	ContextFormat string           `json:"context_format,omitempty"`
 	Service       string           `json:"service,omitempty"`
@@ -44,16 +46,18 @@ type Request struct {
 	Tail          int              `json:"tail,omitempty"`
 }
 type Response struct {
-	LogService     string          `json:"log_service,omitempty"`
-	LogContainer   string          `json:"log_container,omitempty"`
-	LogCandidate   bool            `json:"log_candidate,omitempty"`
-	Secret         *secrets.Entry  `json:"secret,omitempty"`
-	SecretVersions []secrets.Entry `json:"secret_versions,omitempty"`
-	Plan           *Plan           `json:"plan,omitempty"`
-	Version        int             `json:"version"`
-	Status         *Status         `json:"status,omitempty"`
-	Logs           string          `json:"logs,omitempty"`
-	Error          string          `json:"error,omitempty"`
+	Run            *RunResult         `json:"run,omitempty"`
+	DeployPreview  *DeploymentPreview `json:"deploy_preview,omitempty"`
+	LogService     string             `json:"log_service,omitempty"`
+	LogContainer   string             `json:"log_container,omitempty"`
+	LogCandidate   bool               `json:"log_candidate,omitempty"`
+	Secret         *secrets.Entry     `json:"secret,omitempty"`
+	SecretVersions []secrets.Entry    `json:"secret_versions,omitempty"`
+	Plan           *Plan              `json:"plan,omitempty"`
+	Version        int                `json:"version"`
+	Status         *Status            `json:"status,omitempty"`
+	Logs           string             `json:"logs,omitempty"`
+	Error          string             `json:"error,omitempty"`
 }
 type SecretStatus struct {
 	AppliedVersions map[string]string `json:"applied_versions,omitempty"`
@@ -75,6 +79,7 @@ type VolumeStatus struct {
 }
 
 type Status struct {
+	Run       *RunResult               `json:"run,omitempty"`
 	Volumes   []VolumeStatus           `json:"volumes,omitempty"`
 	Services  map[string]ServiceStatus `json:"services,omitempty"`
 	Secrets   []SecretStatus           `json:"secrets,omitempty"`
@@ -99,7 +104,16 @@ type release struct {
 	PublishPort     string
 	Operation       string
 }
+type DeploymentPreview struct {
+	Service           string `json:"service"`
+	CurrentImage      string `json:"current_image"`
+	DesiredImage      string `json:"desired_image"`
+	Downtime          bool   `json:"downtime"`
+	NeedsConfirmation bool   `json:"needs_confirmation"`
+}
+
 type journal struct {
+	Scope                        string                   `json:",omitempty"`
 	ReuseData                    bool                     `json:",omitempty"`
 	ServiceStates                map[string]*serviceState `json:",omitempty"`
 	BuildImages                  map[string]string        `json:",omitempty"`
@@ -175,8 +189,13 @@ func ValidateApp(a *config.App) error {
 	}
 	mappings := 0
 	for name, s := range a.Services {
-		if s.Build == nil || s.Image != "" || s.Update == config.UpdateManual || (s.HTTP != nil && len(s.HTTP.Domains) > 0) {
-			return fmt.Errorf("service %s: only Dockerfile-built services without manual updates or custom domains are supported", name)
+		if s.HTTP != nil && len(s.HTTP.Domains) > 0 {
+			return fmt.Errorf("service %s: custom domains are not supported", name)
+		}
+		if s.Image != "" {
+			if err := validImageReference(s.Image); err != nil {
+				return fmt.Errorf("service %s: %w", name, err)
+			}
 		}
 		if s.HTTP != nil && name != "web" && len(a.Name+"-"+name) > 63 {
 			return fmt.Errorf("service %s: generated hostname label exceeds 63 bytes", name)
@@ -194,24 +213,50 @@ func validateLegacyApp(a *config.App) error {
 		return err
 	}
 	s, ok := a.Services["web"]
-	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil {
+	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || s.Build == nil || s.Update == config.UpdateManual {
 		return errors.New("legacy protocol supports only one public web service; use a current client with a captured build bundle")
 	}
 	return nil
 }
 func (r Request) Mutating() bool {
-	return r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
+	return r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
 }
 
 func ValidateRequest(r Request) error {
 	if r.ReuseData && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
 		return errors.New("reuse-data requires deploy with a current client")
 	}
-	if r.ContextFormat != "" && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
+	if r.ContextFormat != "" && ((r.Action != "deploy" && r.Action != "run") || r.ContextFormat != BundleFormat) {
 		return errors.New("unsupported context format or action")
 	}
-	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs")) {
-		return errors.New("service selection requires status or logs and a valid service name")
+	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs" && r.Action != "deploy" && r.Action != "run")) {
+		return errors.New("invalid service selector or action")
+	}
+	if r.RunOperation != "" && (!operation.MatchString(r.RunOperation) || (r.Action != "status" && r.Action != "logs") || r.Service != "" || r.Candidate) {
+		return errors.New("run operation selection requires status or logs without service/candidate selection")
+	}
+	if r.Action == "run" {
+		if r.ContextFormat != BundleFormat || r.Service == "" || len(r.Command) == 0 || len(r.Command) > 256 || r.Command[0] == "" {
+			return errors.New("run requires a selected service, build bundle, and command")
+		}
+		bytes := 0
+		for _, arg := range r.Command {
+			if len(arg) > 8192 {
+				return errors.New("run argument exceeds 8 KiB")
+			}
+			bytes += len(arg)
+			if strings.ContainsRune(arg, '\x00') {
+				return errors.New("run command contains NUL")
+			}
+		}
+		if bytes > 32<<10 {
+			return errors.New("run command exceeds 32 KiB")
+		}
+	} else if len(r.Command) != 0 {
+		return errors.New("command requires run")
+	}
+	if r.Action == "deploy" && r.Service != "" && r.ContextFormat != BundleFormat {
+		return errors.New("scoped deploy requires a current client")
 	}
 	if r.Candidate && r.Action != "logs" {
 		return errors.New("candidate selection requires logs")
@@ -237,11 +282,11 @@ func ValidateRequest(r Request) error {
 	if r.Tail < 0 || r.Tail > 1000 {
 		return errors.New("tail must be between 0 and 1000")
 	}
-	if r.Apply && r.Action != "cleanup" && r.Action != "destroy" {
-		return errors.New("apply requires maintenance action")
+	if r.Apply && r.Action != "cleanup" && r.Action != "destroy" && !(r.Action == "deploy" && r.Service != "") {
+		return errors.New("apply requires maintenance or scoped deployment")
 	}
 	switch r.Action {
-	case "deploy":
+	case "deploy", "run":
 		if !operation.MatchString(r.Operation) {
 			return errors.New("invalid operation ID")
 		}
@@ -260,6 +305,11 @@ func ValidateRequest(r Request) error {
 		}
 		if r.Config.Name != r.App {
 			return errors.New("config app mismatch")
+		}
+		if r.Service != "" {
+			if _, exists := r.Config.Services[r.Service]; !exists {
+				return errors.New("selected service is not configured")
+			}
 		}
 	case "cleanup", "destroy":
 		if !operation.MatchString(r.Operation) || r.Config != nil {
@@ -442,7 +492,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		if err = secrets.ValidateValue(tar); err != nil {
 			return
 		}
-	} else if len(tar) > 32<<20 || (r.Action != "deploy" && len(tar) > 0) {
+	} else if len(tar) > 32<<20 || (r.Action != "deploy" && r.Action != "run" && len(tar) > 0) {
 		err = errors.New("invalid context archive size or action")
 		return
 	}
@@ -502,8 +552,18 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			err = errors.New("app is unmanaged")
 			return
 		}
+		if r.RunOperation != "" {
+			if !isMulti(j) {
+				return resp, errors.New("app has no recorded run")
+			}
+			return m.readRunResponse(ctx, r, j, secretState, !ok)
+		}
 		if j != nil && isMulti(j) {
-			return m.readMulti(ctx, r, j, secretState, !ok)
+			resp, err = m.readMulti(ctx, r, j, secretState, !ok)
+			if err == nil && r.Action == "status" && resp.Status != nil {
+				m.enrichRunStatus(ctx, j, resp.Status)
+			}
+			return
 		}
 		if r.Service != "" && (r.Service != "web" || j == nil || j.Phase == "destroyed") && !(r.Action == "status" && volumeState != nil && volumeState.Records[r.Service].ID != "") {
 			err = errors.New("service has no recorded deployment")
@@ -563,6 +623,14 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	}
 	if err = m.maintenanceFence(r); err != nil {
 		return
+	}
+	if r.Action == "run" {
+		return m.executeRun(ctx, r, tar, j, h, secretState)
+	}
+	if isMulti(j) {
+		if err = m.preflightRuns(ctx, j); err != nil {
+			return
+		}
 	}
 	if r.Action == "secrets-stage" {
 		var entry secrets.Entry
@@ -756,7 +824,7 @@ func validateJournal(j *journal, app string) error {
 	if isMulti(j) {
 		return validateMultiJournal(j, app)
 	}
-	if j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+	if j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
 		return errors.New("invalid legacy app journal")
 	}
 	bad := errors.New("invalid app journal")

@@ -44,6 +44,10 @@ func (m *Manager) verifyMultiHost() error {
 
 func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State, data []byte) (*journal, error) {
 	j := &journal{Version: 2, Status: Status{App: r.App, URL: "https://" + r.App + "." + r.Host.Domain, Phase: "building", Operation: r.Operation}, HostID: h.ID, Config: r.Config, Archive: r.Operation + ".context.tar", BundleSHA: bundleDigest(data), BuildImages: map[string]string{}, ServiceStates: map[string]*serviceState{}}
+	j.Scope = r.Service
+	if r.Service != "" || workflowConfig(r.Config) || (old != nil && old.Version == 4) {
+		j.Version = 4
+	}
 	previousSlots := map[string]*serviceState{}
 	if old != nil && old.Phase != "destroyed" {
 		if isMulti(old) {
@@ -62,17 +66,29 @@ func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State
 		}
 	}
 	for name, cfg := range r.Config.Services {
-		refs, err := state.Snapshot(cfg.Secrets)
-		if err != nil {
-			return nil, fmt.Errorf("service %s: %w", name, err)
-		}
-		s := &serviceState{Phase: "pending", SecretRefs: refs}
+		s := &serviceState{Phase: "pending"}
 		if prev := previousSlots[name]; prev != nil {
 			s.Current = prev.Current
 			s.CurrentRetired = prev.CurrentRetired
 			s.VolumeID = prev.VolumeID
 			s.Unavailable = prev.Unavailable
 			s.DataMayHaveChanged = prev.DataMayHaveChanged
+		}
+		keep, err := keepService(r, name, cfg, s.Current, state)
+		if err != nil {
+			return nil, err
+		}
+		s.Skipped = keep
+		if keep {
+			if s.Current == nil || s.CurrentRetired || s.Unavailable {
+				return nil, fmt.Errorf("service %s: protected service requires explicit scoped recovery", name)
+			}
+			s.SecretRefs = maps.Clone(s.Current.SecretRefs)
+		} else {
+			s.SecretRefs, err = state.Snapshot(cfg.Secrets)
+			if err != nil {
+				return nil, fmt.Errorf("service %s: %w", name, err)
+			}
 		}
 		s.New = s.Current == nil
 		j.ServiceStates[name] = s
@@ -87,7 +103,13 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if r.ContextFormat != BundleFormat {
 			return resp, errors.New("this app requires a current client with a captured multi-service build bundle")
 		}
-		if _, err = buildcontext.ReadBundle(data, r.Config); err != nil {
+		if r.Supersede != "" && j != nil && j.Scope != r.Service {
+			return resp, errors.New("supersede must preserve the original service scope; resume instead")
+		}
+		if r.Config, err = effectiveConfig(r, j); err != nil {
+			return
+		}
+		if _, err = buildcontext.ReadBundle(data, bundleConfig(&journal{Config: r.Config, Scope: r.Service, Status: Status{App: r.App}})); err != nil {
 			return
 		}
 		if err = checkTransitions(j, r.Config); err != nil {
@@ -108,10 +130,18 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if _, e := os.Lstat(filepath.Join(m.dir(r.App), r.Operation+".context.tar")); !errors.Is(e, os.ErrNotExist) {
 			return resp, errors.New("operation archive already exists or cannot be inspected")
 		}
+		used, scanErr := filepath.Glob(filepath.Join(m.dir(r.App), r.Operation+".*"))
+		if scanErr != nil || len(used) != 0 {
+			return resp, errors.New("operation ID already used by captured inputs or a run")
+		}
 		var next *journal
 		next, err = multiPlan(r, h, j, state, data)
 		if err != nil {
 			return
+		}
+		resp.DeployPreview = deploymentPreview(r, j)
+		if resp.DeployPreview != nil && resp.DeployPreview.NeedsConfirmation {
+			return resp, nil
 		}
 		volumeState, volumeErr := m.planVolumes(r, j, next)
 		if volumeErr != nil {
@@ -244,11 +274,14 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 	if bundleDigest(data) != j.BundleSHA {
 		return errors.New("captured build bundle checksum mismatch")
 	}
-	archives, err := buildcontext.ReadBundle(data, j.Config)
+	archives, err := buildcontext.ReadBundle(data, bundleConfig(j))
 	if err != nil {
 		return err
 	}
 	for _, name := range j.ServiceOrder {
+		if j.ServiceStates[name].Skipped {
+			continue
+		}
 		if _, err = m.secretValues(j, j.ServiceStates[name].SecretRefs); err != nil {
 			return fmt.Errorf("service %s: %w", name, err)
 		}
@@ -268,7 +301,11 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 			s := &copy
 			planned[name] = s
 			cfg := j.Config.Services[name]
-			image := j.BuildImages[buildcontext.BuildKey(*cfg.Build)]
+			if s.Skipped {
+				s.Phase = "ready"
+				continue
+			}
+			image := j.BuildImages[imageKey(cfg)]
 			unchanged := s.Current != nil && s.Current.Service != "" && !s.CurrentRetired && s.Current.Image == image && reflect.DeepEqual(*s.Current.Config, cfg) && maps.Equal(s.Current.SecretRefs, s.SecretRefs)
 			if unchanged {
 				v, e := m.multiInspect(ctx, j, s.Current, false, true)
@@ -306,9 +343,14 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 			return fmt.Errorf("service %s: %w", name, err)
 		}
 	}
-	// Earlier service steps may have completed before a long build/recovery gap.
-	// Sample every effective version before declaring the whole app complete.
+	// Earlier steps may have completed before a long build/recovery gap. Sample
+	// selected versions before completing the operation. Skipped service health
+	// is reported separately; it must not make an untouched manual service a
+	// resumable update that can only be repaired by violating its protection.
 	for _, name := range j.ServiceOrder {
+		if j.ServiceStates[name].Skipped {
+			continue
+		}
 		v, err := m.multiInspect(ctx, j, j.ServiceStates[name].Current, false, true)
 		if err != nil {
 			return fmt.Errorf("service %s: %w", name, err)

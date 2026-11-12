@@ -2,9 +2,9 @@
 
 See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
-Implemented: up to eight Dockerfile-built public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
+Implemented: up to eight Dockerfile-built or prebuilt-image public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
 
-Not implemented: prebuilt images, custom domain aliases, manual update policies, scoped deployment, service removal, public/private kind changes, rollback, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
+Not implemented: custom domain aliases, service removal, `exec`, rollback/backup/restore automation, public/private kind changes, rollback, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
 
 ## Deploy an app
 
@@ -33,7 +33,7 @@ services:
       health: /healthz
 ```
 
-Literal `env` values and a `command` argument array are supported. An image's default CMD/ENTRYPOINT are retained unless CMD is explicitly replaced. Image-declared volumes are refused, even if the YAML has no volumes, because mounts must be explicitly owned and declared. The app must listen on `0.0.0.0` inside its container.
+Literal `env` values and a `command` argument array are supported. An image's default CMD/ENTRYPOINT are retained unless CMD is explicitly replaced. An image-declared `VOLUME` is allowed only when it exactly matches the service’s single configured owned named volume. Extra or anonymous mounts are rejected. One-off runs reject all image-declared volumes and require a volume-free client image. The app must listen on `0.0.0.0` inside its container.
 
 ### Target selection
 
@@ -59,6 +59,57 @@ Flags precede positional arguments. `--app` is for commands that do not require 
 - Each app gets a labeled user-defined bridge network and service-name DNS. Each public service's only published port is selected on `127.0.0.1` and recorded before container creation; Caddy proxies to that stable endpoint. Private services publish no ports. Containers retain outbound internet access. See the [DNS and isolation boundary](multi-service.md#dns-and-isolation).
 - Containers use `unless-stopped` and the host's bounded `local` Docker log driver. Superseded containers have restart disabled before being stopped with a 30-second grace period. A short drain interval precedes public-service retirement; long-lived requests may be interrupted. Private services stop before their replacements start.
 - Deployment retains images, stopped prior containers, and captured contexts. Explicit `cleanup` preserves effective versions and current/previous completed app snapshots while removing safely identified older resources; it does not run a broad prune. Monitor disk usage; automatic retention/garbage collection remains a later feature.
+
+## Image sources and protected scoped deployment
+
+Each service specifies exactly one of `build` or `image`. Required image references
+are pulled and resolved to immutable image identity for captured recovery, rather
+than relying on a mutable tag on resume.
+
+`update: manual` creates a missing service on ordinary deploy, but an existing
+manual service is never refreshed or restarted by that deploy. Protected config,
+policy or staged-secret changes fail preflight with the exact
+`soar deploy --service NAME --yes` command. Selecting an existing manual service
+without `--yes` previews; `--yes` requires `--service`. Initial selected database
+creation needs no approval. A normal whole-app deploy can still archive the build
+context of a manually built protected service; protection is not a promise to
+skip local source capture.
+
+Scoped deploy validates the file but captures only selected builds and selects
+only required selected secrets. Unselected services retain their actual effective
+configuration and versions, not pending local edits. No dependencies start
+implicitly. See [PostgreSQL](postgres.md) and the [Ledger recipe](../examples/ledger/README.md).
+
+## One-off commands
+
+```sh
+soar run --service web -- ./bin/migrate
+soar status --run OP
+soar logs --run OP
+```
+
+`run` builds/pulls the selected current-project image and captures its configured
+environment and latest selected staged secrets. It uses the existing app network,
+not a running web container, replaces CMD and retains ENTRYPOINT. It publishes no
+ports, mounts no volumes, attaches no service aliases and starts no dependencies.
+It does not change the active release or running services' secret pins.
+
+This milestone is noninteractive: **no stdin, TTY or implicit shell**. Output is
+bounded to 8 KiB from the last 100 log lines. The worker deadline is 20 minutes;
+the client defaults to 25 minutes. Disconnect or timeout does not stop the
+container. There is no automated retry, cancel or attach API. Known command exit
+codes, including nonzero codes, are returned. Ordinary status discovers the latest
+run; use its operation ID for `status --run OP` and `logs --run OP`.
+
+Pending, running and unknown runs block mutations. A building-phase failure
+allows a new explicit command. A definitively unknown start-intent outcome needs
+operator host reconciliation, not an automated rerun: SQL may already have run.
+Inspect results and side effects before deciding whether another command is safe.
+
+Cleanup removes verified terminal run containers and retains the latest 32 terminal
+results, pruning at most 32 older records per cleanup. The run-record limit is 256;
+repeat cleanup as needed. IID replay receipts remain retained. Destroy retains
+volumes and secrets. These are bounded records, not a complete audit-log service.
 
 ## Deployment and recovery
 

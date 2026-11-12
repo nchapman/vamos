@@ -4,13 +4,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env:
+      HOST: db
+      DB: ledger
+      USER: ledger
     secrets:
-      DATABASE_URL: database-url
+      PASSWORD: database-password
     http:
       port: 8080
       health: /readyz
-      domains:
-        - api.ledger.example.com
   db:
     image: postgres:17
     update: manual
@@ -20,5 +22,5 @@ services:
     secrets:
       POSTGRES_PASSWORD: database-password
     volume:
-      name: postgres
+      name: data
       mount: /var/lib/postgresql/data

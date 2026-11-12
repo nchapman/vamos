@@ -10,12 +10,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/lifecycle"
 )
 
-func isMulti(j *journal) bool { return j != nil && (j.Version == 2 || j.Version == 3) }
+func isMulti(j *journal) bool {
+	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4)
+}
 
 func journalDomain(j *journal) string { return strings.TrimPrefix(j.URL, "https://"+j.App+".") }
 
@@ -68,14 +69,14 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 		}
 	} else {
 		a := &config.App{Name: j.App, Services: map[string]config.Service{name: *r.Config}}
-		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) {
+		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || (j.Version < 4 && workflowConfig(a)) {
 			return bad
 		}
 		if r.Config.Volume == nil {
 			if r.VolumeID != "" || r.ExecutionIntent {
 				return bad
 			}
-		} else if j.Version != 3 || r.Service == "" || !operation.MatchString(r.VolumeID) {
+		} else if !supportsVolumes(j) || r.Service == "" || !operation.MatchString(r.VolumeID) {
 			return bad
 		}
 		if r.Config.HTTP == nil && (r.Port != "" || r.PublishPort != "") {
@@ -101,7 +102,15 @@ func validateMultiJournal(j *journal, app string) error {
 	if !isMulti(j) || j.App != app || len(app) > 63 || !label.MatchString(app) || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
 		return bad
 	}
-	if len(j.Volumes) != 0 || (j.Version != 3 && j.ReuseData) {
+	if j.Status.Run != nil || len(j.Volumes) != 0 || (!supportsVolumes(j) && j.ReuseData) || (j.Version < 4 && (j.Scope != "" || workflowConfig(j.Config))) {
+		return bad
+	}
+	if j.Scope != "" {
+		if _, exists := j.Config.Services[j.Scope]; !exists {
+			return bad
+		}
+	}
+	if len(j.Volumes) != 0 || (!supportsVolumes(j) && j.ReuseData) {
 		return bad
 	}
 	if j.Current != nil || j.Previous != nil || j.Candidate != nil || len(j.SecretRefs) != 0 || j.Container != "" || len(j.Services) != 0 || len(j.Secrets) != 0 || j.Active || j.Running {
@@ -113,7 +122,7 @@ func validateMultiJournal(j *journal, app string) error {
 	if len(j.ServiceStates) != len(j.Config.Services) {
 		return bad
 	}
-	builds := buildcontext.Builds(j.Config)
+	builds := activeSources(j)
 	for key, id := range j.BuildImages {
 		if _, ok := builds[key]; !ok || !imageID.MatchString(id) {
 			return bad
@@ -165,6 +174,13 @@ func validateMultiJournal(j *journal, app string) error {
 		if !ok || s == nil || !matchingSecretRefs(s.SecretRefs, cfg.Secrets) {
 			return bad
 		}
+		if s.Skipped {
+			if j.Version != 4 || s.Current == nil || s.Current.Config == nil || s.New || s.CurrentRetired || s.Unavailable || s.Candidate != nil || s.Retiring != nil || s.Current.Operation == j.Operation || !reflect.DeepEqual(*s.Current.Config, cfg) || !maps.Equal(s.SecretRefs, s.Current.SecretRefs) || (j.Scope == "" && cfg.Update != config.UpdateManual) || name == j.Scope {
+				return bad
+			}
+		} else if j.Scope != "" && name != j.Scope {
+			return bad
+		}
 		if cfg.HTTP != nil && len(strings.TrimPrefix(ServiceURL(app, name, journalDomain(j)), "https://")) > 253 {
 			return bad
 		}
@@ -172,7 +188,7 @@ func validateMultiJournal(j *journal, app string) error {
 			if s.VolumeID != "" || s.Unavailable || s.DataMayHaveChanged {
 				return bad
 			}
-		} else if j.Version != 3 || !operation.MatchString(s.VolumeID) {
+		} else if !supportsVolumes(j) || !operation.MatchString(s.VolumeID) {
 			return bad
 		}
 		if s.Unavailable && cfg.HTTP == nil {
@@ -213,7 +229,7 @@ func validateMultiJournal(j *journal, app string) error {
 			return bad
 		}
 		if s.Candidate != nil {
-			if s.Candidate.Operation != j.Operation || s.Candidate.Service != name || !reflect.DeepEqual(*s.Candidate.Config, cfg) || !maps.Equal(s.Candidate.SecretRefs, s.SecretRefs) || s.Candidate.Image != j.BuildImages[buildcontext.BuildKey(*cfg.Build)] {
+			if s.Candidate.Operation != j.Operation || s.Candidate.Service != name || !reflect.DeepEqual(*s.Candidate.Config, cfg) || !maps.Equal(s.Candidate.SecretRefs, s.SecretRefs) || s.Candidate.Image != j.BuildImages[imageKey(cfg)] {
 				return bad
 			}
 			if s.Current != nil && s.Current.Container == s.Candidate.Container {
@@ -221,7 +237,7 @@ func validateMultiJournal(j *journal, app string) error {
 			}
 		}
 		if s.Current != nil && s.Current.Operation == j.Operation {
-			if s.Current.Service != name || !reflect.DeepEqual(*s.Current.Config, cfg) || !maps.Equal(s.Current.SecretRefs, s.SecretRefs) || s.Current.Image != j.BuildImages[buildcontext.BuildKey(*cfg.Build)] {
+			if s.Current.Service != name || !reflect.DeepEqual(*s.Current.Config, cfg) || !maps.Equal(s.Current.SecretRefs, s.SecretRefs) || s.Current.Image != j.BuildImages[imageKey(cfg)] {
 				return bad
 			}
 		}
@@ -238,7 +254,7 @@ func validateMultiJournal(j *journal, app string) error {
 				return bad
 			}
 		case "withdrawing":
-			if j.Version != 3 || cfg.Volume == nil || cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || s.Unavailable {
+			if !supportsVolumes(j) || cfg.Volume == nil || cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || s.Unavailable {
 				return bad
 			}
 		case "retiring":

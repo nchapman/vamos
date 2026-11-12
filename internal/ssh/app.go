@@ -60,8 +60,14 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 		}
 		return response, nil
 	}
+	if decodeErr == nil && response.Version == 1 && request.Action == "run" && response.Run != nil && response.Run.ExitCode != nil {
+		return response, nil
+	}
 	if decodeErr == nil && response.Version == 1 && response.Error != "" {
 		return response, fmt.Errorf("remote %s failed: %q", request.Action, response.Error)
+	}
+	if request.Action == "run" && (runErr != nil || decodeErr != nil || response.Version != 1 || response.Run == nil) {
+		return response, fmt.Errorf("run outcome unknown; inspect soar status --run %s", request.Operation)
 	}
 	if runErr != nil {
 		err := connectionError(target, result, runErr)
@@ -70,7 +76,7 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 		}
 		return response, err
 	}
-	if decodeErr != nil || response.Version != 1 || (request.Action != "logs" && response.Status == nil && response.Plan == nil) {
+	if decodeErr != nil || response.Version != 1 || (request.Action != "logs" && response.Status == nil && response.Plan == nil && response.Run == nil && response.DeployPreview == nil) {
 		return response, fmt.Errorf("invalid app response; inspect status before retrying (decode error: %v)", decodeErr)
 	}
 	return response, nil
@@ -91,7 +97,7 @@ func actionArchive(request, binary, input []byte, action string) ([]byte, error)
 		return nil, errors.New("invalid executor artifact size")
 	}
 	switch action {
-	case "deploy":
+	case "deploy", "run":
 		return appArchive(request, binary, input, true)
 	case "secrets-stage":
 		if err := secrets.ValidateValue(input); err != nil {

@@ -70,10 +70,10 @@ func Bundle(filename string, a *config.App, archive func(string, config.Build) (
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if len(keys) == 0 || archive == nil {
+	if a == nil || len(a.Services) == 0 || (len(keys) > 0 && archive == nil) {
 		return nil, fmt.Errorf("bundle requires builds and an archiver")
 	}
-	m := bundleManifest{Version: 1}
+	m := bundleManifest{Version: 1, Entries: []bundleEntry{}}
 	payload := bytes.Buffer{}
 	for _, k := range keys {
 		data, err := archive(filename, builds[k])
@@ -123,7 +123,7 @@ func ReadBundle(data []byte, a *config.App) (map[string][]byte, error) {
 		return fail()
 	}
 	builds := Builds(a)
-	if len(builds) == 0 || len(m.Entries) != len(builds) {
+	if a == nil || len(a.Services) == 0 || m.Entries == nil || len(m.Entries) != len(builds) {
 		return fail()
 	}
 	result := make(map[string][]byte)
@@ -150,4 +150,22 @@ func ReadBundle(data []byte, a *config.App) (map[string][]byte, error) {
 		return fail()
 	}
 	return result, nil
+}
+
+// Select returns a shallow configuration copy containing only the selected service.
+// Callers validate the full project before selecting operation inputs.
+func Select(a *config.App, service string) (*config.App, error) {
+	if a == nil {
+		return nil, fmt.Errorf("missing app configuration")
+	}
+	if service == "" {
+		return a, nil
+	}
+	s, ok := a.Services[service]
+	if !ok {
+		return nil, fmt.Errorf("unknown service %q", service)
+	}
+	selected := *a
+	selected.Services = map[string]config.Service{service: s}
+	return &selected, nil
 }

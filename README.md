@@ -2,7 +2,7 @@
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
-**Dockerfile-built multi-service apps work:** up to eight Dockerfile-built public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Persistent local volumes use single-writer stop/start with durable public 503 routing and retained data. Scoped deployment and rollback remain planned in [PLAN.md](PLAN.md). See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
+**Multi-service apps work:** up to eight Dockerfile-built or prebuilt-image public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Persistent local volumes use single-writer stop/start with durable public 503 routing and retained data. Protected manual updates, scoped deployment and noninteractive one-off commands are implemented; rollback remains planned in [PLAN.md](PLAN.md). See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
 
 ## Platform scope
 
@@ -124,7 +124,30 @@ legacy journal recovery and the limits of missing-storage checks.
 ./bin/soar logs -f examples/private-backend/soar.yaml --service backend
 ```
 
-Deployments are whole-app and **not atomic across services**. Private replacements have downtime; completed service changes survive later failure. See [multi-service deployment](docs/multi-service.md).
+Deployments may select `--service NAME` and are **not atomic across services**. Private replacements have downtime; completed service changes survive later failure. See [multi-service deployment](docs/multi-service.md).
+
+## Try PostgreSQL and explicit migrations
+
+The [runnable Ledger demo](examples/ledger/README.md) bootstraps a private,
+protected PostgreSQL service before building and initializing its API:
+
+```sh
+cd examples/ledger
+soar secrets stage database-password
+soar deploy --service db
+soar run --service web -- ./bin/migrate
+# Continue only after a successful migration:
+soar deploy
+```
+
+Initial database creation needs no `--yes`. Ordinary deploy never refreshes or
+restarts an existing manual database; protected changes require the exact scoped
+command, `soar deploy --service db --yes`. Without approval, selecting an existing
+manual service previews the plan. Runs are **noninteractive: no stdin or TTY**.
+Inspect interrupted runs with `status --run OP` and `logs --run OP`; disconnects
+do not cancel them, and Soar never automatically retries them. See the
+[PostgreSQL contract](docs/postgres.md) and [run limits/recovery](docs/deployment.md#one-off-commands).
+Ledger is unauthenticated and intended for disposable demo data, not production.
 
 ## Stage runtime secrets
 
@@ -169,7 +192,7 @@ internal/deploy/    Deployment/maintenance journals, Docker lifecycle, Caddy rou
 internal/appstate/  Minimal completed-destruction receipt shared with host teardown
 internal/secrets/   Private immutable secret versions and metadata-only selection
 docs/               Implemented boundary and verification notes
-examples/          Four design fixtures plus runnable hello, journal and private-backend apps
+examples/          Three design fixtures plus runnable hello, journal, ledger and private-backend apps
 mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
@@ -188,7 +211,7 @@ The Go module is `github.com/nchapman/soar`. No persistent Soar daemon or separa
 | [dispatch](examples/dispatch/soar.yaml) | Web, worker, PostgreSQL, and Redis |
 | [workspace](examples/workspace/soar.yaml) | Separate frontend/API builds and a private renderer |
 
-`hello`, `private-backend`, and `journal` are runnable applications supported by the current deployment implementation. The other four are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all seven configurations.
+`hello`, `private-backend`, `journal`, and `ledger` are runnable applications supported by the current deployment implementation. The other three are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all seven configurations.
 
 ## Development
 

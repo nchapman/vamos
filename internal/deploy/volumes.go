@@ -31,8 +31,10 @@ func (m *Manager) planVolumes(r Request, old, next *journal) (*volumes.State, er
 	if s == nil {
 		s = &volumes.State{Version: 1, App: next.App, HostID: next.HostID, Records: map[string]volumes.Record{}}
 	}
-	if old != nil && old.Version == 3 {
-		next.Version = 3
+	if supportsVolumes(old) {
+		if next.Version < old.Version {
+			next.Version = old.Version
+		}
 		for name, slot := range old.ServiceStates {
 			if slot != nil && slot.VolumeID != "" && s.Records[name].ID != slot.VolumeID {
 				return nil, errors.New("missing or inconsistent volume registry")
@@ -52,7 +54,9 @@ func (m *Manager) planVolumes(r Request, old, next *journal) (*volumes.State, er
 			}
 			continue
 		}
-		next.Version = 3
+		if next.Version < 3 {
+			next.Version = 3
+		}
 		if old != nil && old.Phase != "destroyed" && old.Config != nil {
 			if prev, ok := old.Config.Services[name]; ok && prev.Volume == nil {
 				return nil, errors.New("cannot convert stateless service to volume-backed")
@@ -81,7 +85,7 @@ func (m *Manager) planVolumes(r Request, old, next *journal) (*volumes.State, er
 	if len(s.Records) == 0 {
 		return nil, nil
 	}
-	next.ReuseData = next.Version == 3 && (r.ReuseData || (old != nil && old.Phase != "destroyed" && old.ReuseData))
+	next.ReuseData = supportsVolumes(next) && (r.ReuseData || (old != nil && old.Phase != "destroyed" && old.ReuseData))
 	if err = volumes.Validate(s); err != nil {
 		return nil, err
 	}
@@ -126,7 +130,7 @@ func (m *Manager) inspectVolume(ctx context.Context, j *journal, r volumes.Recor
 	return v.CreatedAt, true, nil
 }
 func desiredVolume(s *volumes.State, j *journal, name string) (volumes.Record, error) {
-	if s == nil || j.Version != 3 || j.Config == nil {
+	if s == nil || !supportsVolumes(j) || j.Config == nil {
 		return volumes.Record{}, errors.New("missing volume provenance")
 	}
 	cfg, ok := j.Config.Services[name]
@@ -144,7 +148,7 @@ func (m *Manager) ensureVolumes(ctx context.Context, j *journal) error {
 	}
 	names := []string{}
 	for name, cfg := range j.Config.Services {
-		if cfg.Volume != nil {
+		if cfg.Volume != nil && !(j.Scope != "" && j.ServiceStates[name].Skipped) {
 			names = append(names, name)
 		}
 	}
@@ -250,7 +254,7 @@ func (m *Manager) verifyRuntimeMounts(ctx context.Context, j *journal, r *releas
 	if err != nil {
 		return err
 	}
-	if s == nil || j.Version != 3 {
+	if s == nil || !supportsVolumes(j) {
 		return errors.New("missing volume registry")
 	}
 	rec, ok := s.Records[r.Service]

@@ -76,13 +76,13 @@ func (m *Manager) maintenanceFence(r Request) error {
 }
 
 var fullResourceID = regexp.MustCompile(`^[0-9a-f]{64}$`)
-var maintenanceFile = regexp.MustCompile(`^[0-9a-f]{32}\.(context\.tar|(?:[0-9a-f]{32}\.)?image\.iid)$`)
+var maintenanceFile = regexp.MustCompile(`^[0-9a-f]{32}\.(run\.json|context\.tar|(?:[0-9a-f]{32}\.)?image\.iid)$`)
 
 // Empty Service is exclusively the legacy identity. Names or prefixes alone
 // never establish ownership; callers must also prove host/app/operation labels.
 func maintenanceContainerIdentity(j *journal, name, service, op string) bool {
 	return operation.MatchString(op) && (service == "" || appstate.ValidName(service)) &&
-		name == containerName(j.App, service, op)
+		(name == containerName(j.App, service, op) || (service != "" && name == "soar-run-"+op))
 }
 
 // Snapshot operation identities also retain their archives, even when a mixed
@@ -118,7 +118,7 @@ func validateMaintenance(j *journal) error {
 		return bad
 	}
 	pb, e := json.Marshal(w.Plan)
-	if e != nil || len(pb) > 8192 {
+	if e != nil || len(pb) > maxMaintenancePlanBytes {
 		return bad
 	}
 	phase := "cleaning"
@@ -134,7 +134,7 @@ func validateMaintenance(j *journal) error {
 	if w.Action == "destroy" && (w.OldCaddy == "" || w.NewCaddy == "") {
 		return bad
 	}
-	if len(w.Containers)+len(w.Images)+len(w.Files)+len(w.Plan.Retained) > 256 {
+	if len(w.Containers)+len(w.Images)+len(w.Files)+len(w.Plan.Retained) > maxMaintenancePlanItems {
 		return bad
 	}
 	seen := map[string]bool{}

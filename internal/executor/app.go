@@ -35,7 +35,7 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 		return appFailure(stdout, errors.New("app executor requires root on the bootstrapped Linux host"), 1)
 	}
 	var archive []byte
-	if request.Action == "deploy" {
+	if request.Action == "deploy" || request.Action == "run" {
 		info, err := os.Lstat("context.tar")
 		if err != nil {
 			return appFailure(stdout, err, 1)
@@ -78,6 +78,16 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 }
 
 func writeAppResponse(stdout io.Writer, response deploy.Response) int {
+	boundRun := func(r *deploy.RunResult) {
+		if r != nil && len(r.Output) > 8*1024 {
+			r.Output = "[run output truncated to 8 KiB]\n" + r.Output[len(r.Output)-8*1024:]
+		}
+	}
+	boundRun(response.Run)
+	if response.Status != nil {
+		boundRun(response.Status.Run)
+	}
+
 	// JSON escaping can expand each byte sixfold. Leave headroom under the
 	// transport's 64 KiB per-stream limit even for control-heavy application logs.
 	if len(response.Logs) > 8*1024 {

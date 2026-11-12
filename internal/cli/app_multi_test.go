@@ -66,7 +66,7 @@ func TestMultiDeploymentCompletionExplainsPublicReadiness(t *testing.T) {
 }
 
 func TestAppScopeRefusal(t *testing.T) {
-	for _, args := range [][]string{{"--service", "web"}, {"--service", "backend"}, {"--candidate=false"}} {
+	for _, args := range [][]string{{"--service", ""}, {"--candidate=false"}} {
 		var out bytes.Buffer
 		if code := appCommand(context.Background(), "deploy", args, &out, &out, appDeps{}); code != 2 {
 			t.Fatalf("%v: code=%d", args, code)
