@@ -4,6 +4,20 @@ A small, Dockerfile-first app platform for one server. The intended stack is a G
 
 **Multi-service apps work:** up to eight Dockerfile-built or prebuilt-image public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Persistent local volumes use single-writer stop/start with durable public 503 routing and retained data. Protected manual updates, scoped deployment and noninteractive one-off commands are implemented; preview-first [code/config rollback](docs/rollback.md) is also implemented. See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
 
+## Everyday commands
+
+```sh
+soar init notes --port 8080       # Minimal Dockerfile configuration; never overwrites
+soar apps --server home           # Recorded app and retained-resource inventory
+soar logs --service web --follow  # Follow one verified container, not future replacements
+soar exec --service web -- python --version
+soar console --service web       # Interactive /bin/sh in the existing service
+```
+
+See [CLI commands](docs/cli.md) for target selection, stdin/TTY options, exit codes,
+private session staging and disconnect limits. Exec/console use live service data
+and secrets; they do not build, deploy, or retry commands automatically.
+
 ## Independent service directories
 
 One app can be deployed from several local source folders with unique service
@@ -194,7 +208,8 @@ internal/cli/       Commands, output, and exit codes
 internal/config/    Typed configuration, strict loading, validation
 internal/host/      Shared read-only collector, parser, and Ubuntu policy
 internal/ssh/       System OpenSSH bootstrap transport
-internal/process/   Bounded, cancellable subprocess execution
+internal/process/   Bounded RPC subprocesses and direct streaming execution
+internal/session/   Private single-use, identity-pinned exec/log session staging
 internal/executor/  Versioned JSON stdin/stdout host-operation protocol
 internal/lifecycle/ Ubuntu setup/teardown, ownership journal, and safety checks
 internal/registry/  Private, atomically written local server registrations

@@ -157,4 +157,5 @@ and status selection without adopting unrelated local edits.
 
 Live forced-worker interruption, volume-backed alias replacement, IPv6/NAT/CDN
 setups, native Windows execution and arm64 host execution were not exercised.
-Backup/restore, exec and service removal remain deferred.
+Backup/restore remains deferred. Later milestones added [service removal](services.md)
+and [exec/console](cli.md); they are not part of this original domain acceptance record.

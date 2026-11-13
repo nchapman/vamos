@@ -140,10 +140,24 @@ The guest verifies that PID 1's start identity actually changed; this is
 an OrbStack machine restart, not a claim of full shared-kernel reboot or power loss.
 The complete run deletes the machine after post-restart verification.
 
+The CLI acceptance app additionally checks:
+
+- `init` creates a valid, default-bound manifest and refuses to overwrite it.
+- `apps --json` lists live recorded state and destroyed apps with retained data.
+- `exec` preserves literal argv, 256 KiB of binary stdin/output, separate stderr,
+  the image user and working directory, and known exit codes; SSH 255 is ambiguous.
+- `console` rejects pipes, then runs through a real Linux PTY. Ctrl-C interrupts
+  a foreground program without losing the shell; window resize reaches the inner
+  terminal; shell exit status and local terminal modes are preserved.
+- `logs --follow` returns both the initial tail and subsequent request logs and
+  respects its explicit deadline. Sessions leave the service identity unchanged;
+  ordinary completion removes private session staging.
+
 Artifacts include `runner.log`, `manifest.json`, the exact `source.tar`, and
 `guest-artifacts.tar`. The guest archive contains numbered command/stdout/stderr
 files, `result.json`, scenario progress in `summary.json` and
-`recovery-summary.json`, checkpoint-client output, and bounded systemd/Docker/Caddy
+`recovery-summary.json`, `cli-summary.json`, CLI terminal/follow transcripts,
+checkpoint-client output, and bounded systemd/Docker/Caddy
 diagnostics. Successful preparation is not overall success: `result.json` only
 sets `passed` after post-restart verification. `coverage.out` and `coverage.html` report the Go test
 suite's statement coverage; the separately built CLI/executor integration paths
@@ -172,6 +186,11 @@ PostgreSQL volume and row, left newer database credentials pending, and did not
 restart the retired worker. A review-driven gate timeout regression was then
 added and verified, followed by explicit coordinator restart/verification deadlines
 and timeout-cleanup regression tests.
+
+The subsequent CLI-expanded flow passed on Ubuntu 24.04.5 arm64, including all
+seven CLI groups above, the base/recovery scenarios, restart verification and
+owned-machine deletion. Its real terminal evidence is for a **Linux client in
+the guest**, not native macOS or Windows terminal execution.
 
 ### Limits
 

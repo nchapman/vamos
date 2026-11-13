@@ -60,7 +60,7 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 		}
 	}
 	deadline := 20 * time.Minute
-	if request.Action == "status" || request.Action == "logs" || request.Action == "secrets-list" {
+	if request.Action == "apps" || request.Action == "status" || request.Action == "logs" || request.Action == "secrets-list" {
 		deadline = 15 * time.Second
 	}
 	ctx, stop := context.WithTimeout(ctx, deadline)

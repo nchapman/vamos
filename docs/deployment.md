@@ -7,7 +7,9 @@ Implemented: up to eight Dockerfile-built or prebuilt-image public/private servi
 The binding-aware partial-manifest and service-removal implementation is described
 in [independent services](services.md), including the live acceptance evidence.
 
-Not implemented: `exec`, backup/restore automation, public/private kind changes, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
+[App inventory, initialization, streaming logs, exec and console](cli.md) are implemented. Exec/console target existing containers, separately from recoverable one-off `run` commands.
+
+Not implemented: backup/restore automation, public/private kind changes, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
 
 ## Roll back captured code/config
 
@@ -152,6 +154,11 @@ The journal is not an OS transaction or universal rollback mechanism. If a promo
 Host teardown deliberately refuses active/incomplete app state or Docker workloads. Only strict, matching-host completed-destruction receipts with no extra app files can be purged; see [app lifecycle](app-lifecycle.md). Re-running `server add` after deploying apps is not an app operation and may reject the app-managed Caddyfile as differing from the bootstrap-only configuration. Use app status/deploy commands; no broad relaxation of host ownership guards was added.
 
 ## Logs
+
+`soar logs --follow` streams the selected container's initial tail and subsequent
+output without snapshot byte limits. It never silently follows replacements;
+`-f` still means the configuration path. See [log following](cli.md#follow-service-logs)
+for timeout, candidate and disconnect behavior. `--run` diagnostics remain snapshots.
 
 `soar logs` reads a bounded snapshot from the current release, not an unbounded stream. Use `--service NAME` to select a service and `--candidate` to inspect a pending replacement. Without selection, logs choose `web`, or the only service; ambiguous apps require an explicit name. The output identifies the selected container. Line count defaults to 100 (maximum 1000); byte limits may truncate further. Output includes timestamps. Failed build diagnostics are bounded tails in the journal and error response. Logs can contain application-controlled data or secrets; Soar does not redact arbitrary application output.
 

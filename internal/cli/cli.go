@@ -11,15 +11,21 @@ import (
 
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/executor"
+	"github.com/nchapman/soar/internal/registry"
 )
 
 const help = `Soar — a small app platform for one server
 
 Usage:
+  soar apps [--server NAME] [--json]      List app deployment and retained state
+  soar init APP --port PORT              Write a minimal configuration without overwriting
+  soar exec [--service NAME] [-i] [-t] -- COMMAND
+                                        Run a command inside an existing service
+  soar console [--service NAME]          Open an interactive shell in an existing service
   soar run --service NAME -- COMMAND    Run a noninteractive command
   soar deploy [-f soar.yaml]             Build and deploy the app's services
   soar status [--json]                   Inspect the app's actual running state
-  soar logs [--tail 100]                 Read bounded service-container logs
+  soar logs [--tail 100] [--follow]      Read a snapshot or follow one container's logs
   soar rollback [--service NAME] [--allow-downtime] [--yes]
                                         Preview or restore captured service images
   soar resume OPERATION                 Resume captured operation inputs
@@ -68,6 +74,14 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		}
 		fmt.Fprintf(stdout, "soar %s\n", version)
 		return 0
+	case "apps":
+		return appsCommand(ctx, args[1:], stdout, stderr, defaultAppDeps())
+	case "init":
+		return initCommand(args[1:], stdout, stderr, registry.Default)
+	case "exec", "console":
+		return sessionCommand(ctx, args[0], args[1:], stdin, stdout, stderr, defaultAppDeps(), terminalStreams)
+	case "internal-session-prepare", "internal-session-attach", "internal-session-cleanup":
+		return internalSession(ctx, args[0], args[1:], stdin, stdout, stderr)
 	case "validate":
 		return validate(args[1:], stdout, stderr)
 	case "service":

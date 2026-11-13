@@ -29,7 +29,7 @@ const appHelp = `Usage:
   soar service remove NAME --app APP --server SERVER [--yes] [--allow-protected]
   soar run [-f soar.yaml] --service NAME -- COMMAND [ARG...]
   soar status [--run OPERATION] [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
-  soar logs [--run OPERATION] [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
+  soar logs [--follow | --run OPERATION] [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
   soar rollback [--service NAME] [--allow-downtime] [--yes] [-f soar.yaml | --server NAME --app APP]
   soar resume [--server NAME --app APP] OPERATION
   soar cleanup [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
@@ -60,10 +60,11 @@ type appDeps struct {
 	Inspect  func(context.Context, string) (*host.Report, error)
 	Artifact func(string, string) ([]byte, error)
 	Run      func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error)
+	Stream   func(context.Context, string, deploy.SessionRequest, []byte, io.Reader, io.Writer, io.Writer) (int, error)
 }
 
 func defaultAppDeps() appDeps {
-	return appDeps{registry.Default, buildcontext.Archive, ssh.Inspect, ssh.Artifact, ssh.RunApp}
+	return appDeps{Registry: registry.Default, Archive: buildcontext.Archive, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunApp, Stream: ssh.StreamApp}
 }
 
 func appCommand(ctx context.Context, action string, args []string, stdout, stderr io.Writer, deps appDeps) int {
@@ -76,6 +77,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	service := flags.String("service", "", "service selector")
 	runOperation := flags.String("run", "", "captured run operation (status/logs only)")
 	candidate := flags.Bool("candidate", false, "candidate logs (logs only)")
+	follow := flags.Bool("follow", false, "stream selected container logs until disconnect (logs only; -f remains config file)")
 	supersede := flags.String("supersede", "", "replace a stopped pre-promotion operation with new inputs")
 	reuseData := flags.Bool("reuse-data", false, "authorize exact retained volume reuse after destroy (deploy only)")
 	yes := flags.Bool("yes", false, "approve deploy or apply cleanup/destroy/rollback (default: preview)")
@@ -111,7 +113,14 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	reuseDataProvided := false
 	allowDowntimeProvided := false
 	serviceProvided, candidateProvided, runProvided := false, false, false
+	followProvided, timeoutProvided := false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "follow" {
+			followProvided = true
+		}
+		if f.Name == "timeout" {
+			timeoutProvided = true
+		}
 		if f.Name == "allow-downtime" {
 			allowDowntimeProvided = true
 		}
@@ -146,7 +155,16 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if reuseDataProvided && action != "deploy" {
 		return usageError(stderr, "--reuse-data is deploy only")
 	}
-	if *timeout <= 0 || *tail < 1 || *tail > 1000 {
+	if followProvided && action != "logs" {
+		return usageError(stderr, "--follow is logs only")
+	}
+	if *follow && runProvided {
+		return usageError(stderr, "--follow cannot be combined with --run; recorded run/build diagnostics are bounded snapshots")
+	}
+	if *follow && !timeoutProvided {
+		*timeout = 0
+	}
+	if *timeout < 0 || (*timeout == 0 && !*follow) || *tail < 1 || *tail > 1000 {
 		return usageError(stderr, "invalid timeout, service, or log tail")
 	}
 	if (action == "resume" && flags.NArg() != 1) || (action != "resume" && action != "run" && flags.NArg() != 0) {
@@ -276,8 +294,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, *timeout)
-	defer cancel()
+	if *timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *timeout)
+		defer cancel()
+	}
 	var binary []byte
 	if action == "deploy" && *service == "" {
 		if _, err := fmt.Fprintln(stdout, "Declared-service deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
@@ -326,6 +347,10 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	if (action == "service-bind" || action == "service-remove") && !*asJSON {
 		fmt.Fprintf(stdout, "Target %s (%s) / %s; selected service: %s\n", server.Name, server.Target, name, *service)
+	}
+	if *follow {
+		sessionRequest := deploy.SessionRequest{Version: 1, Action: "logs", App: name, Host: request.Host, Service: *service, Candidate: *candidate, Tail: *tail}
+		return runSession(ctx, server.Target, sessionRequest, binary, nil, stdout, stderr, deps)
 	}
 	response, err := deps.Run(ctx, server.Target, request, binary, archive)
 	if action == "deploy" {

@@ -52,6 +52,7 @@ type Request struct {
 	Tail           int               `json:"tail,omitempty"`
 }
 type Response struct {
+	Apps            *AppList           `json:"apps,omitempty"`
 	RollbackPreview *RollbackPreview   `json:"rollback_preview,omitempty"`
 	Run             *RunResult         `json:"run,omitempty"`
 	DeployPreview   *DeploymentPreview `json:"deploy_preview,omitempty"`
@@ -317,7 +318,11 @@ func ValidateRequest(r Request) error {
 	if r.Version != 1 {
 		return errors.New("unsupported request version")
 	}
-	if len(r.App) > 63 || !label.MatchString(r.App) {
+	if r.Action == "apps" {
+		if r.App != "" || r.HostIdentity != "" || r.ReAdd || len(r.Bindings) != 0 {
+			return errors.New("apps requires a host-only request")
+		}
+	} else if len(r.App) > 63 || !label.MatchString(r.App) {
 		return errors.New("invalid app name")
 	}
 	if err := lifecycle.ValidateConfig(r.Host); err != nil {
@@ -370,7 +375,7 @@ func ValidateRequest(r Request) error {
 		if !operation.MatchString(r.Operation) || !secrets.ValidName(r.SecretName) || r.Config != nil {
 			return errors.New("secret staging requires operation ID, valid name, and no config")
 		}
-	case "status", "logs", "secrets-list":
+	case "apps", "status", "logs", "secrets-list":
 		if r.Operation != "" || r.Config != nil {
 			return errors.New("read-only request cannot supply operation or config")
 		}
@@ -571,6 +576,10 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	}
 	if h == nil || h.Phase != "ready" || h.Config != r.Host || (r.HostIdentity != "" && r.HostIdentity != h.ID) {
 		err = errors.New("expected ready host identity does not match")
+		return
+	}
+	if r.Action == "apps" {
+		resp.Apps, err = m.listApps(ctx, h.ID, h.Config)
 		return
 	}
 	j, e := m.load(r.App)
