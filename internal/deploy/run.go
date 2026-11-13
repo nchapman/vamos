@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 
 	"github.com/nchapman/soar/internal/buildcontext"
@@ -21,14 +20,16 @@ import (
 )
 
 type RunResult struct {
-	Operation string `json:"operation"`
-	Service   string `json:"service"`
-	Phase     string `json:"phase"`
-	Container string `json:"container"`
-	Image     string `json:"image"`
-	ExitCode  *int   `json:"exit_code"`
-	Output    string `json:"output,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Operation       string `json:"operation"`
+	Service         string `json:"service"`
+	Phase           string `json:"phase"`
+	Container       string `json:"container"`
+	Image           string `json:"image"`
+	ExitCode        *int   `json:"exit_code"`
+	Output          string `json:"output,omitempty"`
+	Error           string `json:"error,omitempty"`
+	Purpose         string `json:"purpose,omitempty"`
+	ParentOperation string `json:"parent_operation,omitempty"`
 }
 
 type runRecord struct {
@@ -47,7 +48,7 @@ func runPath(m *Manager, j *journal, op string) string {
 	return filepath.Join(m.dir(j.App), op+".run.json")
 }
 func validateRun(j *journal, r *runRecord) error {
-	if r == nil || r.Version != 1 || r.App != j.App || r.HostID != j.HostID || !operation.MatchString(r.Operation) || !label.MatchString(r.Service) || len(r.Service) > 63 || r.Container != "soar-run-"+r.Operation || len(r.Config.Command) == 0 || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || len(r.Output) > runOutputLimit || r.Config.HTTP != nil || r.Config.Volume != nil {
+	if r == nil || !validRunVersion(r) || r.App != j.App || r.HostID != j.HostID || !operation.MatchString(r.Operation) || !label.MatchString(r.Service) || len(r.Service) > 63 || r.Container != "soar-run-"+r.Operation || len(r.Config.Command) == 0 || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || len(r.Output) > runOutputLimit || r.Config.HTTP != nil || r.Config.Volume != nil {
 		return errors.New("invalid run record")
 	}
 	if err := ValidateApp(&config.App{Name: r.App, Services: map[string]config.Service{r.Service: r.Config}}); err != nil {
@@ -207,6 +208,9 @@ func (m *Manager) verifyRun(ctx context.Context, j *journal, r *runRecord, v *in
 	labels["soar.operation"] = r.Operation
 	labels["soar.service"] = r.Service
 	labels["soar.run"] = r.Operation
+	if r.Purpose == "release" {
+		labels["soar.release"] = r.ParentOperation
+	}
 	env := map[string]string{}
 	for _, x := range im.Config.Env {
 		k, val, ok := strings.Cut(x, "=")
@@ -346,7 +350,7 @@ func (m *Manager) runContainerAbsent(ctx context.Context, name string) bool {
 	return true
 }
 
-func (m *Manager) preflightRuns(ctx context.Context, j *journal) error {
+func (m *Manager) preflightRuns(ctx context.Context, j *journal, allowedHook ...string) error {
 	if j == nil {
 		return nil
 	}
@@ -361,6 +365,12 @@ func (m *Manager) preflightRuns(ctx context.Context, j *journal) error {
 		r, err := m.loadRun(j, strings.TrimSuffix(filepath.Base(p), ".run.json"))
 		if err != nil {
 			return err
+		}
+		if len(allowedHook) == 1 && allowedHook[0] != "" && r.Operation == allowedHook[0] {
+			if j.Phase != "releasing" || j.Hook == nil || r.Operation != j.Hook.Operation || !matchingHookRecord(m.hookRecord(j), r) {
+				return errors.New("owning release execution does not match captured deployment")
+			}
+			continue // Only its owner may resume observation; no general retry permission.
 		}
 		v, err := m.inspect(ctx, "container", r.Container)
 		if err != nil {
@@ -519,18 +529,7 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 	if err = m.saveRun(j, rec); err != nil {
 		return resp, err
 	}
-	args := []string{"create", "--name", rec.Container, "--restart", "no", "--network", network(j), "--label", "soar.host=" + j.HostID, "--label", "soar.app=" + j.App, "--label", "soar.operation=" + r.Operation, "--label", "soar.service=" + r.Service, "--label", "soar.run=" + r.Operation}
-	args = append(args, resourceArgs(cfg.Resources)...)
-	keys := []string{}
-	for k := range cfg.Env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		args = append(args, "--env", k+"="+cfg.Env[k])
-	}
-	args = append(args, rec.Image)
-	args = append(args, r.Command...)
+	args := runCreateArgs(j, rec)
 	rel := &release{Image: rec.Image, SecretRefs: refs}
 	if m.runContainer(ctx, j, rel, args) != nil {
 		return resp, errors.New("run create outcome unknown; no retry")

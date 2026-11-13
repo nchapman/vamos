@@ -26,6 +26,9 @@ func (p *presentation) appFailure(r appReport, request deploy.Request, response 
 			text += p.section("If recorded and resumable") + p.command(r.command("resume", request.Operation))
 		}
 	}
+	if !unknown && response.Status != nil {
+		text += p.releaseReport(response.Status.Release, r)
+	}
 	if bindingCommand != "" {
 		text += p.section("Explicit adoption") + p.prose("Inspect status first; explicitly adopt only the intended service.") + p.command(bindingCommand)
 	}

@@ -380,7 +380,9 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 			v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{parts[2] + "/tcp": {{HostIP: parts[0], HostPort: parts[1]}}}
 		}
 		v.State.Running = a[0] == "run"
-		v.State.StartedAt = "2026-06-01T00:00:00Z"
+		if v.State.Running {
+			v.State.StartedAt = "2026-06-01T00:00:00Z"
+		}
 		f.endpoint(v, fakeArg(a, "--network-alias"))
 		f.containers[n] = v
 		f.events = append(f.events, a[0])
@@ -398,6 +400,7 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 				f.t.Fatal(a)
 			}
 			if !f.ignore["start"] {
+				v.State.StartedAt = "2026-06-01T00:00:00Z"
 				v.State.Running = true
 				v.NetworkSettings.Ports = v.HostConfig.PortBindings
 			}

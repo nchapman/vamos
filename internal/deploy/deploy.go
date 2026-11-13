@@ -90,6 +90,7 @@ type VolumeStatus struct {
 type Status struct {
 	HostIdentity string                   `json:"host_identity,omitempty"`
 	Run          *RunResult               `json:"run,omitempty"`
+	Release      *RunResult               `json:"release,omitempty"`
 	Volumes      []VolumeStatus           `json:"volumes,omitempty"`
 	Services     map[string]ServiceStatus `json:"services,omitempty"`
 	Secrets      []SecretStatus           `json:"secrets,omitempty"`
@@ -123,6 +124,7 @@ type DeploymentPreview struct {
 }
 
 type journal struct {
+	Hook                         *releaseCapture          `json:",omitempty"`
 	Selected                     []string                 `json:",omitempty"`
 	Removed                      map[string]string        `json:",omitempty"`
 	Rollback                     *rollbackCapture         `json:",omitempty"`
@@ -223,6 +225,9 @@ func validateLegacyApp(a *config.App) error {
 	if err := ValidateApp(a); err != nil {
 		return err
 	}
+	if a.Release != nil {
+		return errors.New("legacy protocol does not support release commands")
+	}
 	for _, service := range a.Services {
 		if service.Resources != nil {
 			return errors.New("legacy protocol does not support resources; use a current client with a captured build bundle")
@@ -239,6 +244,14 @@ func (r Request) Mutating() bool {
 }
 
 func ValidateRequest(r Request) error {
+	if r.Config != nil && r.Config.Release != nil && r.Action == "deploy" {
+		if !r.Partial || r.ContextFormat != BundleFormat {
+			return errors.New("release commands require a current partial-manifest client")
+		}
+		if r.Service != "" && r.Service != r.Config.Release.Service {
+			return errors.New("release runner is outside the selected service scope; use a manifest without a release command for dependency-only deployment")
+		}
+	}
 	if r.Partial && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
 		return errors.New("partial manifests require deploy with a current build bundle")
 	}
@@ -693,7 +706,11 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		return m.executeRun(ctx, r, tar, j, h, secretState)
 	}
 	if isMulti(j) {
-		if err = m.preflightRuns(ctx, j); err != nil {
+		allowHook := ""
+		if r.Action == "resume" && j.Operation == r.Operation && j.Phase == "releasing" && j.Hook != nil {
+			allowHook = j.Hook.Operation
+		}
+		if err = m.preflightRuns(ctx, j, allowHook); err != nil {
 			return
 		}
 	}

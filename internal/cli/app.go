@@ -374,6 +374,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			fmt.Fprintf(stderr, "Inspect status first; explicitly adopt only the intended service:\n  %s\n", suggestedCommand(bindingArgs...))
 		}
 		code := lifecycleError(stderr, err)
+		if response.Status != nil {
+			_ = printReleaseSummary(stderr, response.Status.Release)
+		}
 		if action == "run" {
 			fmt.Fprintf(stderr, "Inspect: soar status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
 		} else if mutation {
@@ -487,6 +490,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return 0
 	}
 	if response.Status != nil && !*asJSON {
+		if err := printReleaseSummary(stdout, response.Status.Release); err != nil {
+			return lifecycleError(stderr, err)
+		}
 		for _, volume := range response.Status.Volumes {
 			if *service != "" && volume.Service != *service {
 				continue

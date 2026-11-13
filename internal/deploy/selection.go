@@ -17,7 +17,7 @@ func effectiveConfig(r Request, old *journal) (*config.App, error) {
 	if r.Service == "" && !r.Partial {
 		return r.Config, nil
 	}
-	a := &config.App{Name: r.App, Services: map[string]config.Service{}}
+	a := &config.App{Name: r.App, Services: map[string]config.Service{}, Release: r.Config.Release}
 	for _, name := range selectedServices(r) {
 		cfg, ok := r.Config.Services[name]
 		if !ok {
@@ -58,7 +58,7 @@ func workflowConfig(a *config.App) bool {
 }
 
 func supportsVolumes(j *journal) bool {
-	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6 || j.Version == 7)
+	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6 || j.Version == 7 || j.Version == 8)
 }
 
 func protectedChange(name string) error {
@@ -94,7 +94,7 @@ func keepService(r Request, name string, cfg config.Service, current *release, s
 // The bundle captures selected local sources; the journal also contains
 // unselected effective services, which must not require local build contexts.
 func bundleConfig(j *journal) *config.App {
-	if j.Version == 7 {
+	if supportsServiceIdentities(j) {
 		a := &config.App{Name: j.App, Services: map[string]config.Service{}}
 		for _, name := range j.Selected {
 			a.Services[name] = j.Config.Services[name]
@@ -161,7 +161,7 @@ func selectedServices(r Request) []string {
 }
 
 func capturedSelection(j *journal) []string {
-	if j.Version == 7 {
+	if supportsServiceIdentities(j) {
 		return j.Selected
 	}
 	return selectedServices(Request{Service: j.Scope, Config: j.Config})

@@ -15,7 +15,11 @@ import (
 )
 
 func isMulti(j *journal) bool {
-	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6 || j.Version == 7)
+	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6 || j.Version == 7 || j.Version == 8)
+}
+
+func supportsServiceIdentities(j *journal) bool {
+	return j != nil && (j.Version == 7 || j.Version == 8)
 }
 
 func journalDomain(j *journal) string { return strings.TrimPrefix(j.URL, "https://"+j.App+".") }
@@ -132,7 +136,7 @@ func validateMultiJournal(j *journal, app string) error {
 	settled := j.Phase == "ready" || j.Phase == "cleaning" || j.Phase == "destroying" || j.Phase == "removing"
 	abandoning := j.Phase == "removing" && j.Maintenance != nil && validateServiceAbandonment(j, j.Maintenance.Service) == nil
 	if j.Version == 5 || (j.Version >= 6 && j.Rollback != nil) {
-		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || (len(j.Rollback.Targets) == 0 && !(j.Version == 7 && settled && len(j.Selected) == 0)) || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
+		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || (len(j.Rollback.Targets) == 0 && !(supportsServiceIdentities(j) && settled && len(j.Selected) == 0)) || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
 			return bad
 		}
 	} else if j.Rollback != nil || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
@@ -175,7 +179,7 @@ func validateMultiJournal(j *journal, app string) error {
 		if j.ActiveService != "" || j.NewCaddy != "" {
 			return bad
 		}
-	case "updating", "ready", "cleaning", "destroying", "removing":
+	case "releasing", "updating", "ready", "cleaning", "destroying", "removing":
 		if j.Rollback == nil && !abandoning && len(j.BuildImages) != len(builds) {
 			return bad
 		}
@@ -223,7 +227,7 @@ func validateMultiJournal(j *journal, app string) error {
 		if s == nil || (j.Rollback != nil && (j.Rollback.Targets[name] == nil) != s.Skipped) {
 			return bad
 		}
-		if j.Version == 7 {
+		if supportsServiceIdentities(j) {
 			if !operation.MatchString(s.Incarnation) {
 				return bad
 			}
@@ -312,7 +316,7 @@ func validateMultiJournal(j *journal, app string) error {
 		}
 		switch s.Phase {
 		case "pending":
-			if (j.Phase != "building" && !abandoning) || s.Candidate != nil || s.Retiring != nil {
+			if (j.Phase != "building" && j.Phase != "releasing" && !abandoning) || s.Candidate != nil || s.Retiring != nil {
 				return bad
 			}
 		case "prepared":
@@ -346,7 +350,7 @@ func validateMultiJournal(j *journal, app string) error {
 		default:
 			return bad
 		}
-		if j.Phase == "building" && s.Phase != "pending" {
+		if (j.Phase == "building" || j.Phase == "releasing") && s.Phase != "pending" {
 			return bad
 		}
 		if (j.Phase == "ready" || j.Phase == "cleaning" || j.Phase == "destroying" || j.Phase == "removing") && s.Phase != "ready" && !abandoning {
@@ -386,6 +390,9 @@ func validateMultiJournal(j *journal, app string) error {
 	}
 	if (j.Phase == "ready" || j.Phase == "cleaning" || j.Phase == "destroying" || j.Phase == "removing") && !abandoning && (j.Completed == nil || !sameEffective(j)) {
 		return bad
+	}
+	if err := validateReleaseCapture(j); err != nil {
+		return err
 	}
 	return validateMaintenance(j)
 }

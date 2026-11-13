@@ -89,6 +89,7 @@ func (p *presentation) statusReport(s *deploy.Status, r appReport) string {
 	b.WriteString(p.field("Phase", s.Phase))
 	b.WriteString(p.field("Operation", s.Operation))
 	b.WriteString(p.field("Host operation active", yesNo(s.Active)))
+	b.WriteString(p.releaseReport(s.Release, r))
 	if len(names) > 0 {
 		for _, name := range names {
 			ss := s.Services[name]

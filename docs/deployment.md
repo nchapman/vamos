@@ -95,6 +95,15 @@ only required selected secrets. Unselected services retain their actual effectiv
 configuration and versions, not pending local edits. No dependencies start
 implicitly. See [PostgreSQL](postgres.md) and the [Ledger recipe](../examples/ledger/README.md).
 
+## Release commands
+
+Use a top-level [`release` directive](release-commands.md) to run a captured
+migration command once before any selected service runtime changes. The runner
+uses its new image, environment, pinned secrets and resource limits without
+ports, aliases or application volumes. Failed or uncertain executions block the
+rollout and are never automatically restarted. Dependencies must already exist;
+rollback neither runs nor undoes migrations.
+
 ## One-off commands
 
 ```sh

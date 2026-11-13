@@ -68,12 +68,14 @@ func upgradeServiceJournal(j *journal) {
 			sort.Strings(j.Selected)
 		}
 	}
-	j.Version = 7
+	if j.Version < 7 {
+		j.Version = 7
+	}
 }
 
 func prepareServiceIdentities(r Request, old, next *journal) error {
 	if !r.Partial {
-		if old != nil && old.Version == 7 {
+		if supportsServiceIdentities(old) {
 			return errors.New("this app requires service bindings and a current partial-manifest client")
 		}
 		return nil
@@ -82,6 +84,9 @@ func prepareServiceIdentities(r Request, old, next *journal) error {
 		return errors.New("bound host identity changed; explicitly bind to the intended host")
 	}
 	next.Version = 7
+	if old != nil && old.Version == 8 {
+		next.Version = 8
+	}
 	if old != nil && old.Phase != "destroyed" {
 		next.Removed = maps.Clone(old.Removed)
 	}

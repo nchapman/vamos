@@ -71,6 +71,7 @@ func multiSecretStatuses(state *secrets.State, j *journal) []SecretStatus {
 
 func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.State, active bool, selected string) Status {
 	out := maintenanceStatus(j, journalDomain(j))
+	out.Release = m.releaseStatus(ctx, j)
 	out.URL = ""
 	out.Container = ""
 	out.Active = active

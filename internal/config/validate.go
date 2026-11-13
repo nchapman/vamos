@@ -124,6 +124,24 @@ func (a App) Validate() error {
 			volumes[volume.Name] = prefix
 		}
 	}
+	if r := a.Release; r != nil {
+		if _, ok := a.Services[r.Service]; !ok || !validLabel(r.Service) {
+			add("release.service must name a declared service")
+		}
+		if len(r.Command) == 0 || len(r.Command) > 256 || r.Command[0] == "" {
+			add("release.command must contain a nonempty executable and at most 256 arguments")
+		}
+		total := 0
+		for _, arg := range r.Command {
+			total += len(arg)
+			if len(arg) > 8192 || strings.ContainsRune(arg, '\x00') {
+				add("release.command arguments must be at most 8192 bytes and contain no NUL")
+			}
+		}
+		if total > 32<<10 {
+			add("release.command must be at most 32768 bytes total")
+		}
+	}
 	if len(domains) > 32 {
 		add("at most 32 custom domains per app are supported")
 	}

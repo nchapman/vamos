@@ -16,7 +16,7 @@ import (
 // pretending the original failed slot was ready or had a healthy Current.
 func validateServiceAbandonment(j *journal, name string) error {
 	refuse := errors.New("cannot safely abandon this service; resume the captured deployment operation first")
-	if j == nil || j.Version != 7 || j.Config == nil || len(j.ServiceStates) < 2 || len(j.Selected) != 1 || j.Selected[0] != name || j.Rollback != nil || j.OldCaddy != "" || j.NewCaddy != "" || j.Completed == nil {
+	if !supportsServiceIdentities(j) || j.Config == nil || len(j.ServiceStates) < 2 || len(j.Selected) != 1 || j.Selected[0] != name || j.Rollback != nil || j.OldCaddy != "" || j.NewCaddy != "" || j.Completed == nil {
 		return refuse
 	}
 	switch j.Phase {
@@ -57,7 +57,7 @@ func validateServiceAbandonment(j *journal, name string) error {
 
 func validateServiceRemoval(j *journal) error {
 	w := j.Maintenance
-	if j.Version != 7 || w.Service == "" || j.ServiceStates[w.Service] == nil || len(j.ServiceStates) < 2 || w.Network != nil || len(w.Images) != 0 || len(w.Files) != 0 || w.OldCaddy == "" || w.NewCaddy == "" {
+	if !supportsServiceIdentities(j) || w.Service == "" || j.ServiceStates[w.Service] == nil || len(j.ServiceStates) < 2 || w.Network != nil || len(w.Images) != 0 || len(w.Files) != 0 || w.OldCaddy == "" || w.NewCaddy == "" {
 		return errors.New("invalid service removal intent")
 	}
 	for _, c := range w.Containers {
@@ -233,6 +233,9 @@ func commitServiceRemoval(j *journal) {
 	}
 	j.Removed[name] = serviceIncarnation(j, name)
 	delete(j.Config.Services, name)
+	if j.Hook != nil && j.Hook.Directive.Service == name {
+		j.Hook = nil
+	}
 	delete(j.ServiceStates, name)
 	// BuildImages describes this operation's selected sources, not every
 	// surviving service that happens to use the same build/image key.

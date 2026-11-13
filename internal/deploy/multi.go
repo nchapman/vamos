@@ -113,6 +113,9 @@ func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State
 		return nil, err
 	}
 	j.ServiceOrder = serviceOrder(j)
+	if err := captureRelease(j, r.Config.Release); err != nil {
+		return nil, err
+	}
 	return j, nil
 }
 
@@ -123,7 +126,7 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 			return resp, errors.New("this app requires a current client with a captured multi-service build bundle")
 		}
 		selected := selectedServices(r)
-		if j != nil && j.Version == 7 && !r.Partial {
+		if supportsServiceIdentities(j) && !r.Partial {
 			return resp, errors.New("partial deployment required for version 7 app")
 		}
 		if r.Supersede != "" && j != nil && (j.Scope != r.Service || !slices.Equal(capturedSelection(j), selected)) {
@@ -185,7 +188,7 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 			return
 		}
 		if r.Supersede != "" {
-			if j == nil || !isMulti(j) || j.Operation != r.Supersede || (j.Phase != "building" && j.Phase != "updating") {
+			if j == nil || !isMulti(j) || j.Operation != r.Supersede || (j.Phase != "building" && j.Phase != "releasing" && j.Phase != "updating") {
 				return resp, errors.New("supersede does not match an incomplete multi-service operation")
 			}
 			if err = m.supersedeMulti(ctx, j); err != nil {
@@ -331,10 +334,21 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 	if err != nil {
 		return err
 	}
+	if j.Hook != nil && (j.Phase == "building" || j.Phase == "releasing") {
+		if j.Phase == "building" {
+			j.Phase = "releasing"
+			if err = m.save(j); err != nil {
+				return err
+			}
+		}
+		if err = m.advanceRelease(ctx, j); err != nil {
+			return err
+		}
+	}
 	if err = m.ensureVolumes(ctx, j); err != nil {
 		return err
 	}
-	if j.Phase == "building" {
+	if j.Phase == "building" || j.Phase == "releasing" {
 		// Commit planning as a whole so inspection failure leaves a retryable
 		// building journal, rather than a mixture of pending and prepared slots.
 		planned := make(map[string]*serviceState, len(j.ServiceStates))

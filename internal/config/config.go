@@ -24,6 +24,14 @@ const (
 type App struct {
 	Name     string             `yaml:"app"`
 	Services map[string]Service `yaml:"services"`
+	Release  *Release           `yaml:"release,omitempty" json:",omitempty"`
+}
+
+// Release is an operation-scoped command, not persistent remote app policy.
+// It uses one selected service's newly resolved image and captured environment.
+type Release struct {
+	Service string   `yaml:"service"`
+	Command []string `yaml:"command"`
 }
 
 type Service struct {

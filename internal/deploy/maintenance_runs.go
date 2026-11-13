@@ -115,6 +115,9 @@ func (m *Manager) maintenanceRunPrune(j *journal) (map[string]bool, error) {
 		if err != nil {
 			return nil, err
 		}
+		if j.Hook != nil && r.Operation == j.Hook.Operation {
+			continue
+		}
 		if r.Phase != "complete" {
 			if len(remove) < maintenanceRunPruneBatch {
 				remove[entry.Name()] = true

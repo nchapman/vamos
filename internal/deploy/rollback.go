@@ -51,7 +51,7 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 	if !isMulti(old) || old.Phase == "destroyed" {
 		return nil, nil, errors.New("rollback requires captured multi-service release history")
 	}
-	if old.Phase != "ready" && old.Phase != "building" && old.Phase != "updating" {
+	if old.Phase != "ready" && old.Phase != "building" && old.Phase != "releasing" && old.Phase != "updating" {
 		return nil, nil, errors.New("finish maintenance before rollback")
 	}
 	if old.NewCaddy != "" {
