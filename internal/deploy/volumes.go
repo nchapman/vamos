@@ -32,8 +32,8 @@ func (m *Manager) planVolumes(r Request, old, next *journal) (*volumes.State, er
 		s = &volumes.State{Version: 1, App: next.App, HostID: next.HostID, Records: map[string]volumes.Record{}}
 	}
 	if supportsVolumes(old) {
-		if next.Version < old.Version {
-			next.Version = old.Version
+		if next.Version < min(old.Version, 4) {
+			next.Version = min(old.Version, 4)
 		}
 		for name, slot := range old.ServiceStates {
 			if slot != nil && slot.VolumeID != "" && s.Records[name].ID != slot.VolumeID {

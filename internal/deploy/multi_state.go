@@ -15,7 +15,7 @@ import (
 )
 
 func isMulti(j *journal) bool {
-	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4)
+	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4 || j.Version == 5)
 }
 
 func journalDomain(j *journal) string { return strings.TrimPrefix(j.URL, "https://"+j.App+".") }
@@ -99,7 +99,14 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 
 func validateMultiJournal(j *journal, app string) error {
 	bad := errors.New("invalid multi-service app journal")
-	if !isMulti(j) || j.App != app || len(app) > 63 || !label.MatchString(app) || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
+	if !isMulti(j) || j.App != app || len(app) > 63 || !label.MatchString(app) || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app {
+		return bad
+	}
+	if j.Version == 5 {
+		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || len(j.Rollback.Targets) == 0 || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
+			return bad
+		}
+	} else if j.Rollback != nil || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
 		return bad
 	}
 	if j.Status.Run != nil || len(j.Volumes) != 0 || (!supportsVolumes(j) && j.ReuseData) || (j.Version < 4 && (j.Scope != "" || workflowConfig(j.Config))) {
@@ -137,7 +144,7 @@ func validateMultiJournal(j *journal, app string) error {
 			return bad
 		}
 	case "updating", "ready", "cleaning", "destroying":
-		if len(j.BuildImages) != len(builds) {
+		if j.Rollback == nil && len(j.BuildImages) != len(builds) {
 			return bad
 		}
 	default:
@@ -169,13 +176,27 @@ func validateMultiJournal(j *journal, app string) error {
 		known[r.Container] = r
 		return nil
 	}
+	if j.Rollback != nil {
+		for name, target := range j.Rollback.Targets {
+			s := j.ServiceStates[name]
+			if target == nil || target.Config == nil || s == nil || s.Skipped || target.Config.Update == config.UpdateManual || (s.Current != nil && (s.Current.Config == nil || s.Current.Config.Update == config.UpdateManual)) || target.Operation == j.Operation || !reflect.DeepEqual(*target.Config, j.Config.Services[name]) || !maps.Equal(target.SecretRefs, s.SecretRefs) || (target.Config.Volume != nil && (j.Scope != name || !j.Rollback.AllowDowntime)) {
+				return bad
+			}
+			if err := record(name, target, true); err != nil {
+				return err
+			}
+		}
+	}
 	for name, s := range j.ServiceStates {
+		if s == nil || (j.Rollback != nil && (j.Rollback.Targets[name] == nil) != s.Skipped) {
+			return bad
+		}
 		cfg, ok := j.Config.Services[name]
 		if !ok || s == nil || !matchingSecretRefs(s.SecretRefs, cfg.Secrets) {
 			return bad
 		}
 		if s.Skipped {
-			if j.Version != 4 || s.Current == nil || s.Current.Config == nil || s.New || s.CurrentRetired || s.Unavailable || s.Candidate != nil || s.Retiring != nil || s.Current.Operation == j.Operation || !reflect.DeepEqual(*s.Current.Config, cfg) || !maps.Equal(s.SecretRefs, s.Current.SecretRefs) || (j.Scope == "" && cfg.Update != config.UpdateManual) || name == j.Scope {
+			if j.Version < 4 || s.Current == nil || s.Current.Config == nil || s.New || s.CurrentRetired || s.Unavailable || s.Candidate != nil || s.Retiring != nil || s.Current.Operation == j.Operation || !reflect.DeepEqual(*s.Current.Config, cfg) || !maps.Equal(s.SecretRefs, s.Current.SecretRefs) || (j.Scope == "" && cfg.Update != config.UpdateManual && j.Rollback == nil) || name == j.Scope {
 				return bad
 			}
 		} else if j.Scope != "" && name != j.Scope {
@@ -229,7 +250,7 @@ func validateMultiJournal(j *journal, app string) error {
 			return bad
 		}
 		if s.Candidate != nil {
-			if s.Candidate.Operation != j.Operation || s.Candidate.Service != name || !reflect.DeepEqual(*s.Candidate.Config, cfg) || !maps.Equal(s.Candidate.SecretRefs, s.SecretRefs) || s.Candidate.Image != j.BuildImages[imageKey(cfg)] {
+			if s.Candidate.Operation != j.Operation || s.Candidate.Service != name || !reflect.DeepEqual(*s.Candidate.Config, cfg) || !maps.Equal(s.Candidate.SecretRefs, s.SecretRefs) || s.Candidate.Image != selectedImage(j, name) {
 				return bad
 			}
 			if s.Current != nil && s.Current.Container == s.Candidate.Container {
@@ -237,7 +258,7 @@ func validateMultiJournal(j *journal, app string) error {
 			}
 		}
 		if s.Current != nil && s.Current.Operation == j.Operation {
-			if s.Current.Service != name || !reflect.DeepEqual(*s.Current.Config, cfg) || !maps.Equal(s.Current.SecretRefs, s.SecretRefs) || s.Current.Image != j.BuildImages[imageKey(cfg)] {
+			if s.Current.Service != name || !reflect.DeepEqual(*s.Current.Config, cfg) || !maps.Equal(s.Current.SecretRefs, s.SecretRefs) || s.Current.Image != selectedImage(j, name) {
 				return bad
 			}
 		}

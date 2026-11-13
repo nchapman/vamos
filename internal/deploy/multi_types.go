@@ -53,6 +53,11 @@ func retainedReleases(j *journal) []*release {
 			out = append(out, r)
 		}
 	}
+	if j.Rollback != nil {
+		for _, r := range j.Rollback.Targets {
+			add(r)
+		}
+	}
 	add(j.Current)
 	add(j.Previous)
 	add(j.Candidate)

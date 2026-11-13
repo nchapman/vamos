@@ -53,7 +53,9 @@ func workflowConfig(a *config.App) bool {
 	return false
 }
 
-func supportsVolumes(j *journal) bool { return j != nil && (j.Version == 3 || j.Version == 4) }
+func supportsVolumes(j *journal) bool {
+	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5)
+}
 
 func protectedChange(name string) error {
 	return fmt.Errorf("service %s is protected and its configuration or staged secrets changed; explicitly deploy it with soar deploy --service %s --yes", name, name)

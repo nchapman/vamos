@@ -27,11 +27,15 @@ const appHelp = `Usage:
   soar run [-f soar.yaml] --service NAME -- COMMAND [ARG...]
   soar status [--run OPERATION] [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
   soar logs [--run OPERATION] [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
+  soar rollback [--service NAME] [--allow-downtime] [--yes] [-f soar.yaml | --server NAME --app APP]
   soar resume [--server NAME --app APP] OPERATION
   soar cleanup [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
   soar destroy [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
 
-All commands accept --executor FILE. Cleanup/destroy preview unless --yes.
+All commands accept --executor FILE. Cleanup/destroy/rollback preview unless --yes.
+Rollback uses captured images and secret versions, never local source or builds.
+--allow-downtime authorizes stop/start rollback; data is not rolled back.
+Captured credentials may have been revoked. Resume uses the existing operation without new flags.
 Lifecycle --json emits the full response (including the exact plan).
 
 Deploy updates automatic services, or only --service NAME.
@@ -70,11 +74,12 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	candidate := flags.Bool("candidate", false, "candidate logs (logs only)")
 	supersede := flags.String("supersede", "", "replace a stopped pre-promotion operation with new inputs")
 	reuseData := flags.Bool("reuse-data", false, "authorize exact retained volume reuse after destroy (deploy only)")
-	yes := flags.Bool("yes", false, "apply cleanup or destroy (default: preview)")
+	yes := flags.Bool("yes", false, "approve deploy or apply cleanup/destroy/rollback (default: preview)")
+	allowDowntime := flags.Bool("allow-downtime", false, "authorize stop/start rollback (rollback only)")
 	maintenance := action == "cleanup" || action == "destroy"
 	asJSON := flags.Bool("json", false, "JSON status")
 	tail := flags.Int("tail", 100, "log tail lines (1-1000, output also byte bounded)")
-	mutation := action == "deploy" || action == "run" || action == "resume" || maintenance
+	mutation := action == "deploy" || action == "run" || action == "resume" || action == "rollback" || maintenance
 	deadline := 15 * time.Second
 	if mutation {
 		deadline = 25 * time.Minute
@@ -89,8 +94,12 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	yesProvided := false
 	reuseDataProvided := false
+	allowDowntimeProvided := false
 	serviceProvided, candidateProvided, runProvided := false, false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "allow-downtime" {
+			allowDowntimeProvided = true
+		}
 		if f.Name == "run" {
 			runProvided = true
 		}
@@ -107,14 +116,17 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			yesProvided = true
 		}
 	})
-	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" || *service == "")) || (candidateProvided && action != "logs") {
-		return usageError(stderr, "--service requires deploy/run/status/logs; --candidate is logs only")
+	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" && action != "rollback" || *service == "")) || (candidateProvided && action != "logs") {
+		return usageError(stderr, "--service requires deploy/run/status/logs/rollback; --candidate is logs only")
 	}
 	if runProvided && (*runOperation == "" || (action != "status" && action != "logs") || serviceProvided || candidateProvided) {
 		return usageError(stderr, "--run is status/logs only and cannot be combined with --service or --candidate")
 	}
 	if action == "run" && (*service == "" || flags.NArg() == 0) {
 		return usageError(stderr, "run requires --service and a nonempty command after --")
+	}
+	if allowDowntimeProvided && action != "rollback" {
+		return usageError(stderr, "--allow-downtime is rollback only")
 	}
 	if reuseDataProvided && action != "deploy" {
 		return usageError(stderr, "--reuse-data is deploy only")
@@ -125,11 +137,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if (action == "resume" && flags.NArg() != 1) || (action != "resume" && action != "run" && flags.NArg() != 0) {
 		return usageError(stderr, "resume requires one operation ID; other app commands have no positional arguments")
 	}
-	if (*supersede != "" && action != "deploy") || (*asJSON && action != "status" && !maintenance) || (yesProvided && !maintenance && !(action == "deploy" && *service != "")) || (action != "logs" && *tail != 100) {
+	if (*supersede != "" && action != "deploy") || (*asJSON && action != "status" && !maintenance) || (yesProvided && !maintenance && action != "rollback" && !(action == "deploy" && *service != "")) || (action != "logs" && *tail != 100) {
 		return usageError(stderr, "option does not apply to this app command")
 	}
 	if *appFlag != "" && (action == "deploy" || action == "run" || *serverFlag == "") {
-		return usageError(stderr, "--app is for status/logs/resume/cleanup/destroy and requires an explicit --server")
+		return usageError(stderr, "--app is for status/logs/resume/cleanup/destroy/rollback and requires an explicit --server")
 	}
 	name := *appFlag
 	var app *config.App
@@ -169,6 +181,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	request := deploy.Request{Version: 1, Action: action, App: name, Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}}
 	request.Apply = *yes
+	request.AllowDowntime = *allowDowntime
 	request.Service = *service
 	request.Candidate = *candidate
 	request.RunOperation = *runOperation
@@ -176,7 +189,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		request.Command = flags.Args()
 	}
 	var archive []byte
-	if maintenance {
+	if maintenance || action == "rollback" {
 		var id [16]byte
 		if _, err := rand.Read(id[:]); err != nil {
 			return lifecycleError(stderr, err)
@@ -280,6 +293,14 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			if _, err := fmt.Fprintf(stdout, "Approve: soar deploy --service %s --yes\n", p.Service); err != nil {
 				return lifecycleError(stderr, err)
 			}
+			return 0
+		}
+	}
+	if p := response.RollbackPreview; p != nil {
+		if err := printRollbackPreview(stdout, p); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		if !request.Apply {
 			return 0
 		}
 	}

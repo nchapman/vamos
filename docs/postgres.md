@@ -96,6 +96,20 @@ and database upgrade orchestration are deferred. Before important use, arrange
 and test database-consistent off-host backups and recovery including configuration
 and secrets. A single local volume is neither a backup nor high availability.
 
+## Code rollback is not database recovery
+
+```sh
+soar rollback --service web        # preview captured web code/config
+soar rollback --service web --yes # apply after checking schema compatibility
+```
+
+[Rollback](rollback.md) restores captured local images, configuration and secret
+versions, not SQL or schema state. The manual `db` service is never rolled back,
+even with `--service db`; intentional database changes require a vetted scoped
+deploy. Use backward-compatible migrations so old web code can read current data.
+Captured credentials may have been revoked, and staged secrets are not selected.
+`soar run` remains noninteractive and is never automatically retried or undone.
+
 ## Verification for this milestone
 
 The workflow was exercised from macOS against the existing dedicated Ubuntu

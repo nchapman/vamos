@@ -69,7 +69,11 @@ There is no data deletion command, backup, restore, preparation command,
 replication, or data rollback in this milestone. Local persistence is not a
 backup. Prebuilt images, manual updates, scoped deploy and noninteractive one-off
 migration commands are now implemented; see [PostgreSQL](postgres.md). Custom
-domains, service removal and rollback remain unsupported. Existing stateless candidate routing, secrets pinning, bounded
+domains and service removal remain unsupported. [Code/config rollback](rollback.md)
+for a volume-backed automatic service requires `--service NAME --allow-downtime --yes`
+and an operator decision that captured code is compatible with current data. Manual
+services remain excluded. It uses single-writer stop/start (durable HTTP 503 for
+public services), never restores volume contents or undoes schema changes. Existing stateless candidate routing, secrets pinning, bounded
 retention and recovery guarantees remain in place.
 
 The [original proposal](volume-proposal.md) is superseded by this implemented

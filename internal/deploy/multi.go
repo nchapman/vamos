@@ -45,7 +45,7 @@ func (m *Manager) verifyMultiHost() error {
 func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State, data []byte) (*journal, error) {
 	j := &journal{Version: 2, Status: Status{App: r.App, URL: "https://" + r.App + "." + r.Host.Domain, Phase: "building", Operation: r.Operation}, HostID: h.ID, Config: r.Config, Archive: r.Operation + ".context.tar", BundleSHA: bundleDigest(data), BuildImages: map[string]string{}, ServiceStates: map[string]*serviceState{}}
 	j.Scope = r.Service
-	if r.Service != "" || workflowConfig(r.Config) || (old != nil && old.Version == 4) {
+	if r.Service != "" || workflowConfig(r.Config) || (old != nil && old.Version >= 4) {
 		j.Version = 4
 	}
 	previousSlots := map[string]*serviceState{}
@@ -267,16 +267,20 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 	if j.Phase == "ready" {
 		return nil
 	}
-	data, err := readContextArchive(filepath.Join(m.dir(j.App), j.Archive))
-	if err != nil {
-		return err
-	}
-	if bundleDigest(data) != j.BundleSHA {
-		return errors.New("captured build bundle checksum mismatch")
-	}
-	archives, err := buildcontext.ReadBundle(data, bundleConfig(j))
-	if err != nil {
-		return err
+	var err error
+	var archives map[string][]byte
+	if j.Rollback == nil {
+		data, e := readContextArchive(filepath.Join(m.dir(j.App), j.Archive))
+		if e != nil {
+			return e
+		}
+		if bundleDigest(data) != j.BundleSHA {
+			return errors.New("captured build bundle checksum mismatch")
+		}
+		archives, err = buildcontext.ReadBundle(data, bundleConfig(j))
+		if err != nil {
+			return err
+		}
 	}
 	for _, name := range j.ServiceOrder {
 		if j.ServiceStates[name].Skipped {
@@ -286,7 +290,12 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 			return fmt.Errorf("service %s: %w", name, err)
 		}
 	}
-	if err = m.multiBuild(ctx, j, archives); err != nil {
+	if j.Rollback != nil {
+		err = m.rollbackInputs(ctx, j)
+	} else {
+		err = m.multiBuild(ctx, j, archives)
+	}
+	if err != nil {
 		return err
 	}
 	if err = m.ensureVolumes(ctx, j); err != nil {
@@ -305,7 +314,7 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 				s.Phase = "ready"
 				continue
 			}
-			image := j.BuildImages[imageKey(cfg)]
+			image := selectedImage(j, name)
 			unchanged := s.Current != nil && s.Current.Service != "" && !s.CurrentRetired && s.Current.Image == image && reflect.DeepEqual(*s.Current.Config, cfg) && maps.Equal(s.Current.SecretRefs, s.SecretRefs)
 			if unchanged {
 				v, e := m.multiInspect(ctx, j, s.Current, false, true)

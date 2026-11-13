@@ -36,7 +36,7 @@ soar deploy --supersede OPERATION_ID
 
 Flags precede positional arguments. Deploy defaults to the whole app; `deploy --service NAME` selects one service without applying other local changes. Existing `update: manual` services require scoped deployment with `--yes` to update; ordinary deploy creates missing manual services but leaves unchanged existing ones pinned. Changed protected configuration or staged secrets cause preflight refusal. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
 
-See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. Custom domains, service removal, public/private kind changes, rollback, and interactive command attachment remain unsupported. Omitting an effective service is an error, never deletion authorization.
+See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. Custom domains, service removal, public/private kind changes, and interactive command attachment remain unsupported. Omitting an effective service is an error, never deletion authorization.
 
 ## Deployment and partial success
 

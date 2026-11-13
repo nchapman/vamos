@@ -4,7 +4,17 @@ See [persistent local volumes](volumes.md) for single-writer replacement, durabl
 
 Implemented: up to eight Dockerfile-built or prebuilt-image public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
 
-Not implemented: custom domain aliases, service removal, `exec`, rollback/backup/restore automation, public/private kind changes, rollback, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
+Not implemented: custom domain aliases, service removal, `exec`, backup/restore automation, public/private kind changes, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
+
+## Roll back captured code/config
+
+[Rollback](rollback.md) previews eligible services with `soar rollback`; apply with
+`soar rollback --yes`, optionally scoped with `--service NAME`. It restores captured
+local images, configuration and secret versions without build, pull or source.
+Manual services are excluded even when scoped. Volume-backed automatic services
+require explicit selection and `--allow-downtime --yes`; data is never restored.
+Pending routing transitions require resume first. See the rollback contract for
+partial-deploy targets, exclusions, missing inputs and recovery.
 
 ## Deploy an app
 

@@ -1,8 +1,8 @@
 # Soar: a small app platform for one server
 
-**Status: multi-service deployment, persistent local volumes and the PostgreSQL workflow are implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built or prebuilt-image services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Protected manual updates, scoped deployment and noninteractive one-off migration commands work. Rollback, exec, custom domains, backup/restore and other broader workflows below remain proposed. Examples below that use these deferred commands describe design targets, not available CLI APIs. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
+**Status: multi-service deployment, persistent local volumes and the PostgreSQL workflow are implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built or prebuilt-image services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Protected manual updates, scoped deployment and noninteractive one-off migration commands work. Preview-first code/config [rollback](docs/rollback.md) is implemented. Exec, custom domains, backup/restore and other broader workflows below remain proposed. Examples below that use these deferred commands describe design targets, not available CLI APIs. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
 
-The implemented [storage lifecycle](docs/volumes.md) supersedes the original volume proposal. It uses immutable owned local volumes, single-writer stop/start, durable public 503 routes, retained data, and explicit `--reuse-data` after destroy. Storage journals use v3; ready/incomplete v1/v2 remain recoverable. Backup/restore/preparation and data deletion are deferred. Database/manual-update/scoped-deploy and prebuilt images are implemented; custom domains and rollback remain proposed; acceptance scenarios are not claims of completed live or full-suite validation.
+The implemented [storage lifecycle](docs/volumes.md) supersedes the original volume proposal. It uses immutable owned local volumes, single-writer stop/start, durable public 503 routes, retained data, and explicit `--reuse-data` after destroy. Storage journals use v3; ready/incomplete v1/v2 remain recoverable. Backup/restore/preparation and data deletion are deferred. Database/manual-update/scoped-deploy and prebuilt images are implemented; custom domains remain proposed; code/config rollback is implemented; acceptance scenarios are not claims of completed live or full-suite validation.
 
 See [PostgreSQL](docs/postgres.md), the [runnable Ledger recipe](examples/ledger/README.md)
 and [run recovery and limits](docs/deployment.md#one-off-commands) for the current contract.
@@ -186,7 +186,7 @@ While a public candidate initially starts, the stable private service name conti
 
 An app deploy is **not an atomic transaction across containers or data**. If a later worker fails after web promotion, report a partial deployment and show each service's actual version. Retain the previous completed release and operation journal so a retry or rollback can reconcile safely. Web and worker versions must tolerate overlap.
 
-`soar rollback` restores automatic, volume-free services from the previous completed release without rebuilding. Show all excluded services. Volume-backed application code can be restored only with explicit `soar rollback --service web --allow-downtime` confirmation and an operator decision that the old code is data-compatible. Manual services are excluded from rollback; select a vetted image/config and use scoped deploy for an intentional change. No rollback reverts volumes, external side effects, or database schemas.
+`soar rollback` previews automatic, volume-free services; `--yes` applies. A ready app targets `PreviousCompleted`; a partial deployment targets the last `Completed` release, preserving actual excluded/unselected services. Captured immutable local images, config and secret versions are required; there is no build, pull or staged-secret fallback. See [rollback](docs/rollback.md) for recovery prerequisites and journal compatibility. Volume-backed application code can be restored only with explicit `soar rollback --service web --allow-downtime --yes` confirmation and an operator decision that the old code is data-compatible. Manual services are excluded from rollback; select a vetted image/config and use scoped deploy for an intentional change. No rollback reverts volumes, external side effects, or database schemas.
 
 ### One-off commands, not migration magic
 
@@ -230,7 +230,7 @@ A fresh `deploy` refuses to start while an incomplete deployment exists and poin
 
 ## 5. Five configurations to test the model
 
-These are design scenarios; journal and Ledger are runnable, while the broader custom-domain/rollback workflows remain proposed. Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `soar.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Soar.
+These are design scenarios; journal and Ledger are runnable, while the broader custom-domain workflows remain proposed; rollback is implemented as documented in [rollback](docs/rollback.md). Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `soar.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Soar.
 
 ### 1. A stateless website with two custom domains
 
@@ -479,9 +479,11 @@ Current implementation checklist (not a live-test completion checklist):
 - [x] Scoped captures preserve actual unselected configuration and select only required builds/secrets.
 - [x] Noninteractive one-off commands with bounded results and explicit unknown-outcome recovery.
 - [x] Terminal run cleanup and bounded result retention; destroy retains volumes/secrets.
-- [ ] Custom domains, rollback, exec/interactive commands and service removal.
+- [x] Preview-first captured code/config rollback, scoped selection and explicit volume downtime authorization (not data rollback).
+- [ ] Custom domains, exec/interactive commands and service removal.
 - [ ] Backup/restore tooling and tested off-host recovery for important data.
-- [ ] New PostgreSQL live acceptance evidence; do not infer it from earlier volume tests.
+- [x] PostgreSQL live acceptance evidence recorded in [PostgreSQL verification](docs/postgres.md#verification-for-this-milestone), separately from earlier volume tests.
+- [ ] Rollback live acceptance evidence (not claimed by this documentation update).
 
 The sequence below retains design/acceptance targets, including deferred features:
 

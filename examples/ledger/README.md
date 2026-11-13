@@ -129,6 +129,20 @@ committed SQL or restore data. Volumes are retained on app destruction; reuse is
 an explicit lifecycle choice, not a fresh database. Backups/restores are deferred:
 a local named volume is not a backup, and a failed server can lose everything.
 
+## Code rollback is not database recovery
+
+```sh
+soar rollback --service web        # preview captured web code/config
+soar rollback --service web --yes # apply after checking schema compatibility
+```
+
+[Rollback](../../docs/rollback.md) restores captured local images, configuration and secret
+versions, not SQL or schema state. The manual `db` service is never rolled back,
+even with `--service db`; intentional database changes require a vetted scoped
+deploy. Use backward-compatible migrations so old web code can read current data.
+Captured credentials may have been revoked, and staged secrets are not selected.
+`soar run` remains noninteractive and is never automatically retried or undone.
+
 ## Local tests (no Docker or PostgreSQL needed)
 
 Python 3.10+ suffices for the unit suite; it deliberately mocks the database

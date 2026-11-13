@@ -28,6 +28,7 @@ import (
 )
 
 type Request struct {
+	AllowDowntime bool             `json:"allow_downtime,omitempty"`
 	Command       []string         `json:"command,omitempty"`
 	RunOperation  string           `json:"run_operation,omitempty"`
 	ReuseData     bool             `json:"reuse_data,omitempty"`
@@ -46,18 +47,19 @@ type Request struct {
 	Tail          int              `json:"tail,omitempty"`
 }
 type Response struct {
-	Run            *RunResult         `json:"run,omitempty"`
-	DeployPreview  *DeploymentPreview `json:"deploy_preview,omitempty"`
-	LogService     string             `json:"log_service,omitempty"`
-	LogContainer   string             `json:"log_container,omitempty"`
-	LogCandidate   bool               `json:"log_candidate,omitempty"`
-	Secret         *secrets.Entry     `json:"secret,omitempty"`
-	SecretVersions []secrets.Entry    `json:"secret_versions,omitempty"`
-	Plan           *Plan              `json:"plan,omitempty"`
-	Version        int                `json:"version"`
-	Status         *Status            `json:"status,omitempty"`
-	Logs           string             `json:"logs,omitempty"`
-	Error          string             `json:"error,omitempty"`
+	RollbackPreview *RollbackPreview   `json:"rollback_preview,omitempty"`
+	Run             *RunResult         `json:"run,omitempty"`
+	DeployPreview   *DeploymentPreview `json:"deploy_preview,omitempty"`
+	LogService      string             `json:"log_service,omitempty"`
+	LogContainer    string             `json:"log_container,omitempty"`
+	LogCandidate    bool               `json:"log_candidate,omitempty"`
+	Secret          *secrets.Entry     `json:"secret,omitempty"`
+	SecretVersions  []secrets.Entry    `json:"secret_versions,omitempty"`
+	Plan            *Plan              `json:"plan,omitempty"`
+	Version         int                `json:"version"`
+	Status          *Status            `json:"status,omitempty"`
+	Logs            string             `json:"logs,omitempty"`
+	Error           string             `json:"error,omitempty"`
 }
 type SecretStatus struct {
 	AppliedVersions map[string]string `json:"applied_versions,omitempty"`
@@ -113,6 +115,7 @@ type DeploymentPreview struct {
 }
 
 type journal struct {
+	Rollback                     *rollbackCapture         `json:",omitempty"`
 	Scope                        string                   `json:",omitempty"`
 	ReuseData                    bool                     `json:",omitempty"`
 	ServiceStates                map[string]*serviceState `json:",omitempty"`
@@ -219,17 +222,20 @@ func validateLegacyApp(a *config.App) error {
 	return nil
 }
 func (r Request) Mutating() bool {
-	return r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
+	return r.Action == "rollback" || r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
 }
 
 func ValidateRequest(r Request) error {
+	if r.AllowDowntime && (r.Action != "rollback" || r.Service == "") {
+		return errors.New("allow-downtime requires a scoped rollback")
+	}
 	if r.ReuseData && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
 		return errors.New("reuse-data requires deploy with a current client")
 	}
 	if r.ContextFormat != "" && ((r.Action != "deploy" && r.Action != "run") || r.ContextFormat != BundleFormat) {
 		return errors.New("unsupported context format or action")
 	}
-	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs" && r.Action != "deploy" && r.Action != "run")) {
+	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs" && r.Action != "deploy" && r.Action != "run" && r.Action != "rollback")) {
 		return errors.New("invalid service selector or action")
 	}
 	if r.RunOperation != "" && (!operation.MatchString(r.RunOperation) || (r.Action != "status" && r.Action != "logs") || r.Service != "" || r.Candidate) {
@@ -282,7 +288,7 @@ func ValidateRequest(r Request) error {
 	if r.Tail < 0 || r.Tail > 1000 {
 		return errors.New("tail must be between 0 and 1000")
 	}
-	if r.Apply && r.Action != "cleanup" && r.Action != "destroy" && !(r.Action == "deploy" && r.Service != "") {
+	if r.Apply && r.Action != "rollback" && r.Action != "cleanup" && r.Action != "destroy" && !(r.Action == "deploy" && r.Service != "") {
 		return errors.New("apply requires maintenance or scoped deployment")
 	}
 	switch r.Action {
@@ -311,7 +317,7 @@ func ValidateRequest(r Request) error {
 				return errors.New("selected service is not configured")
 			}
 		}
-	case "cleanup", "destroy":
+	case "rollback", "cleanup", "destroy":
 		if !operation.MatchString(r.Operation) || r.Config != nil {
 			return errors.New("maintenance requires operation ID and no config")
 		}
@@ -658,6 +664,9 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		}
 		return
 	}
+	if r.Action == "rollback" {
+		return m.executeRollback(ctx, r, j, secretState)
+	}
 	// A current client must still be able to correct a failed legacy web
 	// deployment. Finish that operation through its original state machine;
 	// upgrade only on a later deployment from a ready journal.
@@ -824,7 +833,7 @@ func validateJournal(j *journal, app string) error {
 	if isMulti(j) {
 		return validateMultiJournal(j, app)
 	}
-	if j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+	if j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
 		return errors.New("invalid legacy app journal")
 	}
 	bad := errors.New("invalid app journal")

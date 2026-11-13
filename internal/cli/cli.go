@@ -20,6 +20,8 @@ Usage:
   soar deploy [-f soar.yaml]             Build and deploy the app's services
   soar status [--json]                   Inspect the app's actual running state
   soar logs [--tail 100]                 Read bounded service-container logs
+  soar rollback [--service NAME] [--allow-downtime] [--yes]
+                                        Preview or restore captured service images
   soar resume OPERATION                 Resume captured operation inputs
   soar cleanup [--yes]                  Preview or remove obsolete app resources
   soar destroy [--yes]                  Preview or remove an app
@@ -71,7 +73,7 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return secretsCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "server":
 		return server(ctx, args[1:], stdout, stderr)
-	case "run", "deploy", "status", "logs", "resume", "cleanup", "destroy":
+	case "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy":
 		return appCommand(ctx, args[0], args[1:], stdout, stderr, defaultAppDeps())
 	case "internal-app-executor":
 		if len(args) != 1 {

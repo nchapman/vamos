@@ -76,7 +76,7 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 		}
 		return response, err
 	}
-	if decodeErr != nil || response.Version != 1 || (request.Action != "logs" && response.Status == nil && response.Plan == nil && response.Run == nil && response.DeployPreview == nil) {
+	if decodeErr != nil || response.Version != 1 || (request.Action != "logs" && response.Status == nil && response.Plan == nil && response.Run == nil && response.DeployPreview == nil && response.RollbackPreview == nil) {
 		return response, fmt.Errorf("invalid app response; inspect status before retrying (decode error: %v)", decodeErr)
 	}
 	return response, nil
