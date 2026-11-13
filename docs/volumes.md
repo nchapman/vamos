@@ -67,7 +67,9 @@ an explicit new deployment, not by weakening old no-mount invariants.
 
 There is no data deletion command, backup, restore, preparation command,
 replication, or data rollback in this milestone. Local persistence is not a
-backup. Prebuilt images, manual updates, scoped deploy and noninteractive one-off
+backup. The [backup/recovery proposal](backups.md) designs explicit PostgreSQL,
+SQLite and files methods without changing this implemented boundary; its YAML
+and commands are not supported yet. Prebuilt images, manual updates, scoped deploy and noninteractive one-off
 migration commands are now implemented; see [PostgreSQL](postgres.md). Custom
 domains are supported through [normal deployment](domains.md). Preview-first
 [service removal](services.md#remove-a-service-not-the-app) retains data and secrets;

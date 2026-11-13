@@ -488,7 +488,7 @@ Current implementation checklist (not a live-test completion checklist):
 - [x] Independent-directory bindings, per-service history and service removal: see [contract and live acceptance](docs/services.md).
 - [x] App discovery and safe local `init`; see [CLI commands](docs/cli.md).
 - [x] Pinned-container log following, argument-preserving exec and interactive console (platform acceptance tracked separately).
-- [ ] Backup/restore tooling and tested off-host recovery for important data.
+- [ ] Backup/restore tooling and tested off-host recovery for important data. The [three-method design proposal](docs/backups.md) covers PostgreSQL, SQLite and files; implementation and recovery drills remain pending.
 - [x] PostgreSQL live acceptance evidence recorded in [PostgreSQL verification](docs/postgres.md#verification-for-this-milestone), separately from earlier volume tests.
 - [x] Rollback live acceptance evidence recorded in [rollback verification](docs/rollback.md#verification-for-this-milestone).
 - [x] Custom-domain live acceptance recorded in [domain verification](docs/domains.md#live-acceptance), including HTTPS, alias replacement/rollback, collisions and incorrect DNS.

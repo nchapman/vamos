@@ -86,6 +86,13 @@ A service can declare one named volume with `volume: {name: data, mount: /data}`
 
 Build contexts are relative to the configuration directory; Dockerfile paths are relative to their context and cannot escape it lexically. Container mount paths use POSIX syntax, must be clean absolute paths other than `/`, and are never host-directory mounts. Domains are ASCII DNS hostnames without a scheme, port, wildcard, or trailing dot (use punycode for international names). Environment values are passed literally; there is no interpolation.
 
+## Backup and recovery design
+
+Backup/restore commands are not implemented yet. The [backup proposal](docs/backups.md)
+designs PostgreSQL, SQLite and files together: explicit named sources, consistency
+and downtime policies, encrypted off-host recovery points, and fresh-target restore.
+Its configuration and CLI examples are proposals, not accepted syntax.
+
 ## Inspect a host
 
 ```sh
