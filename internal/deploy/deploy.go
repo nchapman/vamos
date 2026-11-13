@@ -223,6 +223,11 @@ func validateLegacyApp(a *config.App) error {
 	if err := ValidateApp(a); err != nil {
 		return err
 	}
+	for _, service := range a.Services {
+		if service.Resources != nil {
+			return errors.New("legacy protocol does not support resources; use a current client with a captured build bundle")
+		}
+	}
 	s, ok := a.Services["web"]
 	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || s.Build == nil || s.Update == config.UpdateManual || len(s.HTTP.Domains) != 0 {
 		return errors.New("legacy protocol supports only one public web service; use a current client with a captured build bundle")

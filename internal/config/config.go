@@ -27,14 +27,15 @@ type App struct {
 }
 
 type Service struct {
-	Build   *Build            `yaml:"build,omitempty"`
-	Image   string            `yaml:"image,omitempty"`
-	Command []string          `yaml:"command,omitempty"`
-	Env     map[string]string `yaml:"env,omitempty"`
-	Secrets map[string]string `yaml:"secrets,omitempty"`
-	HTTP    *HTTP             `yaml:"http,omitempty"`
-	Volume  *Volume           `yaml:"volume,omitempty" json:"Volume,omitempty"`
-	Update  UpdatePolicy      `yaml:"update,omitempty"`
+	Build     *Build            `yaml:"build,omitempty"`
+	Image     string            `yaml:"image,omitempty"`
+	Command   []string          `yaml:"command,omitempty"`
+	Env       map[string]string `yaml:"env,omitempty"`
+	Secrets   map[string]string `yaml:"secrets,omitempty"`
+	HTTP      *HTTP             `yaml:"http,omitempty"`
+	Volume    *Volume           `yaml:"volume,omitempty" json:"Volume,omitempty"`
+	Update    UpdatePolicy      `yaml:"update,omitempty"`
+	Resources *Resources        `yaml:"resources,omitempty" json:",omitempty"`
 }
 
 // UnmarshalJSON preserves stateless requests and journals written before the

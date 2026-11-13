@@ -40,6 +40,16 @@ type inspection struct {
 		Volumes    map[string]json.RawMessage
 	}
 	HostConfig struct {
+		NanoCPUs               int64 `json:"NanoCpus"`
+		Memory                 int64
+		MemorySwap             int64
+		MemoryReservation      int64
+		CPUPeriod              int64 `json:"CpuPeriod"`
+		CPUQuota               int64 `json:"CpuQuota"`
+		CPUShares              int64 `json:"CpuShares"`
+		CpusetCpus, CpusetMems string
+		OomKillDisable         *bool
+
 		NetworkMode                    string
 		Privileged                     bool
 		PublishAllPorts                bool

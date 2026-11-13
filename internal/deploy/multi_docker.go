@@ -248,6 +248,9 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Labels["soar.service"] != r.Service || (r.Service == "" && hasServiceLabel(v.Config.Labels)) || ((r.Service != "" || v.Name != "") && strings.TrimPrefix(v.Name, "/") != r.Container) || v.Config.Image != r.Image || imageVolumesAllowed(v, r.Config, true) != nil {
 		return nil, errors.New("foreign or unsafe runtime container")
 	}
+	if err := verifyResources(v, r.Config.Resources); err != nil {
+		return nil, err
+	}
 	if err := m.verifyRuntimeMounts(ctx, j, r, v); err != nil {
 		return nil, err
 	}
@@ -406,6 +409,9 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 	if err := multiIdentity(j, r); err != nil {
 		return err
 	}
+	if err := m.requireResourceSupport(ctx, r.Config.Resources); err != nil {
+		return err
+	}
 	slot := j.ServiceStates[r.Service]
 	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || slot.Candidate.Container != r.Container || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (r.Config.Volume == nil || slot.Phase != "prepared")) {
 		return errors.New("candidate creation requires starting intent")
@@ -474,6 +480,7 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 		if r.Config.Volume != nil {
 			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", network(j), "--mount", volumeMountArgument("soar-vol-"+r.VolumeID, r.Config.Volume.Mount)}
 		}
+		args = append(args, resourceArgs(r.Config.Resources)...)
 		if r.Config.HTTP != nil {
 			args = append(args, "--publish", fmt.Sprintf("127.0.0.1:%s:%d", r.PublishPort, r.Config.HTTP.Port))
 		} else {

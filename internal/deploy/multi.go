@@ -317,6 +317,11 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 		if _, err = m.secretValues(j, j.ServiceStates[name].SecretRefs); err != nil {
 			return fmt.Errorf("service %s: %w", name, err)
 		}
+		// Admission must precede retirement, particularly for private services:
+		// unsupported limits must not stop an otherwise usable old runtime.
+		if err = m.requireResourceSupport(ctx, j.Config.Services[name].Resources); err != nil {
+			return fmt.Errorf("service %s: %w", name, err)
+		}
 	}
 	if j.Rollback != nil {
 		err = m.rollbackInputs(ctx, j)

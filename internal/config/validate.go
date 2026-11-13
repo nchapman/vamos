@@ -108,6 +108,9 @@ func (a App) Validate() error {
 				domains[normalized] = prefix
 			}
 		}
+		if err := s.Resources.Validate(); err != nil {
+			add("%s.resources: %v", prefix, err)
+		}
 		if volume := s.Volume; volume != nil {
 			if !validLabel(volume.Name) {
 				add("%s.volume: volume name must be a lowercase DNS label", prefix)

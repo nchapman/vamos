@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -91,6 +93,11 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 	}
 	f.calls = append(f.calls, strings.Join(a, " "))
 	switch a[0] {
+	case "info":
+		if !reflect.DeepEqual(a, []string{"info", "--format", "{{json .}}"}) {
+			f.t.Fatalf("info signature: %v", a)
+		}
+		return dockerJSON(map[string]any{"MemoryLimit": true, "SwapLimit": true, "CpuCfsQuota": true, "CpuCfsPeriod": true, "NCPU": 8})
 	case "buildx":
 		if len(a) != 10 || !reflect.DeepEqual(a[:6], []string{"buildx", "build", "--load", "--network", "host", "--iidfile"}) || a[7] != "--file" || a[9] != "-" {
 			f.t.Fatalf("build signature: %v", a)
@@ -293,6 +300,24 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 		}
 		for i := 1; i < pos; i++ {
 			switch a[i] {
+			case "--cpus":
+				cpus, err := strconv.ParseFloat(a[i+1], 64)
+				if err != nil {
+					f.t.Fatal(err)
+				}
+				v.HostConfig.NanoCPUs = int64(math.Round(cpus * 1e9))
+				i++
+			case "--memory", "--memory-swap":
+				memory, err := strconv.ParseInt(a[i+1], 10, 64)
+				if err != nil {
+					f.t.Fatal(err)
+				}
+				if a[i] == "--memory" {
+					v.HostConfig.Memory = memory
+				} else {
+					v.HostConfig.MemorySwap = memory
+				}
+				i++
 			case "--mount":
 				fields, err := csv.NewReader(strings.NewReader(a[i+1])).Read()
 				if err != nil {

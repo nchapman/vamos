@@ -174,6 +174,9 @@ func (m *Manager) verifyRunEndpoint(ctx context.Context, j *journal, v *inspecti
 }
 func (m *Manager) verifyRun(ctx context.Context, j *journal, r *runRecord, v *inspection) error {
 	bad := errors.New("run endpoint identity or configuration mismatch")
+	if err := verifyResources(v, r.Config.Resources); err != nil {
+		return err
+	}
 	if r.DockerID == "" || v.ID != r.DockerID || strings.TrimPrefix(v.Name, "/") != r.Container || v.Config.Image != r.Image || len(v.Config.Volumes) != 0 || len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || unsafeMultiHostConfig(v) || v.HostConfig.RestartPolicy.Name != "no" || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || len(v.HostConfig.PortBindings) != 0 {
 		return bad
 	}
@@ -451,6 +454,9 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 	if !ok || len(r.Command) == 0 {
 		return resp, errors.New("run service and command required")
 	}
+	if err := m.requireResourceSupport(ctx, cfg.Resources); err != nil {
+		return resp, err
+	}
 	selected := &config.App{Name: j.App, Services: map[string]config.Service{r.Service: cfg}}
 	archives, err := buildcontext.ReadBundle(data, selected)
 	if err != nil {
@@ -514,6 +520,7 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 		return resp, err
 	}
 	args := []string{"create", "--name", rec.Container, "--restart", "no", "--network", network(j), "--label", "soar.host=" + j.HostID, "--label", "soar.app=" + j.App, "--label", "soar.operation=" + r.Operation, "--label", "soar.service=" + r.Service, "--label", "soar.run=" + r.Operation}
+	args = append(args, resourceArgs(cfg.Resources)...)
 	keys := []string{}
 	for k := range cfg.Env {
 		keys = append(keys, k)
