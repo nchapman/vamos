@@ -24,6 +24,7 @@ type plannedFile struct{ Name, SHA256 string }
 // Maintenance preserves the deployment identity while recording a distinct,
 // immutable destruction/cleanup plan. Replay may shrink work, never expand it.
 type maintenance struct {
+	Service            string `json:",omitempty"`
 	Operation          string
 	Action             string
 	Plan               Plan

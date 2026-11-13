@@ -8,6 +8,20 @@ See [PostgreSQL](docs/postgres.md), the [runnable Ledger recipe](examples/ledger
 and [run recovery and limits](docs/deployment.md#one-off-commands) for the current contract.
 Implementation completion is separate from live acceptance evidence.
 
+### Independent-directory service lifecycle (implemented and verified)
+
+[Independent services](docs/services.md) documents the current v7 contract: same
+app, unique service names across local folders, declared-only upserts, explicit
+existing-service bindings and acknowledged new creation, per-service history,
+preview-first removal and explicit re-add. Omitted services (including pending
+secrets) are untouched. Global host locking still serializes mutation/recovery.
+Merged app limits apply across folders; no Git/CI/image registry is required for
+local Dockerfile source. [Live acceptance](docs/services.md#live-acceptance)
+verified four independent services sharing PostgreSQL, binding protection,
+interleaved updates/rollback, removal/re-add, retained data and failed initial
+creation abandonment. Native Windows, arm64-host and forced live interruption
+coverage remain unverified.
+
 ## 1. The goal
 
 Rent a good Ubuntu 24.04+ server, install Soar once, and deploy our apps from Dockerfiles. Keep Fly's app-oriented experience without building a cloud provider.
@@ -125,7 +139,7 @@ soar deploy --service db --yes  # Approve an existing manual db update; omit --y
 
 For shutdown, honor the image's stop signal (SIGTERM by default), allow 30 seconds, then force termination. Disable the superseded container's restart policy before stopping it, and verify it has stopped before starting its replacement. Retired workers must not reappear after a reboot. This prevents deliberate old/new overlap, not duplicate queue processing.
 
-Database version upgrades and on-disk migrations remain operator responsibilities. Removing any volume-backed or manually updated service requires `soar service remove --service db`, with confirmation and retained volumes; remove its declaration too before a later deploy. A missing declaration alone must not destroy it.
+Database version upgrades and on-disk migrations remain operator responsibilities. Removing a service uses preview-first `soar service remove db --app APP --server SERVER`, then `--yes` to apply, plus `--allow-protected` for manual services. Volumes/secrets are retained; the last service requires app destroy instead. Remove its declaration too if it should stay absent; intentional re-add requires `deploy --re-add --service db --yes` and `--reuse-data` for retained volume data. A missing declaration alone must not destroy it.
 
 ### Secrets and retained data
 
@@ -468,7 +482,8 @@ Current implementation checklist (not a live-test completion checklist):
 - [x] Terminal run cleanup and bounded result retention; destroy retains volumes/secrets.
 - [x] Preview-first captured code/config rollback, scoped selection and explicit volume downtime authorization (not data rollback).
 - [x] Custom aliases via normal deploy and rollback; explicit status DNS/local TLS observations.
-- [ ] Exec/interactive commands and service removal.
+- [x] Independent-directory bindings, per-service history and service removal: see [contract and live acceptance](docs/services.md).
+- [ ] Exec/interactive commands.
 - [ ] Backup/restore tooling and tested off-host recovery for important data.
 - [x] PostgreSQL live acceptance evidence recorded in [PostgreSQL verification](docs/postgres.md#verification-for-this-milestone), separately from earlier volume tests.
 - [x] Rollback live acceptance evidence recorded in [rollback verification](docs/rollback.md#verification-for-this-milestone).

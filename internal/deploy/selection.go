@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/secrets"
@@ -13,22 +14,25 @@ import (
 // A scoped operation captures actual unselected configurations, never local
 // pending edits. Undeployed declarations aren't effective services yet.
 func effectiveConfig(r Request, old *journal) (*config.App, error) {
-	if r.Service == "" {
+	if r.Service == "" && !r.Partial {
 		return r.Config, nil
 	}
-	selected, ok := r.Config.Services[r.Service]
-	if !ok {
-		return nil, fmt.Errorf("unknown service %s", r.Service)
+	a := &config.App{Name: r.App, Services: map[string]config.Service{}}
+	for _, name := range selectedServices(r) {
+		cfg, ok := r.Config.Services[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown service %s", name)
+		}
+		a.Services[name] = cfg
 	}
-	a := &config.App{Name: r.App, Services: map[string]config.Service{r.Service: selected}}
 	if old != nil && old.Phase != "destroyed" {
 		if old.Version == 1 {
-			if r.Service != "web" {
+			if _, selected := a.Services["web"]; !selected {
 				a.Services["web"] = old.Config.Services["web"]
 			}
 		} else {
 			for name, s := range old.ServiceStates {
-				if name == r.Service {
+				if _, selected := a.Services[name]; selected {
 					continue
 				}
 				if s.Current == nil || s.Current.Config == nil || s.CurrentRetired {
@@ -54,7 +58,7 @@ func workflowConfig(a *config.App) bool {
 }
 
 func supportsVolumes(j *journal) bool {
-	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6)
+	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6 || j.Version == 7)
 }
 
 func protectedChange(name string) error {
@@ -64,6 +68,11 @@ func protectedChange(name string) error {
 func keepService(r Request, name string, cfg config.Service, current *release, state *secrets.State) (bool, error) {
 	if r.Service != "" {
 		return name != r.Service, nil
+	}
+	if r.Partial {
+		if _, selected := r.Config.Services[name]; !selected {
+			return true, nil
+		}
 	}
 	if current == nil || current.Config == nil {
 		return false, nil
@@ -85,6 +94,13 @@ func keepService(r Request, name string, cfg config.Service, current *release, s
 // The bundle captures selected local sources; the journal also contains
 // unselected effective services, which must not require local build contexts.
 func bundleConfig(j *journal) *config.App {
+	if j.Version == 7 {
+		a := &config.App{Name: j.App, Services: map[string]config.Service{}}
+		for _, name := range j.Selected {
+			a.Services[name] = j.Config.Services[name]
+		}
+		return a
+	}
 	if j.Scope == "" {
 		return j.Config
 	}
@@ -129,4 +145,24 @@ func deploymentPreview(r Request, old *journal) *DeploymentPreview {
 		desired = "captured Dockerfile build"
 	}
 	return &DeploymentPreview{Service: r.Service, CurrentImage: current.Image, DesiredImage: desired, Downtime: cfg.HTTP == nil || cfg.Volume != nil, NeedsConfirmation: !r.Apply}
+}
+
+// selectedServices captures the local manifest before host-side merging.
+func selectedServices(r Request) []string {
+	if r.Service != "" {
+		return []string{r.Service}
+	}
+	names := make([]string, 0, len(r.Config.Services))
+	for name := range r.Config.Services {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+func capturedSelection(j *journal) []string {
+	if j.Version == 7 {
+		return j.Selected
+	}
+	return selectedServices(Request{Service: j.Scope, Config: j.Config})
 }

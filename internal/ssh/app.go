@@ -60,6 +60,11 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 		}
 		return response, nil
 	}
+	// A decoder can populate fields before rejecting trailing data or an
+	// unsupported version. Such fields cannot acknowledge a local binding.
+	if decodeErr != nil || response.Version != 1 {
+		response = deploy.Response{}
+	}
 	if decodeErr == nil && response.Version == 1 && request.Action == "run" && response.Run != nil && response.Run.ExitCode != nil {
 		return response, nil
 	}

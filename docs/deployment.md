@@ -4,7 +4,10 @@ See [persistent local volumes](volumes.md) for single-writer replacement, durabl
 
 Implemented: up to eight Dockerfile-built or prebuilt-image public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
 
-Not implemented: service removal, `exec`, backup/restore automation, public/private kind changes, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
+The binding-aware partial-manifest and service-removal implementation is described
+in [independent services](services.md), including the live acceptance evidence.
+
+Not implemented: `exec`, backup/restore automation, public/private kind changes, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
 
 ## Roll back captured code/config
 
@@ -49,14 +52,14 @@ Literal `env` values and a `command` argument array are supported. An image's de
 
 Without `--server`, a project's first contacting command binds the registered default in private `.soar/server.json`. A nested `.soar/.gitignore` keeps metadata out of Git. Later commands use that binding, not a newly changed default. Missing registrations, implicit app renames, and changed bound target addresses fail rather than silently selecting another host.
 
-`--server NAME` overrides only that invocation and does not create/change the project binding. Outside a project, use:
+`--server NAME` overrides only that invocation and does not create/change the normal project target binding. Separate service identity acknowledgments are saved for that explicit target/app; existing services require [explicit binding](services.md#explicit-identity-bindings). Outside a project, use:
 
 ```sh
 ./bin/soar status --server droplet --app hello --json
 ./bin/soar logs --server droplet --app hello --tail 50
 ```
 
-Flags precede positional arguments. `--app` is for commands that do not require local deployment inputs (status/logs/resume/cleanup/destroy and secrets), and requires `--server`. Status reports the journal phase and live container-running state separately; `ready` describes the last operation, not a guarantee that the app has remained healthy forever. `host-operation-active` describes the shared host mutation lock, not necessarily an operation for this app.
+Flags precede positional arguments, except the service wrapper accepts `service bind|remove NAME` before flags. `--app` is for commands that do not require local deployment inputs (status/logs/resume/cleanup/destroy/rollback, service bind/remove and secrets), and requires `--server`. Status reports the journal phase and live container-running state separately; `ready` describes the last operation, not a guarantee that the app has remained healthy forever. `host-operation-active` describes the shared host mutation lock, not necessarily an operation for this app.
 
 ## Build and runtime boundaries
 

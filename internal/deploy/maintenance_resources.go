@@ -506,7 +506,7 @@ func syncResourceDir(path string) error {
 	return f.Sync()
 }
 func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w *maintenance) error {
-	if w.Action != "cleanup" && w.Action != "destroy" {
+	if w.Action != "cleanup" && w.Action != "destroy" && w.Action != "service-remove" {
 		return errors.New("invalid maintenance action")
 	}
 	if err := m.maintenanceRuns(ctx, j); err != nil {
@@ -520,7 +520,7 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			return errors.New("planned container network identity mismatch")
 		}
 		commands := [][]string{{"container", "rm", p.ID}}
-		if w.Action == "destroy" && !strings.HasPrefix(p.Name, "soar-run-") {
+		if (w.Action == "destroy" || w.Action == "service-remove") && !strings.HasPrefix(p.Name, "soar-run-") {
 			commands = [][]string{{"container", "update", "--restart=no", p.ID}, {"container", "stop", p.ID}, {"container", "rm", p.ID}}
 		}
 		for _, args := range commands {
@@ -534,7 +534,7 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			if w.Action == "cleanup" && v.State.Running {
 				return errors.New("cleanup container started since planning")
 			}
-			if supportsVolumes(j) && args[1] == "rm" && (v.State.Running || v.State.Restarting || v.State.Paused || (w.Action == "destroy" && v.HostConfig.RestartPolicy.Name != "no")) {
+			if supportsVolumes(j) && args[1] == "rm" && (v.State.Running || v.State.Restarting || v.State.Paused || ((w.Action == "destroy" || w.Action == "service-remove") && v.HostConfig.RestartPolicy.Name != "no")) {
 				return errors.New("container writers are not proven stopped")
 			}
 			if _, e = m.cmd(ctx, "docker", args...); e != nil {

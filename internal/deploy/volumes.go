@@ -63,10 +63,14 @@ func (m *Manager) planVolumes(r Request, old, next *journal) (*volumes.State, er
 			}
 		}
 		if exists {
-			if rec.Name != cfg.Volume.Name || rec.Mount != cfg.Volume.Mount {
+			if rec.Service != name || rec.Name != cfg.Volume.Name || rec.Mount != cfg.Volume.Mount {
 				return nil, errors.New("immutable volume binding differs")
 			}
-			if rec.State == "created" && (old == nil || old.Phase == "destroyed") && !r.ReuseData {
+			absent := old == nil || old.Phase == "destroyed" || old.ServiceStates[name] == nil
+			if absent && old != nil && old.Phase != "destroyed" && !r.ReAdd {
+				return nil, errors.New("retained service data requires re-add authorization")
+			}
+			if absent && !r.ReuseData {
 				return nil, errors.New("retained volume requires reuse-data authorization")
 			}
 		} else {

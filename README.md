@@ -4,6 +4,17 @@ A small, Dockerfile-first app platform for one server. The intended stack is a G
 
 **Multi-service apps work:** up to eight Dockerfile-built or prebuilt-image public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Persistent local volumes use single-writer stop/start with durable public 503 routing and retained data. Protected manual updates, scoped deployment and noninteractive one-off commands are implemented; preview-first [code/config rollback](docs/rollback.md) is also implemented. See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
 
+## Independent service directories
+
+One app can be deployed from several local source folders with unique service
+names. Each manifest upserts only its declared selection; omitted services and
+pending secrets stay untouched. Existing services require explicit local identity
+binding; first new creation saves an acknowledged binding. See
+[independent services](docs/services.md) for `service bind`, preview-first
+`service remove`, re-add approval, per-service history and compatibility.
+[Live acceptance](docs/services.md#live-acceptance) covers four independent
+services sharing one database, binding protection, rollback and retained-data re-add.
+
 ## Platform scope
 
 | Component | Target operating systems |
@@ -41,7 +52,7 @@ From an app directory, `soar validate` defaults to `soar.yaml`. Validation check
 
 It does **not** verify Dockerfile existence, image references against a registry, secret availability, DNS/TLS, server-wide hostname ownership, or live storage state. Success is not a deployment-readiness guarantee.
 
-A service can declare one named volume with `volume: {name: data, mount: /data}`. The singular field takes an object, not a list; `volumes` is not accepted. Local validation supports this schema, but **volume-backed deployment is still unimplemented**. See the [storage proposal](docs/volume-proposal.md) for the pending lifecycle design.
+A service can declare one named volume with `volume: {name: data, mount: /data}`. The singular field takes an object, not a list; `volumes` is not accepted. Volume-backed deployment is implemented with single-writer stop/start and retained data. See the [storage lifecycle](docs/volumes.md); the original proposal is superseded.
 
 Build contexts are relative to the configuration directory; Dockerfile paths are relative to their context and cannot escape it lexically. Container mount paths use POSIX syntax, must be clean absolute paths other than `/`, and are never host-directory mounts. Domains are ASCII DNS hostnames without a scheme, port, wildcard, or trailing dot (use punycode for international names). Environment values are passed literally; there is no interpolation.
 
@@ -171,7 +182,7 @@ Use `--stdin` for automation, supplying values from a trusted secret producer—
 ./bin/soar destroy --server droplet --app temporary-app --yes
 ```
 
-Cleanup keeps effective versions and the current/previous completed app snapshots and never prunes shared Docker resources or volumes. Destruction proves the app route is gone before removing verified owned containers/network and known captured inputs. Both have durable recovery and explicit confirmation. See [the app lifecycle contract](docs/app-lifecycle.md) for retention limits, reboot verification, and upgrade notes. **Legacy deployments need a replacement deploy to gain pinned ports.**
+Cleanup keeps effective versions, per-service predecessors and the current/previous completed app snapshots and never prunes shared Docker resources or volumes. Destruction proves the app route is gone before removing verified owned containers/network and known captured inputs. Both have durable recovery and explicit confirmation. See [the app lifecycle contract](docs/app-lifecycle.md) for retention limits, reboot verification, and upgrade notes. **Legacy deployments need a replacement deploy to gain pinned ports.**
 
 App status/logs now stage a matching trusted executor temporarily, without replacing the bootstrap-owned installed binary; keep the Linux artifacts beside your client. This remains a root-SSH administration interface, not a restricted read-only account API.
 

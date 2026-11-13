@@ -80,7 +80,7 @@ func (m *Manager) enrichDomainResponse(ctx context.Context, r Request, resp *Res
 			d := DomainStatus{Hostname: h, Route: "pending", DNS: "unknown", Certificate: "unknown", HTTPS: "unknown"}
 			if aliases[h] || (slot != nil && slot.Unavailable) {
 				d.Route = "configured"
-				if slot.Unavailable || slot.CurrentRetired || slot.Phase == "retiring" || j.Phase == "destroying" {
+				if slot.Unavailable || slot.CurrentRetired || slot.Phase == "retiring" || j.Phase == "destroying" || (j.Maintenance != nil && j.Maintenance.Action == "service-remove" && j.Maintenance.Service == name) {
 					d.Route = "unavailable"
 				}
 			}

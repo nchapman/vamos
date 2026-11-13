@@ -25,6 +25,7 @@ Usage:
   soar resume OPERATION                 Resume captured operation inputs
   soar cleanup [--yes]                  Preview or remove obsolete app resources
   soar destroy [--yes]                  Preview or remove an app
+  soar service bind|remove NAME [flags]  Bind locally or preview/remove a service
   soar secrets stage|list [flags]        Stage a secret or list retained version metadata
   soar validate [-f soar.yaml]           Validate local app configuration
   soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
@@ -69,6 +70,8 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return 0
 	case "validate":
 		return validate(args[1:], stdout, stderr)
+	case "service":
+		return serviceCommand(ctx, args[1:], stdout, stderr, defaultAppDeps())
 	case "secrets":
 		return secretsCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "server":

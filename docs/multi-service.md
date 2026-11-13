@@ -34,9 +34,9 @@ soar resume OPERATION_ID
 soar deploy --supersede OPERATION_ID
 ```
 
-Flags precede positional arguments. Deploy defaults to the whole app; `deploy --service NAME` selects one service without applying other local changes. Existing `update: manual` services require scoped deployment with `--yes` to update; ordinary deploy creates missing manual services but leaves unchanged existing ones pinned. Changed protected configuration or staged secrets cause preflight refusal. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
+Flags precede positional arguments. Deploy defaults to the local manifest selection, merged into the remote app; `deploy --service NAME` selects one service without applying other local changes. Existing `update: manual` services require scoped deployment with `--yes` to update; ordinary deploy creates missing manual services but leaves unchanged existing ones pinned. Changed protected configuration or staged secrets cause preflight refusal. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
 
-See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. Service removal, public/private kind changes, and interactive command attachment remain unsupported. Omitting an effective service is an error, never deletion authorization.
+See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. [Independent service directories](services.md) support partial manifests, explicit bindings and preview-first service removal in the v7 implementation being integrated. Omitted services remain untouched, never implicitly deleted. Public/private kind changes and interactive command attachment remain unsupported.
 
 ## Deployment and partial success
 
@@ -78,7 +78,7 @@ The supported host uses Soar's Docker-managed bridge/NAT configuration. Deployme
 - Version-4 journals capture registry image identities, protected-service skips and explicit deployment scope. Version-1/2/3 recovery stays supported; older journal versions do not acquire these new fields implicitly.
 - Destruction removes all app public routes before containers/network. Secret versions remain retained. See [app lifecycle](app-lifecycle.md) and [secrets](secrets.md).
 - The **32 MiB aggregate bundle limit** includes all tar payloads and manifest overhead. Hash/length/entry validation happens before runtime mutation; a journal checksum detects changed saved bundles on resume. Docker ignore semantics are unchanged.
-- At most **64 secret environment mappings across the desired app configuration**; existing per-value/store limits remain. Partial operations can temporarily retain more effective mappings. Metadata-only SSH responses remain capped at **64 KiB**: oversized aggregate responses fail with complete, actionable JSON, not truncated JSON. Query `status --service NAME` for large mixed states; `secrets list` returns retained metadata separately.
+- At most **64 secret environment mappings across the merged app configuration**; existing per-value/store limits remain. Independent manifests share this bound, the 8-service bound and the 32-alias app bound. Metadata-only SSH responses remain capped at **64 KiB**: oversized aggregate responses fail with complete, actionable JSON, not truncated JSON. Query `status --service NAME` for large mixed states; `secrets list` returns retained metadata separately.
 - Local Docker inspection remains bounded at 8 MiB per stream. Mutations retain the existing global host lock and worker deadlines. This milestone does not add a scheduler or background control-plane daemon.
 
 ## Verification
@@ -132,5 +132,6 @@ historical alias now owned elsewhere.
 
 Version 6 journals support domain-capable normal deploy and rollback. Versions
 1–5 remain strict, recoverable no-alias formats; v5 remains rollback-only for
-no-alias apps. Once upgraded to v6, an app stays v6 even after all aliases are
-removed, so captured domain history remains valid.
+no-alias apps. Removing aliases does not downgrade the journal. Binding-aware partial deployment
+uses v7, preserving domain history and adding service incarnations and independent
+predecessors; see [independent services](services.md).

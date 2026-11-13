@@ -17,9 +17,15 @@ soar rollback --app ledger --server home --service web --yes
 
 ## Selection and immutable inputs
 
-- A ready app targets its `PreviousCompleted` release. An incomplete deployment
-  targets the last `Completed` release, not the release before it. No suitable
-  completed history means rollback cannot proceed.
+- A ready app-wide rollback targets its `PreviousCompleted` snapshot. In v7,
+  scoped `--service NAME` instead targets that service's `Previous` distinct
+  successfully completed release; other services' deploys and no-ops do not
+  evict it. An incomplete deployment targets the last `Completed` stable baseline,
+  not the release before it. No useful predecessor means rollback fails.
+  Legacy journals retain their original snapshot semantics. See
+  [independent services](services.md) for the v7 contract and verification boundary.
+- Removal filters captured snapshots and records removed membership. Rollback
+  never resurrects a removed service; intentional re-add creates a new incarnation.
 - Whole-app rollback selects automatic, volume-free services. `--service NAME`
   narrows selection; it does not override protection. Manual services are never
   rolled back, even when explicitly selected or when the target was manual.

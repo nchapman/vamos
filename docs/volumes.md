@@ -69,7 +69,10 @@ There is no data deletion command, backup, restore, preparation command,
 replication, or data rollback in this milestone. Local persistence is not a
 backup. Prebuilt images, manual updates, scoped deploy and noninteractive one-off
 migration commands are now implemented; see [PostgreSQL](postgres.md). Custom
-domains and service removal remain unsupported. [Code/config rollback](rollback.md)
+domains are supported through [normal deployment](domains.md). Preview-first
+[service removal](services.md#remove-a-service-not-the-app) retains data and secrets;
+re-add needs `--re-add --service NAME --yes` and, for retained volume data,
+`--reuse-data`. New service incarnations invalidate old directory bindings. [Code/config rollback](rollback.md)
 for a volume-backed automatic service requires `--service NAME --allow-downtime --yes`
 and an operator decision that captured code is compatible with current data. Manual
 services remain excluded. It uses single-writer stop/start (durable HTTP 503 for

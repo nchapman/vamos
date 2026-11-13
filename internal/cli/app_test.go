@@ -194,7 +194,7 @@ func TestBindingRefusesRetargetAndCorruptMetadata(t *testing.T) {
 }
 
 func TestMaintenancePreviewAndApply(t *testing.T) {
-	for _, action := range []string{"cleanup", "destroy"} {
+	for _, action := range []string{"cleanup", "destroy", "service-remove"} {
 		for _, apply := range []bool{false, true} {
 			for _, asJSON := range []bool{false, true} {
 				path, _, deps := appFixture(t)
@@ -213,6 +213,9 @@ func TestMaintenancePreviewAndApply(t *testing.T) {
 					return response, nil
 				}
 				args := []string{"-f", path}
+				if action == "service-remove" {
+					args = append(args, "--service", "web")
+				}
 				if apply {
 					args = append(args, "--yes")
 				}

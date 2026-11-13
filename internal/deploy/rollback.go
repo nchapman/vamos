@@ -62,21 +62,34 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 			return nil, nil, errors.New("routing retirement is pending; resume before rollback")
 		}
 	}
+	if r.Service != "" && old.ServiceStates[r.Service] == nil {
+		return nil, nil, errors.New("selected service has no recorded deployment")
+	}
 	target := old.PreviousCompleted
 	if old.Phase != "ready" {
 		target = old.Completed
 	}
+	// A ready v7 scoped rollback follows that service's history, not the
+	// last app-wide update (which may have changed only another service).
+	if old.Version >= 7 && old.Phase == "ready" && r.Service != "" {
+		previous := old.ServiceStates[r.Service].Previous
+		if previous == nil || reflect.DeepEqual(previous, old.ServiceStates[r.Service].Current) {
+			return nil, nil, errors.New("selected service has no previous completed release available for rollback")
+		}
+		target = &completedRelease{Operation: previous.Operation, Services: map[string]*release{r.Service: previous}}
+	}
 	if target == nil {
 		return nil, nil, errors.New("no previous completed release is available for rollback")
-	}
-	if r.Service != "" && old.ServiceStates[r.Service] == nil {
-		return nil, nil, errors.New("selected service has no recorded deployment")
 	}
 	next := &journal{Version: 5, Status: Status{App: old.App, URL: old.URL, Operation: r.Operation, Phase: "building"}, HostID: old.HostID, Scope: r.Service, ReuseData: old.ReuseData,
 		Config: &config.App{Name: old.App, Services: map[string]config.Service{}}, ServiceStates: map[string]*serviceState{}, Completed: old.Completed, PreviousCompleted: old.PreviousCompleted,
 		Rollback: &rollbackCapture{TargetOperation: target.Operation, AllowDowntime: r.AllowDowntime, Targets: map[string]*release{}}}
-	if old.Version == 6 {
-		next.Version = 6
+	if old.Version >= 6 {
+		next.Version = old.Version
+	}
+	if old.Version >= 7 {
+		next.Removed = maps.Clone(old.Removed)
+		next.HostIdentity = old.HostIdentity
 	}
 	preview := &RollbackPreview{TargetOperation: target.Operation, NeedsConfirmation: !r.Apply}
 	names := make([]string, 0, len(old.ServiceStates))
@@ -142,6 +155,15 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 			item.SecretVersions[env] = ref.Version
 		}
 		preview.Services = append(preview.Services, item)
+	}
+	if next.Version >= 7 {
+		for _, name := range names {
+			next.ServiceStates[name].Incarnation = old.ServiceStates[name].Incarnation
+			next.ServiceStates[name].Previous = old.ServiceStates[name].Previous
+			if next.Rollback.Targets[name] != nil {
+				next.Selected = append(next.Selected, name)
+			}
+		}
 	}
 	next.ServiceOrder = serviceOrder(next)
 	if len(next.Rollback.Targets) == 0 {

@@ -20,11 +20,20 @@ Without `--yes`, both commands return a preview and delete nothing. `--yes` auth
 
 Only a ready deployed app can begin maintenance. A secret-only app has no recorded deployment resources to remove; cleanup/destroy leave its store unchanged. Finish or supersede an incomplete deployment first. An app already destroyed is an idempotent no-op. No implicit stop, data purge, or automatic retention policy is added to deployment.
 
+## Removing one service
+
+Use `soar service remove NAME --app APP --server SERVER` to preview, then add
+`--yes` to apply. Manual services additionally require `--allow-protected`.
+The app must be settled and retain at least one service; use `destroy` for the
+last service. Removal retains data/secrets and never allows rollback to resurrect
+membership. See [independent services](services.md) for bindings, re-add, retained
+data approval, interrupted removal and the pending live-verification boundary.
+
 ## Cleanup policy
 
 Cleanup preserves:
 
-- Effective service versions, pending work, current/previous completed app snapshots, and their source archives. A partial operation is not a completed snapshot; cleanup does not discard the last successful app state.
+- Effective service versions, pending work, v7 per-service predecessors, current/previous completed app snapshots, and their source archives. A partial operation is not a completed snapshot; cleanup does not discard the last successful app state.
 - Any running historical container, even if it is otherwise old.
 - Images referenced by any Docker container, including stopped/foreign containers, or another app's effective slots, completed snapshots, candidates, captured builds, or pending maintenance state.
 - Tagged images and images with repository digests.

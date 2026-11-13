@@ -104,17 +104,17 @@ func validateMaintenance(j *journal) error {
 	if (j.LastMaintenanceOperation == "") != (j.LastMaintenanceAction == "") {
 		return bad
 	}
-	if j.LastMaintenanceOperation != "" && (!operation.MatchString(j.LastMaintenanceOperation) || (j.LastMaintenanceAction != "cleanup" && j.LastMaintenanceAction != "destroy")) {
+	if j.LastMaintenanceOperation != "" && (!operation.MatchString(j.LastMaintenanceOperation) || (j.LastMaintenanceAction != "cleanup" && j.LastMaintenanceAction != "destroy" && j.LastMaintenanceAction != "service-remove")) {
 		return bad
 	}
 	w := j.Maintenance
 	if w == nil {
-		if j.Phase == "cleaning" || j.Phase == "destroying" {
+		if j.Phase == "cleaning" || j.Phase == "destroying" || j.Phase == "removing" {
 			return bad
 		}
 		return nil
 	}
-	if !operation.MatchString(w.Operation) || maintenanceRetainedOperation(j, w.Operation) || (w.Action != "cleanup" && w.Action != "destroy") || w.Plan.Action != w.Action || w.Plan.App != j.App {
+	if !operation.MatchString(w.Operation) || maintenanceRetainedOperation(j, w.Operation) || (w.Action != "cleanup" && w.Action != "destroy" && w.Action != "service-remove") || w.Plan.Action != w.Action || w.Plan.App != j.App {
 		return bad
 	}
 	pb, e := json.Marshal(w.Plan)
@@ -124,6 +124,12 @@ func validateMaintenance(j *journal) error {
 	phase := "cleaning"
 	if w.Action == "destroy" {
 		phase = "destroying"
+	}
+	if w.Action == "service-remove" {
+		phase = "removing"
+		if err := validateServiceRemoval(j); err != nil {
+			return err
+		}
 	}
 	if j.Phase != phase || !hasCurrent(j) || j.OldCaddy != "" || j.NewCaddy != "" {
 		return bad
@@ -221,7 +227,7 @@ func (m *Manager) destroyRoutes(j *journal) (string, string, error) {
 // never authorization to stop a container.
 func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) error {
 	w := j.Maintenance
-	old, next, e := m.destroyRoutes(j)
+	old, next, e := m.maintenanceRouteIntent(j)
 	if e != nil {
 		return e
 	}
@@ -284,6 +290,9 @@ func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) e
 }
 
 func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (resp Response, err error) {
+	if r.Action == "service-remove" || (j != nil && j.Maintenance != nil && j.Maintenance.Action == "service-remove") {
+		return m.executeServiceRemoval(c, r, j)
+	}
 	resp.Version = 1
 	defer func() {
 		if err != nil {

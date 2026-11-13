@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -23,7 +24,9 @@ import (
 )
 
 const appHelp = `Usage:
-  soar deploy [--service NAME] [--yes] [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--reuse-data] [--executor FILE]
+  soar deploy [--service NAME] [--yes] [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--re-add] [--reuse-data] [--executor FILE]
+  soar service bind NAME --app APP --server SERVER
+  soar service remove NAME --app APP --server SERVER [--yes] [--allow-protected]
   soar run [-f soar.yaml] --service NAME -- COMMAND [ARG...]
   soar status [--run OPERATION] [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
   soar logs [--run OPERATION] [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
@@ -43,6 +46,7 @@ Deploy updates automatic services, or only --service NAME.
 Run is noninteractive: no stdin, TTY, or implicit shell. The remote worker has a
 20-minute deadline; an unknown outcome must be inspected with status --run, not rerun.
 Private services use stop/start replacement.
+--re-add requires --service NAME --yes; --reuse-data is independent retained-data approval.
 --reuse-data authorizes exact retained volume reuse after destroy (deploy only).
 Volume-backed replacements use stop/start, including public services; data is not rolled back.
 Flags precede positional arguments. Resume uses captured inputs, not local edits.
@@ -76,7 +80,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	reuseData := flags.Bool("reuse-data", false, "authorize exact retained volume reuse after destroy (deploy only)")
 	yes := flags.Bool("yes", false, "approve deploy or apply cleanup/destroy/rollback (default: preview)")
 	allowDowntime := flags.Bool("allow-downtime", false, "authorize stop/start rollback (rollback only)")
-	maintenance := action == "cleanup" || action == "destroy"
+	reAdd := flags.Bool("re-add", false, "re-create a removed service (requires --service and --yes)")
+	allowProtected := flags.Bool("allow-protected", false, "approve removal of a manual service")
+	maintenance := action == "cleanup" || action == "destroy" || action == "service-remove"
 	asJSON := flags.Bool("json", false, "JSON status")
 	tail := flags.Int("tail", 100, "log tail lines (1-1000, output also byte bounded)")
 	mutation := action == "deploy" || action == "run" || action == "resume" || action == "rollback" || maintenance
@@ -91,6 +97,15 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return 0
 		}
 		return 2
+	}
+	if (action == "service-bind" || action == "service-remove") && *service == "" {
+		return usageError(stderr, "service bind/remove requires a service name")
+	}
+	if *reAdd && (action != "deploy" || *service == "" || !*yes) {
+		return usageError(stderr, "--re-add requires deploy --service NAME --yes")
+	}
+	if *allowProtected && action != "service-remove" {
+		return usageError(stderr, "--allow-protected is service remove only")
 	}
 	yesProvided := false
 	reuseDataProvided := false
@@ -116,7 +131,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			yesProvided = true
 		}
 	})
-	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" && action != "rollback" || *service == "")) || (candidateProvided && action != "logs") {
+	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" && action != "rollback" && action != "service-remove" && action != "service-bind" || *service == "")) || (candidateProvided && action != "logs") {
 		return usageError(stderr, "--service requires deploy/run/status/logs/rollback; --candidate is logs only")
 	}
 	if runProvided && (*runOperation == "" || (action != "status" && action != "logs") || serviceProvided || candidateProvided) {
@@ -180,7 +195,20 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return lifecycleError(stderr, err)
 	}
 	request := deploy.Request{Version: 1, Action: action, App: name, Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}}
+	if dir == "" && action == "service-bind" {
+		dir, err = os.Getwd()
+		if err != nil {
+			return lifecycleError(stderr, err)
+		}
+	}
 	request.Apply = *yes
+	request.AllowProtected = *allowProtected
+	request.ReAdd = *reAdd
+	request.Partial = action == "deploy"
+	if action == "service-bind" {
+		request.Action = "status"
+	}
+	var selectedNames []string
 	request.AllowDowntime = *allowDowntime
 	request.Service = *service
 	request.Candidate = *candidate
@@ -210,6 +238,24 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		if selectErr != nil {
 			return lifecycleError(stderr, selectErr)
 		}
+		if action == "deploy" {
+			bindings, e := readServiceBindings(dir, server.Target, name)
+			if e != nil {
+				return lifecycleError(stderr, e)
+			}
+			request.Bindings = map[string]string{}
+			for n := range selected.Services {
+				selectedNames = append(selectedNames, n)
+				if b, ok := bindings[n]; ok {
+					if request.HostIdentity != "" && request.HostIdentity != b.HostIdentity {
+						return lifecycleError(stderr, errors.New("selected bindings have different host identities; explicitly bind again"))
+					}
+					request.HostIdentity = b.HostIdentity
+					request.Bindings[n] = b.Incarnation
+				}
+			}
+			sort.Strings(selectedNames)
+		}
 		archive, err = buildcontext.Bundle(*filename, selected, deps.Archive)
 		if err != nil {
 			return lifecycleError(stderr, err)
@@ -225,7 +271,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if err := ssh.ValidateTarget(server.Target); err != nil {
 		return usageError(stderr, err.Error())
 	}
-	if dir != "" && *serverFlag == "" {
+	if dir != "" && *serverFlag == "" && action != "service-bind" {
 		if err := bindProject(dir, name, server); err != nil {
 			return lifecycleError(stderr, err)
 		}
@@ -234,7 +280,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	defer cancel()
 	var binary []byte
 	if action == "deploy" && *service == "" {
-		if _, err := fmt.Fprintln(stdout, "Whole-app deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
+		if _, err := fmt.Fprintln(stdout, "Declared-service deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}
@@ -275,8 +321,26 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 	}
+	if action == "deploy" {
+		fmt.Fprintf(stdout, "Target %s (%s) / %s; selected services: %v\n", server.Name, server.Target, name, selectedNames)
+	}
+	if (action == "service-bind" || action == "service-remove") && !*asJSON {
+		fmt.Fprintf(stdout, "Target %s (%s) / %s; selected service: %s\n", server.Name, server.Target, name, *service)
+	}
 	response, err := deps.Run(ctx, server.Target, request, binary, archive)
+	if action == "deploy" {
+		updates := acknowledgedBindings(request, response.Status, selectedNames)
+		if len(updates) > 0 {
+			if e := writeServiceBindings(dir, server.Target, name, updates); e != nil {
+				fmt.Fprintf(stderr, "Remote operation %s may have completed; inspect status before retrying. Local binding could not be saved.\n", request.Operation)
+				return lifecycleError(stderr, e)
+			}
+		}
+	}
 	if err != nil {
+		if action == "deploy" {
+			fmt.Fprintf(stderr, "Existing services require explicit adoption: soar service bind NAME --app %s --server %s (inspect status first; do not blindly retry).\n", name, server.Name)
+		}
 		code := lifecycleError(stderr, err)
 		if action == "run" {
 			fmt.Fprintf(stderr, "Inspect: soar status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
@@ -284,6 +348,16 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			fmt.Fprintf(stderr, "Inspect: soar status --server %s --app %s\nIf recorded, resume: soar resume --server %s --app %s %s\n", server.Name, name, server.Name, name, request.Operation)
 		}
 		return code
+	}
+	if action == "service-bind" {
+		if response.Status == nil || response.Status.HostIdentity == "" || response.Status.Services[*service].Incarnation == "" {
+			return lifecycleError(stderr, errors.New("status has no service/host identity; refusing to bind"))
+		}
+		if err := writeServiceBindings(dir, server.Target, name, serviceBindings{*service: {response.Status.HostIdentity, response.Status.Services[*service].Incarnation}}); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		fmt.Fprintln(stdout, "Service bound locally; no deployment performed.")
+		return 0
 	}
 	if p := response.DeployPreview; p != nil {
 		if _, err := fmt.Fprintf(stdout, "Deploy service=%q current-image=%q desired-image=%q downtime=%t\n", p.Service, p.CurrentImage, p.DesiredImage, p.Downtime); err != nil {

@@ -8,6 +8,7 @@ const MaxServices = 8
 const BundleFormat = "bundle-v1"
 
 type ServiceStatus struct {
+	Incarnation        string         `json:"incarnation,omitempty"`
 	Domains            []DomainStatus `json:"domains,omitempty"`
 	Unavailable        bool           `json:"unavailable,omitempty"`
 	DataMayHaveChanged bool           `json:"data_may_have_changed,omitempty"`
@@ -26,11 +27,13 @@ type ServiceStatus struct {
 // Each slot describes effective state, not just the last requested app config.
 // Retirement intent survives stopped workers and must never resurrect them.
 type serviceState struct {
-	Skipped                      bool   `json:",omitempty"`
-	VolumeID                     string `json:",omitempty"`
-	Unavailable                  bool   `json:",omitempty"`
-	DataMayHaveChanged           bool   `json:",omitempty"`
-	New                          bool   `json:",omitempty"`
+	Incarnation                  string   `json:",omitempty"`
+	Previous                     *release `json:",omitempty"`
+	Skipped                      bool     `json:",omitempty"`
+	VolumeID                     string   `json:",omitempty"`
+	Unavailable                  bool     `json:",omitempty"`
+	DataMayHaveChanged           bool     `json:",omitempty"`
+	New                          bool     `json:",omitempty"`
 	Phase                        string
 	SecretRefs                   map[string]secrets.Ref `json:",omitempty"`
 	Current, Candidate, Retiring *release
@@ -65,6 +68,7 @@ func retainedReleases(j *journal) []*release {
 	for _, s := range j.ServiceStates {
 		if s != nil {
 			add(s.Current)
+			add(s.Previous)
 			add(s.Candidate)
 			add(s.Retiring)
 		}

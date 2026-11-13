@@ -28,23 +28,28 @@ import (
 )
 
 type Request struct {
-	AllowDowntime bool             `json:"allow_downtime,omitempty"`
-	Command       []string         `json:"command,omitempty"`
-	RunOperation  string           `json:"run_operation,omitempty"`
-	ReuseData     bool             `json:"reuse_data,omitempty"`
-	ContextFormat string           `json:"context_format,omitempty"`
-	Service       string           `json:"service,omitempty"`
-	Candidate     bool             `json:"candidate,omitempty"`
-	SecretName    string           `json:"secret_name,omitempty"`
-	Apply         bool             `json:"apply,omitempty"`
-	Supersede     string           `json:"supersede,omitempty"`
-	Version       int              `json:"version"`
-	Action        string           `json:"action"`
-	App           string           `json:"app"`
-	Operation     string           `json:"operation,omitempty"`
-	Config        *config.App      `json:"config,omitempty"`
-	Host          lifecycle.Config `json:"host"`
-	Tail          int              `json:"tail,omitempty"`
+	Partial        bool              `json:"partial,omitempty"`
+	Bindings       map[string]string `json:"bindings,omitempty"`
+	HostIdentity   string            `json:"host_identity,omitempty"`
+	ReAdd          bool              `json:"re_add,omitempty"`
+	AllowProtected bool              `json:"allow_protected,omitempty"`
+	AllowDowntime  bool              `json:"allow_downtime,omitempty"`
+	Command        []string          `json:"command,omitempty"`
+	RunOperation   string            `json:"run_operation,omitempty"`
+	ReuseData      bool              `json:"reuse_data,omitempty"`
+	ContextFormat  string            `json:"context_format,omitempty"`
+	Service        string            `json:"service,omitempty"`
+	Candidate      bool              `json:"candidate,omitempty"`
+	SecretName     string            `json:"secret_name,omitempty"`
+	Apply          bool              `json:"apply,omitempty"`
+	Supersede      string            `json:"supersede,omitempty"`
+	Version        int               `json:"version"`
+	Action         string            `json:"action"`
+	App            string            `json:"app"`
+	Operation      string            `json:"operation,omitempty"`
+	Config         *config.App       `json:"config,omitempty"`
+	Host           lifecycle.Config  `json:"host"`
+	Tail           int               `json:"tail,omitempty"`
 }
 type Response struct {
 	RollbackPreview *RollbackPreview   `json:"rollback_preview,omitempty"`
@@ -81,18 +86,19 @@ type VolumeStatus struct {
 }
 
 type Status struct {
-	Run       *RunResult               `json:"run,omitempty"`
-	Volumes   []VolumeStatus           `json:"volumes,omitempty"`
-	Services  map[string]ServiceStatus `json:"services,omitempty"`
-	Secrets   []SecretStatus           `json:"secrets,omitempty"`
-	App       string                   `json:"app"`
-	URL       string                   `json:"url"`
-	Phase     string                   `json:"phase"`
-	Operation string                   `json:"operation"`
-	Active    bool                     `json:"active"`
-	Container string                   `json:"container"`
-	LastError string                   `json:"last_error"`
-	Running   bool                     `json:"running"`
+	HostIdentity string                   `json:"host_identity,omitempty"`
+	Run          *RunResult               `json:"run,omitempty"`
+	Volumes      []VolumeStatus           `json:"volumes,omitempty"`
+	Services     map[string]ServiceStatus `json:"services,omitempty"`
+	Secrets      []SecretStatus           `json:"secrets,omitempty"`
+	App          string                   `json:"app"`
+	URL          string                   `json:"url"`
+	Phase        string                   `json:"phase"`
+	Operation    string                   `json:"operation"`
+	Active       bool                     `json:"active"`
+	Container    string                   `json:"container"`
+	LastError    string                   `json:"last_error"`
+	Running      bool                     `json:"running"`
 }
 type release struct {
 	VolumeID        string                 `json:",omitempty"`
@@ -115,6 +121,8 @@ type DeploymentPreview struct {
 }
 
 type journal struct {
+	Selected                     []string                 `json:",omitempty"`
+	Removed                      map[string]string        `json:",omitempty"`
 	Rollback                     *rollbackCapture         `json:",omitempty"`
 	Scope                        string                   `json:",omitempty"`
 	ReuseData                    bool                     `json:",omitempty"`
@@ -220,10 +228,45 @@ func validateLegacyApp(a *config.App) error {
 	return nil
 }
 func (r Request) Mutating() bool {
-	return r.Action == "rollback" || r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
+	return r.Action == "service-remove" || r.Action == "rollback" || r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
 }
 
 func ValidateRequest(r Request) error {
+	if r.Partial && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
+		return errors.New("partial manifests require deploy with a current build bundle")
+	}
+	if r.HostIdentity != "" && !operation.MatchString(r.HostIdentity) {
+		return errors.New("invalid bound host identity")
+	}
+	if len(r.Bindings) != 0 && !r.Partial {
+		return errors.New("service bindings require partial deployment")
+	}
+	if len(r.Bindings) != 0 && r.HostIdentity == "" {
+		return errors.New("service bindings require the bound host identity")
+	}
+	if len(r.Bindings) > MaxServices {
+		return errors.New("too many service bindings")
+	}
+	for name, id := range r.Bindings {
+		if len(name) > 63 || !label.MatchString(name) || !operation.MatchString(id) {
+			return errors.New("invalid service binding")
+		}
+		if r.Config == nil {
+			return errors.New("bindings require service declarations")
+		}
+		if _, ok := r.Config.Services[name]; !ok || (r.Service != "" && name != r.Service) {
+			return errors.New("binding is outside the selected services")
+		}
+	}
+	if r.ReAdd && (!r.Partial || r.Service == "" || !r.Apply) {
+		return errors.New("re-add requires deploy --service NAME --yes")
+	}
+	if r.AllowProtected && r.Action != "service-remove" {
+		return errors.New("allow-protected requires service removal")
+	}
+	if r.Action == "service-remove" && r.Service == "" {
+		return errors.New("service removal requires an explicit service")
+	}
 	if r.AllowDowntime && (r.Action != "rollback" || r.Service == "") {
 		return errors.New("allow-downtime requires a scoped rollback")
 	}
@@ -233,7 +276,7 @@ func ValidateRequest(r Request) error {
 	if r.ContextFormat != "" && ((r.Action != "deploy" && r.Action != "run") || r.ContextFormat != BundleFormat) {
 		return errors.New("unsupported context format or action")
 	}
-	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs" && r.Action != "deploy" && r.Action != "run" && r.Action != "rollback")) {
+	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs" && r.Action != "deploy" && r.Action != "run" && r.Action != "rollback" && r.Action != "service-remove")) {
 		return errors.New("invalid service selector or action")
 	}
 	if r.RunOperation != "" && (!operation.MatchString(r.RunOperation) || (r.Action != "status" && r.Action != "logs") || r.Service != "" || r.Candidate) {
@@ -286,7 +329,7 @@ func ValidateRequest(r Request) error {
 	if r.Tail < 0 || r.Tail > 1000 {
 		return errors.New("tail must be between 0 and 1000")
 	}
-	if r.Apply && r.Action != "rollback" && r.Action != "cleanup" && r.Action != "destroy" && !(r.Action == "deploy" && r.Service != "") {
+	if r.Apply && r.Action != "service-remove" && r.Action != "rollback" && r.Action != "cleanup" && r.Action != "destroy" && !(r.Action == "deploy" && r.Service != "") {
 		return errors.New("apply requires maintenance or scoped deployment")
 	}
 	switch r.Action {
@@ -315,7 +358,7 @@ func ValidateRequest(r Request) error {
 				return errors.New("selected service is not configured")
 			}
 		}
-	case "rollback", "cleanup", "destroy":
+	case "service-remove", "rollback", "cleanup", "destroy":
 		if !operation.MatchString(r.Operation) || r.Config != nil {
 			return errors.New("maintenance requires operation ID and no config")
 		}
@@ -526,7 +569,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		err = e
 		return
 	}
-	if h == nil || h.Phase != "ready" || h.Config != r.Host {
+	if h == nil || h.Phase != "ready" || h.Config != r.Host || (r.HostIdentity != "" && r.HostIdentity != h.ID) {
 		err = errors.New("expected ready host identity does not match")
 		return
 	}
@@ -548,6 +591,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	if e != nil {
 		return resp, e
 	}
+	defer func() { m.enrichIdentityResponse(ctx, r, h.ID, &resp) }()
 	defer func() { m.enrichDomainResponse(ctx, r, &resp) }()
 	defer func() { m.enrichVolumeResponse(ctx, r, h.ID, &resp) }()
 	if !mut {
@@ -655,6 +699,9 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		}
 		err = m.maintenanceVolumes(ctx, &journal{HostID: h.ID, Status: Status{App: r.App}}, resp.Plan)
 		return
+	}
+	if r.Action == "service-remove" {
+		return m.executeServiceRemoval(ctx, r, j)
 	}
 	if r.Action == "cleanup" || r.Action == "destroy" || (r.Action == "resume" && j != nil && (j.Maintenance != nil || j.Phase == "destroyed" || j.LastMaintenanceOperation == r.Operation)) {
 		resp, err = m.executeMaintenance(ctx, r, j)
@@ -832,7 +879,7 @@ func validateJournal(j *journal, app string) error {
 	if isMulti(j) {
 		return validateMultiJournal(j, app)
 	}
-	if j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+	if len(j.Selected) != 0 || len(j.Removed) != 0 || j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
 		return errors.New("invalid legacy app journal")
 	}
 	bad := errors.New("invalid app journal")

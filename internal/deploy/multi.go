@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 
 	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/lifecycle"
@@ -42,9 +43,20 @@ func (m *Manager) verifyMultiHost() error {
 	return nil
 }
 
-func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State, data []byte) (*journal, error) {
+func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State, data []byte, selection ...[]string) (*journal, error) {
 	j := &journal{Version: 2, Status: Status{App: r.App, URL: "https://" + r.App + "." + r.Host.Domain, Phase: "building", Operation: r.Operation}, HostID: h.ID, Config: r.Config, Archive: r.Operation + ".context.tar", BundleSHA: bundleDigest(data), BuildImages: map[string]string{}, ServiceStates: map[string]*serviceState{}}
 	j.Scope = r.Service
+	if r.Partial {
+		j.Selected = selectedServices(r)
+		if len(selection) != 0 {
+			j.Selected = selection[0]
+		}
+	}
+	keepRequest := r
+	if r.Partial {
+		keepRequest.Config = bundleConfig(&journal{Version: 7, Config: r.Config, Selected: j.Selected, Status: Status{App: r.App}})
+	}
+
 	if r.Service != "" || workflowConfig(r.Config) || (old != nil && old.Version >= 4) {
 		j.Version = 4
 	}
@@ -72,12 +84,13 @@ func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State
 		s := &serviceState{Phase: "pending"}
 		if prev := previousSlots[name]; prev != nil {
 			s.Current = prev.Current
+			s.Previous = prev.Previous
 			s.CurrentRetired = prev.CurrentRetired
 			s.VolumeID = prev.VolumeID
 			s.Unavailable = prev.Unavailable
 			s.DataMayHaveChanged = prev.DataMayHaveChanged
 		}
-		keep, err := keepService(r, name, cfg, s.Current, state)
+		keep, err := keepService(keepRequest, name, cfg, s.Current, state)
 		if err != nil {
 			return nil, err
 		}
@@ -96,6 +109,9 @@ func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State
 		s.New = s.Current == nil
 		j.ServiceStates[name] = s
 	}
+	if err := prepareServiceIdentities(r, old, j); err != nil {
+		return nil, err
+	}
 	j.ServiceOrder = serviceOrder(j)
 	return j, nil
 }
@@ -106,15 +122,24 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if r.ContextFormat != BundleFormat {
 			return resp, errors.New("this app requires a current client with a captured multi-service build bundle")
 		}
-		if r.Supersede != "" && j != nil && j.Scope != r.Service {
+		selected := selectedServices(r)
+		if j != nil && j.Version == 7 && !r.Partial {
+			return resp, errors.New("partial deployment required for version 7 app")
+		}
+		if r.Supersede != "" && j != nil && (j.Scope != r.Service || !slices.Equal(capturedSelection(j), selected)) {
 			return resp, errors.New("supersede must preserve the original service scope; resume instead")
 		}
 		if r.Config, err = effectiveConfig(r, j); err != nil {
 			return
 		}
-		if _, err = buildcontext.ReadBundle(data, bundleConfig(&journal{Config: r.Config, Scope: r.Service, Status: Status{App: r.App}})); err != nil {
+		captured := &journal{Config: r.Config, Scope: r.Service, Status: Status{App: r.App}}
+		if r.Partial {
+			captured.Version, captured.Selected = 7, selected
+		}
+		if _, err = buildcontext.ReadBundle(data, bundleConfig(captured)); err != nil {
 			return
 		}
+
 		if err = checkTransitions(j, r.Config); err != nil {
 			return
 		}
@@ -138,7 +163,7 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 			return resp, errors.New("operation ID already used by captured inputs or a run")
 		}
 		var next *journal
-		next, err = multiPlan(r, h, j, state, data)
+		next, err = multiPlan(r, h, j, state, data, selected)
 		if err != nil {
 			return
 		}
@@ -371,6 +396,7 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 			return fmt.Errorf("service %s: effective version is not running", name)
 		}
 	}
+	recordServiceHistory(j)
 	if !sameEffective(j) {
 		snapshot := &completedRelease{Operation: j.Operation, Services: map[string]*release{}}
 		for name, s := range j.ServiceStates {
