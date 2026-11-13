@@ -91,7 +91,7 @@ func TestAppsSelectsRegisteredServerWithoutProjectSideEffects(t *testing.T) {
 	}
 }
 func TestAppsErrorsAndTextOutput(t *testing.T) {
-	for _, kind := range []string{"no-server", "missing-server", "invalid-host", "invalid-target", "inspect", "unsupported", "artifact", "run", "missing-response", "bad-timeout", "positional", "text"} {
+	for _, kind := range []string{"no-server", "missing-server", "invalid-host", "invalid-target", "inspect", "unsupported", "artifact", "run", "missing-response", "bad-timeout", "positional", "text", "empty-text"} {
 		t.Run(kind, func(t *testing.T) {
 			_, store, reg := initFixture(t)
 			server := registry.Server{Name: "home", Target: "root@home", Domain: "example.com"}
@@ -136,12 +136,26 @@ func TestAppsErrorsAndTextOutput(t *testing.T) {
 					if kind == "missing-response" {
 						return deploy.Response{Version: 1}, nil
 					}
+					if kind == "empty-text" {
+						return deploy.Response{Version: 1, Apps: &deploy.AppList{Entries: []deploy.AppEntry{}}}, nil
+					}
 					return deploy.Response{Version: 1, Apps: &deploy.AppList{Entries: []deploy.AppEntry{{App: "gone", Phase: "destroyed", Services: []string{"db"}, ServiceCount: 1, RetainedSecrets: true, VolumeRecords: 1, RetainedVolumes: true}}}}, nil
 				},
 			}
 			var out, diag bytes.Buffer
 			code := appsCommand(context.Background(), args, &out, &diag, deps)
-			if kind == "text" {
+			if kind == "text" || kind == "empty-text" {
+				for _, text := range []string{"home", "root@home", "recorded inventory", "not live health"} {
+					if !strings.Contains(out.String(), text) {
+						t.Errorf("missing %q: %s", text, &out)
+					}
+				}
+				if kind == "empty-text" {
+					if code != 0 || !strings.Contains(out.String(), "no registered apps") {
+						t.Fatal(code, &out, &diag)
+					}
+					return
+				}
 				if code != 0 || !strings.Contains(out.String(), "destroyed") || !strings.Contains(out.String(), "db (1)") {
 					t.Fatal(code, &out, &diag)
 				}

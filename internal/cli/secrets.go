@@ -37,7 +37,7 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 	if len(args) == 0 {
 		return usageError(stderr, secretsHelp)
 	}
-	if args[0] == "--help" || args[0] == "help" {
+	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		fmt.Fprint(stdout, secretsHelp)
 		return 0
 	}
@@ -58,8 +58,8 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 	timeout := f.Duration("timeout", deadline, "deadline")
 	asJSON := f.Bool("json", false, "full metadata response")
 	fromStdin := f.Bool("stdin", false, "read value from stdin")
-	f.Usage = func() { fmt.Fprint(stderr, secretsHelp) }
-	if err := f.Parse(args[1:]); err != nil {
+	f.Usage = func() { fmt.Fprint(f.Output(), secretsHelp) }
+	if err := parseFlags(f, args[1:], stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
@@ -162,7 +162,16 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		return lifecycleError(stderr, err)
 	}
 	response, err := deps.Run(ctx, server.Target, r, binary, value)
-	if err != nil || response.Error != "" {
+	if err != nil || response.Error != "" || response.ErrorCode != "" || response.Version != 1 || (action == "stage" && response.Secret == nil) {
+		if response.Version == 1 && response.Error != "" {
+			if message := deploy.RefusalMessage(r.Action, response.ErrorCode); message != "" {
+				fmt.Fprintln(stderr, message)
+				if action == "stage" {
+					fmt.Fprintf(stderr, "Staging refused (operation/version %s).\nInspect: soar secrets list --server %s --app %s\n", r.Operation, server.Name, name)
+				}
+				return 1
+			}
+		}
 		if action == "stage" {
 			fmt.Fprintf(stderr, "Secret staging outcome unknown (operation/version %s).\nInspect: soar secrets list --server %s --app %s\n", r.Operation, server.Name, name)
 			return 1

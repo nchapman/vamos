@@ -39,8 +39,8 @@ func TestUsageErrors(t *testing.T) {
 
 func TestValidateHelp(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := cli.Run([]string{"validate", "--help"}, &stdout, &stderr, "dev"); code != 0 || !strings.Contains(stderr.String(), "Usage:") {
-		t.Fatalf("code=%d stderr=%q", code, &stderr)
+	if code := cli.Run([]string{"validate", "--help"}, &stdout, &stderr, "dev"); code != 0 || !strings.Contains(stdout.String(), "Usage:") || stderr.Len() != 0 {
+		t.Fatalf("code=%d stdout=%q stderr=%q", code, &stdout, &stderr)
 	}
 }
 

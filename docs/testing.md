@@ -153,6 +153,13 @@ The CLI acceptance app additionally checks:
   respects its explicit deadline. Sessions leave the service identity unchanged;
   ordinary completion removes private session staging.
 
+The DX checks additionally exercise quoted manifest paths from another working
+directory, context-preserving binding/approval suggestions, inventory attribution,
+snapshot stdout/stderr separation, explicit-target recovery hints, nested help, and
+a real value-free secret-store permission refusal. The permission fault affects only
+the disposable CLI test app and is restored in `finally`; no live service replacement
+is authorized by the preview check.
+
 Artifacts include `runner.log`, `manifest.json`, the exact `source.tar`, and
 `guest-artifacts.tar`. The guest archive contains numbered command/stdout/stderr
 files, `result.json`, scenario progress in `summary.json` and
@@ -191,6 +198,11 @@ The subsequent CLI-expanded flow passed on Ubuntu 24.04.5 arm64, including all
 seven CLI groups above, the base/recovery scenarios, restart verification and
 owned-machine deletion. Its real terminal evidence is for a **Linux client in
 the guest**, not native macOS or Windows terminal execution.
+
+The DX-extended flow also passed on Ubuntu 24.04.5 arm64: quoted-path binding and
+approval guidance, inventory attribution, snapshot stream separation, recovery/help
+output, and the real secret-store refusal followed by successful metadata listing.
+The full base/CLI/recovery flow and owned-machine deletion passed together.
 
 ### Limits
 

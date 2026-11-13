@@ -148,7 +148,7 @@ func appFailure(w io.Writer, err error, code int) int {
 	if len(message) > 4096 {
 		message = message[:4096] + " [truncated]"
 	}
-	if writeErr := json.NewEncoder(w).Encode(deploy.Response{Version: 1, Error: message}); writeErr != nil {
+	if writeErr := json.NewEncoder(w).Encode(deploy.Response{Version: 1, Error: message, ErrorCode: deploy.ErrorCode(err)}); writeErr != nil {
 		return 1
 	}
 	return code

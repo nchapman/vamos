@@ -54,3 +54,25 @@ func TestSecretInputBoundary(t *testing.T) {
 		t.Fatal("nonterminal accepted without --stdin")
 	}
 }
+
+func TestSecretRefusalAndMissingAcknowledgment(t *testing.T) {
+	for _, tc := range []struct {
+		response deploy.Response
+		want     string
+	}{
+		{deploy.Response{Version: 1, Error: "canary", ErrorCode: "secret_version_limit"}, "256"},
+		{deploy.Response{Version: 1, Error: "canary", ErrorCode: "unknown"}, "outcome unknown"},
+		{deploy.Response{Version: 2, Error: "canary", ErrorCode: "secret_version_limit"}, "outcome unknown"},
+		{deploy.Response{Version: 1}, "outcome unknown"},
+	} {
+		path, _, deps := appFixture(t)
+		deps.Run = func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error) {
+			return tc.response, nil
+		}
+		var out, diag bytes.Buffer
+		code := secretsCommand(context.Background(), []string{"stage", "-f", path, "--stdin", "--json", "token"}, strings.NewReader("value\n"), &out, &diag, deps, readSecretInput)
+		if code != 1 || out.Len() != 0 || strings.Contains(diag.String(), "canary") || !strings.Contains(diag.String(), tc.want) || !strings.Contains(diag.String(), "Inspect:") {
+			t.Fatalf("%d %s %s", code, &out, &diag)
+		}
+	}
+}

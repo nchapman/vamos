@@ -41,8 +41,8 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		timeoutDefault = 15 * time.Second
 	}
 	timeout := flags.Duration("timeout", timeoutDefault, "client wait deadline; remote mutations survive disconnect")
-	flags.Usage = func() { fmt.Fprint(flags.Output(), serverHelp) }
-	if err := flags.Parse(args); err != nil {
+	flags.Usage = func() { writeServerHelp(flags.Output(), operation, flags) }
+	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}

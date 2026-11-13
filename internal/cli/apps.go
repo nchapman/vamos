@@ -23,9 +23,11 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	executor := flags.String("executor", "", "Linux executor artifact override")
 	timeout := flags.Duration("timeout", 15*time.Second, "client deadline")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: soar apps [--server NAME] [--json] [--executor FILE] [--timeout duration]")
+		fmt.Fprintln(flags.Output(), "Usage: soar apps [--server NAME] [--json] [--executor FILE] [--timeout duration]")
+		fmt.Fprintln(flags.Output(), "Uses the registered default server unless --server is supplied; ignores project binding.")
+		fmt.Fprintln(flags.Output(), "Lists recorded inventory, not live health.")
 	}
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
@@ -80,6 +82,9 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 			return lifecycleError(stderr, err)
 		}
 		return 0
+	}
+	if _, err := fmt.Fprintf(stdout, "%s (%s): recorded inventory (not live health).\n", server.Name, server.Target); err != nil {
+		return lifecycleError(stderr, err)
 	}
 	if len(response.Apps.Entries) == 0 {
 		_, err = fmt.Fprintf(stdout, "%s: no registered apps.\n", server.Name)

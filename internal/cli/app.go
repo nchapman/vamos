@@ -23,37 +23,6 @@ import (
 	"github.com/nchapman/soar/internal/ssh"
 )
 
-const appHelp = `Usage:
-  soar deploy [--service NAME] [--yes] [-f soar.yaml] [--server NAME] [--supersede OPERATION] [--re-add] [--reuse-data] [--executor FILE]
-  soar service bind NAME --app APP --server SERVER
-  soar service remove NAME --app APP --server SERVER [--yes] [--allow-protected]
-  soar run [-f soar.yaml] --service NAME -- COMMAND [ARG...]
-  soar status [--run OPERATION] [-f soar.yaml] [--json] [--service NAME] [--server NAME --app APP]
-  soar logs [--follow | --run OPERATION] [-f soar.yaml] [--tail 100] [--service NAME] [--candidate] [--server NAME --app APP]
-  soar rollback [--service NAME] [--allow-downtime] [--yes] [-f soar.yaml | --server NAME --app APP]
-  soar resume [--server NAME --app APP] OPERATION
-  soar cleanup [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
-  soar destroy [-f soar.yaml | --server NAME --app APP] [--yes] [--json]
-
-All commands accept --executor FILE. Cleanup/destroy/rollback preview unless --yes.
-Rollback uses captured images and secret versions, never local source or builds.
---allow-downtime authorizes stop/start rollback; data is not rolled back.
-Captured credentials may have been revoked. Resume uses the existing operation without new flags.
-Lifecycle --json emits the full response (including the exact plan).
-
-Deploy updates automatic services, or only --service NAME.
---yes approves an existing manual service update and requires --service.
-Run is noninteractive: no stdin, TTY, or implicit shell. The remote worker has a
-20-minute deadline; an unknown outcome must be inspected with status --run, not rerun.
-Private services use stop/start replacement.
---re-add requires --service NAME --yes; --reuse-data is independent retained-data approval.
---reuse-data authorizes exact retained volume reuse after destroy (deploy only).
-Volume-backed replacements use stop/start, including public services; data is not rolled back.
-Flags precede positional arguments. Resume uses captured inputs, not local edits.
-Without --server, a project's first contact binds it to the registered default.
-An explicit --server overrides only this invocation; it never changes the binding.
-`
-
 type appDeps struct {
 	Registry func() (*registry.Store, error)
 	Archive  func(string, config.Build) ([]byte, error)
@@ -80,12 +49,12 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	follow := flags.Bool("follow", false, "stream selected container logs until disconnect (logs only; -f remains config file)")
 	supersede := flags.String("supersede", "", "replace a stopped pre-promotion operation with new inputs")
 	reuseData := flags.Bool("reuse-data", false, "authorize exact retained volume reuse after destroy (deploy only)")
-	yes := flags.Bool("yes", false, "approve deploy or apply cleanup/destroy/rollback (default: preview)")
+	yes := flags.Bool("yes", false, "approve the selected update or apply a previewed operation")
 	allowDowntime := flags.Bool("allow-downtime", false, "authorize stop/start rollback (rollback only)")
 	reAdd := flags.Bool("re-add", false, "re-create a removed service (requires --service and --yes)")
 	allowProtected := flags.Bool("allow-protected", false, "approve removal of a manual service")
 	maintenance := action == "cleanup" || action == "destroy" || action == "service-remove"
-	asJSON := flags.Bool("json", false, "JSON status")
+	asJSON := flags.Bool("json", false, "print JSON instead of human output")
 	tail := flags.Int("tail", 100, "log tail lines (1-1000, output also byte bounded)")
 	mutation := action == "deploy" || action == "run" || action == "resume" || action == "rollback" || maintenance
 	deadline := 15 * time.Second
@@ -93,8 +62,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		deadline = 25 * time.Minute
 	}
 	timeout := flags.Duration("timeout", deadline, "client deadline; started mutations survive disconnection")
-	flags.Usage = func() { fmt.Fprint(flags.Output(), appHelp) }
-	if err := flags.Parse(args); err != nil {
+	flags.Usage = func() { writeAppHelp(flags.Output(), action, flags) }
+	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
@@ -178,18 +147,21 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	name := *appFlag
 	var app *config.App
-	var dir string
+	var dir, manifestPath string
 	if name == "" {
 		var err error
 		app, err = config.Load(*filename)
 		if err != nil {
-			return lifecycleError(stderr, err)
+			code := lifecycleError(stderr, err)
+			configRecoveryHint(stderr, action, flags)
+			return code
 		}
 		name = app.Name
 		absolute, err := filepath.Abs(*filename)
 		if err != nil {
 			return lifecycleError(stderr, err)
 		}
+		manifestPath = absolute
 		dir = filepath.Dir(absolute)
 	}
 	if err := lifecycle.ValidateConfig(lifecycle.Config{Name: name, Domain: "validation.invalid"}); err != nil {
@@ -363,8 +335,14 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	if err != nil {
-		if action == "deploy" {
-			fmt.Fprintf(stderr, "Existing services require explicit adoption: soar service bind NAME --app %s --server %s (inspect status first; do not blindly retry).\n", name, server.Name)
+		if action == "deploy" && response.Version == 1 && response.Error != "" && response.ErrorCode == deploy.CodeBindingRequired {
+			selected := "NAME"
+			if len(selectedNames) == 1 {
+				selected = selectedNames[0]
+			}
+			bindingArgs := []string{"soar", "service", "bind", selected, "-f", manifestPath, "--server", server.Name}
+			bindingArgs = appendSuppliedFlags(bindingArgs, flags, "executor", "timeout")
+			fmt.Fprintf(stderr, "Inspect status first; explicitly adopt only the intended service:\n  %s\n", suggestedCommand(bindingArgs...))
 		}
 		code := lifecycleError(stderr, err)
 		if action == "run" {
@@ -389,7 +367,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 		if p.NeedsConfirmation && !request.Apply {
-			if _, err := fmt.Fprintf(stdout, "Approve: soar deploy --service %s --yes\n", p.Service); err != nil {
+			if _, err := fmt.Fprintf(stdout, "Approve: %s\n", deploymentApproval(flags, manifestPath, server.Name, p.Service)); err != nil {
 				return lifecycleError(stderr, err)
 			}
 			return 0
@@ -432,7 +410,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	if action == "logs" {
 		if response.LogService != "" || response.LogContainer != "" {
-			if _, err := fmt.Fprintf(stdout, "Logs: service=%q container=%q candidate=%t\n", response.LogService, response.LogContainer, response.LogCandidate); err != nil {
+			if _, err := fmt.Fprintf(stderr, "Logs: service=%q container=%q candidate=%t\n", response.LogService, response.LogContainer, response.LogCandidate); err != nil {
 				return lifecycleError(stderr, err)
 			}
 		}

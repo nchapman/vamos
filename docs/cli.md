@@ -4,6 +4,67 @@ These commands complement deployment and recovery. They use the existing
 registered servers and project bindings; they do not introduce another daemon,
 registry requirement, or deployment state model.
 
+## CLI conventions
+
+Use `soar help COMMAND` (or `soar COMMAND --help`) for options, for example
+`soar help deploy` and `soar help service remove`. Group help also accepts `-h`.
+Successful help goes to stdout; usage errors and diagnostics go to stderr.
+
+Flags normally precede positional arguments. `init` accepts flags on either side
+of its app name; `service bind/remove` accepts the service name before flags.
+Use `--` before literal command arguments for `run` and `exec`. There is no implicit
+shell. Printed command suggestions quote arguments for POSIX shells, or PowerShell
+on Windows; they are not `cmd.exe` command strings.
+
+### Targets and recovery guidance
+
+Project commands select the saved server binding, or bind to the registered default
+on first contact. An explicit `--server` overrides only this invocation. Commands
+that support `--server NAME --app APP` can operate without loading a local manifest.
+`apps` is deliberately different: it ignores project bindings and uses the registered
+default unless `--server` is supplied.
+
+If missing or invalid YAML blocks observation or recovery, use an explicit target:
+
+```sh
+soar status --server home --app notes
+soar logs --server home --app notes --service web
+soar resume --server home --app notes OPERATION
+```
+
+These hints do not trust partially parsed YAML or choose an app identity for you.
+Deploy and `run` still require valid local inputs. Recovery hints preserve observation
+selectors but do not carry destructive approval into a placeholder-target command.
+
+Deploy approval suggestions include the resolved server and absolute manifest path,
+plus supplied executor, deadline, supersede and retained-data options. Binding advice
+is emitted only for a classified adoption refusal, not arbitrary build/SSH failures;
+it uses `-f` so the binding is saved beside the original manifest, not the current
+directory. Inspect the intended service identity before adopting it. An approval
+invocation rechecks current inputs and state; a preview is not an immutable transaction.
+
+### Output and exit contracts
+
+| Command | Machine-readable output |
+| --- | --- |
+| `apps --json` | Inventory object containing `entries` |
+| `status --json` | Status object, including recorded run metadata when selected |
+| `cleanup/destroy/service remove --json` | Full response envelope, including the plan |
+| `secrets stage/list --json` | Metadata response envelope; never secret values |
+| `server inspect --json` | Inspection report |
+| `server status --json` | Host status response |
+
+JSON goes to stdout without human headings. Errors go to stderr, not a JSON error
+object. Human inventory/status formats are intended for people, not stable parsers.
+Ordinary exit 0 means the requested operation, observation, or preview succeeded;
+it does not establish service health or mean that a preview was applied. Ordinary
+failures return 1 and usage errors return 2. A one-off `run` propagates its recorded
+command exit; exec/console exit and disconnect rules are described below.
+
+Snapshot service logs put workload records on stdout and target metadata on stderr.
+Streaming logs preserve Docker's stdout/stderr streams, with target diagnostics on
+stderr. `logs --run` is a bounded result/diagnostic view, not a raw workload stream.
+
 ## List apps
 
 ```sh
@@ -14,6 +75,8 @@ soar apps --server home --json
 
 `apps` queries the selected registered server, or the registered default. It does
 not require a manifest, inspect the current project's binding, or bind a project.
+Human output identifies the selected server name/SSH target for both empty and
+populated inventories; JSON output retains its existing shape.
 The inventory includes deployed apps, secret-only staged apps, and destroyed apps
 with retained metadata. JSON contains an `entries` array with app name, recorded
 phase, service names/count, retained-secret presence, volume-record count, and
@@ -63,7 +126,8 @@ soar logs --server home --app notes --candidate --follow --timeout 5m
 ```
 
 `-f` still selects the configuration file; only `--follow` means streaming.
-Without `--follow`, the existing bounded snapshot behavior is unchanged.
+Without `--follow`, workload content remains a bounded snapshot. Its target metadata
+is written to stderr, separately from the workload records on stdout.
 Following emits the selected container's last 1–1000 lines (default 100), then
 new timestamped output without the snapshot byte cap. Workload output goes to
 stdout/stderr; target and transport diagnostics go to stderr.

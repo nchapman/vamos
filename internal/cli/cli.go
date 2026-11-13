@@ -39,7 +39,7 @@ Usage:
   soar server status NAME [TARGET]     Read the host lifecycle journal
   soar server teardown [flags] NAME    Remove an unused owned installation
   soar version                          Print the build version
-  soar help                             Show this help
+  soar help [COMMAND [SUBCOMMAND]]      Show general or command-specific help
 
 Setup/teardown require explicit authorization. Deploy supports 1–8 built or prebuilt public/private
 services, with one optional named volume per service. Use deploy --service NAME for scoped updates;
@@ -64,11 +64,20 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 	switch args[0] {
 	case "help", "-h", "--help":
 		if len(args) != 1 {
-			return usageError(stderr, "help does not accept arguments")
+			if args[0] == "help" {
+				if command, ok := commandHelpArgs(args[1:]); ok {
+					return RunContext(ctx, command, stdin, stdout, stderr, version)
+				}
+			}
+			return usageError(stderr, "help accepts only a public command and optional subcommand, not flags or arguments")
 		}
 		fmt.Fprint(stdout, help)
 		return 0
 	case "version", "--version":
+		if args[0] == "version" && len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+			fmt.Fprintln(stdout, "Usage: soar version\nPrint the build version.")
+			return 0
+		}
 		if len(args) != 1 {
 			return usageError(stderr, "version does not accept arguments")
 		}
@@ -115,7 +124,7 @@ func validate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(flags.Output(), "Usage: soar validate [-f soar.yaml]")
 		flags.PrintDefaults()
 	}
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}

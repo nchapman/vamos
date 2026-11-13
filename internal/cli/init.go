@@ -59,13 +59,13 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 	health := flags.String("health", "/", "HTTP health path")
 	private := flags.Bool("private", false, "private service without HTTP")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: soar init APP --port PORT [-f soar.yaml] [--server NAME] [--service NAME] [--health PATH]\n       soar init APP --private [-f soar.yaml] [--server NAME] [--service NAME]")
+		fmt.Fprintln(flags.Output(), "Usage: soar init APP --port PORT [-f soar.yaml] [--server NAME] [--service NAME] [--health PATH]\n       soar init APP --private [-f soar.yaml] [--server NAME] [--service NAME]")
 	}
 	normalized, err := initArguments(args)
 	if err != nil {
 		return usageError(stderr, err.Error())
 	}
-	if err := flags.Parse(normalized); err != nil {
+	if err := parseFlags(flags, normalized, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}

@@ -54,8 +54,23 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 	command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
 	result, runErr := run(ctx, "ssh", arguments(target, command), payload)
 	decodeErr := decodeJSON(result.Stdout, &response)
+	if request.Action == "secrets-stage" || request.Action == "secrets-list" {
+		if decodeErr == nil && response.Version == 1 && response.Error != "" {
+			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {
+				return deploy.Response{Version: 1, ErrorCode: response.ErrorCode, Error: message}, errors.New(message)
+			}
+		}
+		if request.Action == "secrets-list" {
+			if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.ErrorCode != "" {
+				return deploy.Response{}, errors.New("secret metadata request failed")
+			}
+			// Multi-service metadata responses intentionally omit Status. An
+			// empty inventory also omits SecretVersions via its JSON omitempty.
+			return response, nil
+		}
+	}
 	if request.Action == "secrets-stage" {
-		if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.Secret == nil {
+		if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.ErrorCode != "" || response.Secret == nil {
 			return deploy.Response{}, errors.New("secret staging outcome unknown; inspect retained versions with soar secrets list")
 		}
 		return response, nil

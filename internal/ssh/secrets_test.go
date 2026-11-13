@@ -4,8 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"github.com/nchapman/soar/internal/deploy"
 	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/soar/internal/secrets"
 	"io"
 	"strings"
 	"testing"
@@ -41,6 +44,36 @@ func TestSecretWorkerAndSafeFailure(t *testing.T) {
 		}
 		if action == "secrets-stage" && (err == nil || strings.Contains(err.Error(), "canary-secret") || !strings.Contains(err.Error(), "unknown")) {
 			t.Fatalf("unsafe failure: %v", err)
+		}
+	}
+}
+
+func TestSecretListAcceptsMetadataWithoutDeploymentStatus(t *testing.T) {
+	for _, entries := range [][]secrets.Entry{nil, {{Name: "token", Version: strings.Repeat("b", 32), Latest: true}}} {
+		r := appRequest()
+		r.Action, r.Config, r.Operation = "secrets-list", nil, ""
+		// readMulti returns just the version inventory, not a status object.
+		body, err := json.Marshal(deploy.Response{Version: 1, SecretVersions: entries})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, disconnected := range []bool{false, true} {
+			response, err := runApp(context.Background(), "root@home", r, []byte("binary"), nil, func(context.Context, string, []string, []byte) (process.Result, error) {
+				var transportErr error
+				if disconnected {
+					transportErr = errors.New("canary transport failure")
+				}
+				return process.Result{Stdout: body}, transportErr
+			})
+			if disconnected {
+				if err == nil || strings.Contains(err.Error(), "canary") {
+					t.Fatalf("unsafe transport failure: %v", err)
+				}
+				continue
+			}
+			if err != nil || response.Status != nil || len(response.SecretVersions) != len(entries) {
+				t.Fatalf("valid metadata response rejected: %+v %v", response, err)
+			}
 		}
 	}
 }
@@ -89,5 +122,46 @@ func TestSecretActionArchive(t *testing.T) {
 		if _, err := actionArchive(nil, []byte("binary"), value, "secrets-stage"); err == nil {
 			t.Fatal("invalid value accepted")
 		}
+	}
+}
+
+func TestSecretRefusalEnvelopes(t *testing.T) {
+	for _, tc := range []struct {
+		action, body string
+		known        bool
+	}{
+		{"secrets-stage", `{"version":1,"error":"canary","error_code":"secret_version_limit"}`, true},
+		{"secrets-list", `{"version":1,"error":"canary","error_code":"secret_store_unsafe"}`, true},
+		{"secrets-list", `{"version":1,"error":"canary","error_code":"secret_version_limit"}`, false},
+		{"secrets-stage", `{"version":1,"error":"canary","error_code":"unknown"}`, false},
+		{"secrets-stage", `{"version":2,"error":"canary","error_code":"secret_version_limit"}`, false},
+		{"secrets-stage", `{"version":1,"error":"canary","error_code":"secret_version_limit"} {}`, false},
+		{"secrets-stage", `{"version":1,"error":"canary","error_code":"secret_version_limit"`, false},
+		{"secrets-stage", ``, false},
+	} {
+		t.Run(tc.action+tc.body, func(t *testing.T) {
+			r := appRequest()
+			r.Action = tc.action
+			r.Config = nil
+			r.Operation = ""
+			var input []byte
+			if r.Action == "secrets-stage" {
+				r.Operation = strings.Repeat("b", 32)
+				r.SecretName = "token"
+				input = []byte("value")
+			}
+			response, err := runApp(context.Background(), "root@home", r, []byte("binary"), input, func(context.Context, string, []string, []byte) (process.Result, error) {
+				return process.Result{Stdout: []byte(tc.body), Stderr: []byte("canary")}, errors.New("canary")
+			})
+			if err == nil || strings.Contains(err.Error(), "canary") || strings.Contains(response.Error, "canary") {
+				t.Fatalf("unsafe: %+v %v", response, err)
+			}
+			if (response.ErrorCode != "") != tc.known {
+				t.Fatalf("classification: %+v", response)
+			}
+			if !tc.known && r.Action == "secrets-stage" && !strings.Contains(err.Error(), "unknown") {
+				t.Fatal(err)
+			}
+		})
 	}
 }

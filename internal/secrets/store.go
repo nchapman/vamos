@@ -299,15 +299,15 @@ func (s Store) Stage(app, hostID, name, operation string, value []byte) (Entry, 
 	d := &state.data
 	if old, ok := d.Versions[operation]; ok {
 		if old.Name != name || old.Value != string(value) {
-			return Entry{}, errors.New("secret operation identity already has different content")
+			return Entry{}, ErrOperationConflict
 		}
 		return Entry{name, operation, d.Latest[name] == operation}, nil
 	}
 	if len(d.Versions) >= MaxVersions {
-		return Entry{}, errors.New("secret store retained-version budget exhausted (256 versions; no automatic deletion)")
+		return Entry{}, ErrVersionLimit
 	}
 	if _, ok := d.Latest[name]; !ok && len(d.Latest) >= MaxNames {
-		return Entry{}, errors.New("secret store name budget exhausted (64 names)")
+		return Entry{}, ErrNameLimit
 	}
 	d.Versions[operation] = diskValue{name, string(value)}
 	d.Latest[name] = operation
@@ -316,7 +316,7 @@ func (s Store) Stage(app, hostID, name, operation string, value []byte) (Entry, 
 		return Entry{}, invalid
 	}
 	if len(data) > MaxStoreBytes {
-		return Entry{}, errors.New("secret store serialized-size budget exhausted (1 MiB)")
+		return Entry{}, ErrSizeLimit
 	}
 	dir := s.directory()
 	if err := ancestors(dir); err != nil {
@@ -377,3 +377,12 @@ func syncDirectory(dir string) error {
 	defer d.Close()
 	return d.Sync()
 }
+
+var (
+	ErrOperationConflict = errors.New("secret operation identity already has different content")
+	ErrVersionLimit      = errors.New("secret store retained-version budget exhausted (256 versions; no automatic deletion)")
+	ErrNameLimit         = errors.New("secret store name budget exhausted (64 names)")
+	ErrSizeLimit         = errors.New("secret store serialized-size budget exhausted (1 MiB)")
+	ErrInvalidStore      = invalid
+	ErrUnsafeStore       = unsafe
+)

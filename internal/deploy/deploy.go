@@ -52,6 +52,7 @@ type Request struct {
 	Tail           int               `json:"tail,omitempty"`
 }
 type Response struct {
+	ErrorCode       string             `json:"error_code,omitempty"`
 	Apps            *AppList           `json:"apps,omitempty"`
 	RollbackPreview *RollbackPreview   `json:"rollback_preview,omitempty"`
 	Run             *RunResult         `json:"run,omitempty"`
@@ -534,6 +535,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	defer func() {
 		if err != nil {
 			resp.Error = diagnostic(err.Error())
+			resp.ErrorCode = ErrorCode(err)
 		}
 	}()
 	if err = ValidateRequest(r); err != nil {
@@ -563,7 +565,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		return
 	}
 	if mut && !ok {
-		err = errors.New("host mutation already active")
+		err = errHostBusy
 		return
 	}
 	if !mut && ok {
@@ -575,7 +577,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		return
 	}
 	if h == nil || h.Phase != "ready" || h.Config != r.Host || (r.HostIdentity != "" && r.HostIdentity != h.ID) {
-		err = errors.New("expected ready host identity does not match")
+		err = errHostIdentity
 		return
 	}
 	if r.Action == "apps" {
@@ -588,7 +590,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		return
 	}
 	if j != nil && (j.HostID != h.ID || (j.Phase != "destroyed" && j.URL != "https://"+r.App+"."+h.Config.Domain)) {
-		err = errors.New("foreign app journal")
+		err = errForeignApp
 		return
 	}
 	secretState, e := m.secretStore().Load(r.App, h.ID)
@@ -676,7 +678,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		return
 	}
 	if j != nil && (j.HostID != h.ID || (j.Phase != "destroyed" && j.URL != "https://"+r.App+"."+h.Config.Domain)) {
-		err = errors.New("foreign app journal")
+		err = errForeignApp
 		return
 	}
 	if err = m.maintenanceFence(r); err != nil {

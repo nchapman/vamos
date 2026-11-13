@@ -48,6 +48,15 @@ Values must be nonempty, single-line UTF-8 without CR, LF, or NUL, at most **819
 
 A lost staging response means the outcome is unknown. Record the printed operation/version ID and run `secrets list` for that target; the retained version list can confirm it even after another staging operation. Repeating the same internal operation with identical content is idempotent and never moves latest backward. Reusing that identity with different content fails. A new CLI staging invocation always creates a new version, even for identical plaintext. `resume` is for deployment/maintenance, not staging.
 
+Known refusals have value-free explanations: retained-version/name/size capacity,
+conflicting operation content, an active host mutation, mismatched ownership/identity,
+and unsafe or invalid secret-store metadata. These are accepted only from a complete,
+supported response and rendered from a local allowlist, never arbitrary remote text.
+Staging reports the operation/version and an inspection command. Missing, malformed,
+unsupported or otherwise unrecognized failure responses remain **outcome unknown**;
+a persistence error is not presented as proof that no value was committed. Unclassified
+list failures remain generic. No refusal authorizes automatic pruning or repair.
+
 ## Storage and exposure boundary
 
 Values are stored in `/var/lib/soar/secrets/<app>.json`, separate from release history. The store is executor-owned (root in production), with a private `0700` directory and regular `0600` files. Unsafe ownership/permissions, symlinks, malformed records, and mismatched app/host identities are refused. Each staging commit atomically replaces a synced file containing immutable versions and the latest pointers together; the directory is synced as well. Interrupted-write temporary files remain private and are not authoritative state.

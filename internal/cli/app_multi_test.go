@@ -91,7 +91,11 @@ func TestAppPrivateReadSelectors(t *testing.T) {
 		if code := appCommand(context.Background(), action, args, &out, &diagnostic, deps); code != 0 {
 			t.Fatalf("%s: %s", action, &diagnostic)
 		}
-		if !strings.Contains(out.String(), "backend") || strings.Contains(out.String(), "https://hello.") {
+		if action == "logs" {
+			if out.String() != "hello\n" || !strings.Contains(diagnostic.String(), "backend") {
+				t.Fatalf("stdout=%s stderr=%s", &out, &diagnostic)
+			}
+		} else if !strings.Contains(out.String(), "backend") || strings.Contains(out.String(), "https://hello.") {
 			t.Fatal(out.String())
 		}
 	}

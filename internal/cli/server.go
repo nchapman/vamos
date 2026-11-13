@@ -48,8 +48,8 @@ func inspectServer(ctx context.Context, args []string, stdout, stderr io.Writer,
 	flags.SetOutput(stderr)
 	asJSON := flags.Bool("json", false, "print the inspection report as JSON")
 	timeout := flags.Duration("timeout", 15*time.Second, "overall inspection deadline")
-	flags.Usage = func() { fmt.Fprint(flags.Output(), serverHelp) }
-	if err := flags.Parse(args); err != nil {
+	flags.Usage = func() { writeServerHelp(flags.Output(), "inspect", flags) }
+	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}

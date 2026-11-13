@@ -41,7 +41,7 @@ func terminalStreams(stdin io.Reader, stdout io.Writer) bool {
 func sessionCommand(ctx context.Context, action string, args []string, stdin io.Reader, stdout, stderr io.Writer, deps appDeps, terminal func(io.Reader, io.Writer) bool) int {
 	flags := flag.NewFlagSet(action, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.Usage = func() { fmt.Fprint(stderr, sessionHelp) }
+	flags.Usage = func() { fmt.Fprint(flags.Output(), sessionHelp) }
 	filename := flags.String("f", config.DefaultFile, "app configuration")
 	serverFlag := flags.String("server", "", "registered server override")
 	appFlag := flags.String("app", "", "explicit app outside a project; requires --server")
@@ -54,7 +54,7 @@ func sessionCommand(ctx context.Context, action string, args []string, stdin io.
 	flags.BoolVar(&interactive, "i", false, "forward stdin; exec only")
 	flags.BoolVar(&tty, "tty", false, "allocate terminal; requires -i; exec only")
 	flags.BoolVar(&tty, "t", false, "allocate terminal; requires -i; exec only")
-	if err := flags.Parse(args); err != nil {
+	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}

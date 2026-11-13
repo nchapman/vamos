@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import select
+import shlex
 import signal
 import struct
 import subprocess
@@ -126,6 +127,54 @@ def follow_check(h, app, host, directory):
         process.stderr.close()
 
 
+def dx_check(h, app, host, image):
+    # Exercise printed guidance from a different cwd and a quoted manifest path.
+    project = h.work / (app + " user's project")
+    project.mkdir()
+    manifest = project / 'service config.yaml'
+    manifest.write_text(f'app: {app}\nservices:\n  web:\n    image: {json.dumps(image)}\n    update: manual\n    http: {{port: 8080, health: /}}\n')
+    h.command(['chown', '-R', 'soartest:soartest', project], user='root')
+    refused = h.cli('deploy', '-f', manifest, '--server', 'local', '--service', 'web',
+                    cwd=h.work, expect_error='explicitly adopt only the intended service')
+    bind_line = next(line.strip() for line in refused.stderr.decode().splitlines()
+                     if line.strip().startswith('soar service bind '))
+    binding = shlex.split(bind_line)
+    assert binding == ['soar', 'service', 'bind', 'web', '-f', str(manifest), '--server', 'local']
+    h.cli(*binding[1:], cwd=h.work)
+    assert (project / '.soar').is_dir()
+    preview = h.cli('deploy', '-f', manifest, '--server', 'local', '--service', 'web', cwd=h.work)
+    approval = next(line.removeprefix('Approve: ') for line in preview.stdout.decode().splitlines()
+                    if line.startswith('Approve: '))
+    assert shlex.split(approval) == ['soar', 'deploy', '--service', 'web', '--yes', '-f', str(manifest), '--server', 'local']
+    # Do not approve the preview: this check must leave the running service alone.
+    inventory = h.cli('apps', '--server', 'local').stdout
+    assert b'local (' in inventory and b'recorded inventory (not live health)' in inventory
+    h.https(host, '/dx-snapshot')
+    snapshot = h.cli('logs', '--server', 'local', '--app', app, '--tail', '1')
+    assert b'/dx-snapshot' in snapshot.stdout and b'Logs:' not in snapshot.stdout
+    assert b'Logs:' in snapshot.stderr
+    broken = project / 'broken.yaml'
+    broken.write_text('invalid: [')
+    recovery = h.cli('status', '-f', broken, cwd=h.work, expect_error='--server SERVER --app APP')
+    assert b'Local configuration could not be loaded' in recovery.stderr
+    h.cli('help', 'service', 'remove')
+    h.cli('help', 'secrets', 'stage')
+    # Known, value-free refusal through the real store/executor/SSH/CLI path.
+    # Fault injection is restricted to this disposable app and always restored.
+    canary = ('dx-private-' + uuid.uuid4().hex).encode()
+    h.cli('secrets', 'stage', '--server', 'local', '--app', app, '--stdin', 'dx-secret', input=canary)
+    store = Path('/var/lib/soar/secrets') / (app + '.json')
+    try:
+        h.command(['chmod', '0644', store], user='root')
+        refusal = h.cli('secrets', 'list', '--server', 'local', '--app', app,
+                        expect_error='Secret store ownership, permissions, or file type is unsafe')
+        assert canary not in refusal.stdout + refusal.stderr
+        assert b'outcome unknown' not in refusal.stderr
+    finally:
+        h.command(['chmod', '0600', store], user='root')
+    h.cli('secrets', 'list', '--server', 'local', '--app', app, '--json')
+
+
 def run(h):
     app = 'cli-' + uuid.uuid4().hex[:8]
     directory = h.work / app
@@ -151,6 +200,7 @@ HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
     h.cli('deploy', cwd=directory)
     status = h.status(app)
     identity = status['services']['web']['container']
+    dx_check(h, app, host, status['services']['web']['image'])
     inventory = json.loads(h.cli('apps', '--server', 'local', '--json').stdout)['entries']
     entry = next(value for value in inventory if value['app'] == app)
     assert entry['phase'] == 'ready' and entry['services'] == ['web']
@@ -183,6 +233,7 @@ HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
     result = dict(passed=True, app=app, scenarios=[
         'init validates, binds default and refuses overwrite',
         'apps lists deployed and destroyed/retained metadata',
+        'DX guidance preserves manifest/target, inventory identifies its server, log metadata stays on stderr, and known secret refusals stay value-free',
         'exec preserves argv, 256 KiB binary stdin/output, user, cwd and separate stderr',
         'exec propagates known exits and treats SSH 255 as ambiguous',
         'console rejects pipes; real PTY preserves Ctrl-C, resize, shell exit and terminal modes',

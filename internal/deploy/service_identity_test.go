@@ -24,6 +24,8 @@ func TestServiceIdentityRejectsUnboundAndStaleDeployments(t *testing.T) {
 		r := Request{Partial: true, Operation: strings.Repeat("3", 32), Bindings: map[string]string{"orders": id}}
 		if err := prepareServiceIdentities(r, old, identityNext()); err == nil {
 			t.Fatalf("accepted binding %q", id)
+		} else if ErrorCode(err) != CodeBindingRequired {
+			t.Fatalf("binding refusal lost its classification: %v", err)
 		}
 	}
 	r := Request{Partial: true, Operation: strings.Repeat("3", 32), Bindings: map[string]string{"orders": old.ServiceStates["orders"].Incarnation}}
