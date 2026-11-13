@@ -27,9 +27,20 @@ func maintenanceStatus(j *journal, domain string) Status {
 				continue
 			}
 			status := ServiceStatus{Phase: slot.Phase, Unavailable: slot.Unavailable, DataMayHaveChanged: slot.DataMayHaveChanged}
+			if j.Config != nil {
+				status.DesiredInstances = j.Config.Services[name].ReplicaCount()
+			}
 			if r := slot.Current; r != nil {
 				status.Kind = "private"
 				status.Operation, status.Container, status.Image, status.Port = r.Operation, r.Container, r.Image, r.Port
+				refs := runtimeRefs(r)
+				status.CurrentInstances = len(refs)
+				for _, ref := range refs {
+					status.Instances = append(status.Instances, InstanceStatus{Ordinal: max(1, ref.Ordinal), Container: ref.Container, Port: *ref.Port})
+				}
+				if len(refs) == 1 {
+					status.Container, status.Port = refs[0].Container, *refs[0].Port
+				}
 				if r.Config != nil && r.Config.HTTP != nil {
 					status.Kind = "public"
 					status.URL = ServiceURL(j.App, name, domain)
@@ -37,6 +48,12 @@ func maintenanceStatus(j *journal, domain string) Status {
 			}
 			if slot.Candidate != nil {
 				status.Candidate = slot.Candidate.Container
+				if refs := runtimeRefs(slot.Candidate); len(refs) == 1 {
+					status.Candidate = refs[0].Container
+				}
+				for _, ref := range runtimeRefs(slot.Candidate) {
+					status.CandidateInstances = append(status.CandidateInstances, InstanceStatus{Ordinal: max(1, ref.Ordinal), Container: ref.Container, Port: *ref.Port})
+				}
 			}
 			s.Services[name] = status
 			if name == "web" {
@@ -80,7 +97,14 @@ var maintenanceFile = regexp.MustCompile(`^[0-9a-f]{32}\.(run\.json|context\.tar
 
 // Empty Service is exclusively the legacy identity. Names or prefixes alone
 // never establish ownership; callers must also prove host/app/operation labels.
-func maintenanceContainerIdentity(j *journal, name, service, op string) bool {
+func maintenanceContainerIdentity(j *journal, name, service, op string, replica ...int) bool {
+	ordinal := 0
+	if len(replica) > 0 {
+		ordinal = replica[0]
+	}
+	if ordinal != 0 {
+		return j.Version == 8 && ordinal > 0 && ordinal <= 8 && service != "" && appstate.ValidName(service) && operation.MatchString(op) && name == instanceName(j.App, service, op, ordinal)
+	}
 	return operation.MatchString(op) && (service == "" || appstate.ValidName(service)) &&
 		(name == containerName(j.App, service, op) || (service != "" && name == "soar-run-"+op))
 }
@@ -145,7 +169,7 @@ func validateMaintenance(j *journal) error {
 	}
 	seen := map[string]bool{}
 	for _, v := range w.Containers {
-		if !operation.MatchString(v.Operation) || !maintenanceContainerIdentity(j, v.Name, v.Service, v.Operation) || !fullResourceID.MatchString(v.ID) || !fullResourceID.MatchString(v.NetworkID) || !imageID.MatchString(v.Image) || seen[v.ID] {
+		if !operation.MatchString(v.Operation) || !maintenanceContainerIdentity(j, v.Name, v.Service, v.Operation, v.Replica) || !fullResourceID.MatchString(v.ID) || !fullResourceID.MatchString(v.NetworkID) || !imageID.MatchString(v.Image) || seen[v.ID] {
 			return bad
 		}
 		seen[v.ID] = true
@@ -322,10 +346,8 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 					// Current slots have known immutable config. Historical
 					// snapshots used for removal need only resource ownership
 					// proof and never pass through this status inspection.
-					v, x := m.multiInspect(c, j, slot.Current, false, true)
 					status := s.Services[name]
-					status.Running = x == nil && v.State.Running
-					status.Available = status.Running && runtimeRunning(v) && !slot.CurrentRetired && !slot.Unavailable && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
+					x := m.observeServiceInstances(c, j, slot, &status)
 					s.Services[name] = status
 					s.Running = s.Running && status.Running
 					if x != nil && j.Phase != "destroying" && s.LastError == "" {

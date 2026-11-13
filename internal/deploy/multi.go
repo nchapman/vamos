@@ -126,7 +126,7 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 			return resp, errors.New("this app requires a current client with a captured multi-service build bundle")
 		}
 		selected := selectedServices(r)
-		if supportsServiceIdentities(j) && !r.Partial {
+		if supportsServiceIdentity(j) && !r.Partial {
 			return resp, errors.New("partial deployment required for version 7 app")
 		}
 		if r.Supersede != "" && j != nil && (j.Scope != r.Service || !slices.Equal(capturedSelection(j), selected)) {
@@ -265,8 +265,10 @@ func (m *Manager) supersedeMulti(ctx context.Context, j *journal) error {
 			}
 		}
 		if s.Candidate != nil {
-			if retainedByEffectiveOrSnapshot(j, s.Candidate.Container) {
-				return errors.New("candidate aliases a retained effective version")
+			for _, ref := range runtimeRefs(s.Candidate) {
+				if retainedByEffectiveOrSnapshot(j, ref.Container) {
+					return errors.New("candidate aliases a retained effective version")
+				}
 			}
 			if err := m.multiDiscard(ctx, j, s.Candidate, s.Phase == "aliasing"); err != nil {
 				return fmt.Errorf("service %s candidate cleanup: %w", name, err)
@@ -278,14 +280,14 @@ func (m *Manager) supersedeMulti(ctx context.Context, j *journal) error {
 
 func retainedByEffectiveOrSnapshot(j *journal, name string) bool {
 	for _, s := range j.ServiceStates {
-		if (s.Current != nil && s.Current.Container == name) || (s.Retiring != nil && s.Retiring.Container == name) {
+		if releaseHas(s.Current, name) || releaseHas(s.Retiring, name) {
 			return true
 		}
 	}
 	for _, snapshot := range []*completedRelease{j.Completed, j.PreviousCompleted} {
 		if snapshot != nil {
 			for _, r := range snapshot.Services {
-				if r.Container == name {
+				if releaseHas(r, name) {
 					return true
 				}
 			}
@@ -364,17 +366,26 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 			image := selectedImage(j, name)
 			unchanged := s.Current != nil && s.Current.Service != "" && !s.CurrentRetired && s.Current.Image == image && reflect.DeepEqual(*s.Current.Config, cfg) && maps.Equal(s.Current.SecretRefs, s.SecretRefs)
 			if unchanged {
-				v, e := m.multiInspect(ctx, j, s.Current, false, true)
-				if e != nil {
-					return fmt.Errorf("service %s: %w", name, e)
+				for _, ref := range runtimeRefs(s.Current) {
+					v, e := m.instanceInspect(ctx, j, ref, false, true)
+					if e != nil {
+						return fmt.Errorf("service %s: %w", name, e)
+					}
+					unchanged = unchanged && runtimeRunning(v) && v.HostConfig.RestartPolicy.Name == "unless-stopped"
 				}
-				unchanged = v.State.Running && v.HostConfig.RestartPolicy.Name == "unless-stopped"
 			}
 			if unchanged {
 				s.Phase = "ready"
 				continue
 			}
 			s.Candidate = &release{VolumeID: s.VolumeID, Service: name, Config: &cfg, Container: containerName(j.App, name, j.Operation), Image: image, Operation: j.Operation, SecretRefs: s.SecretRefs}
+			// New v8 identities are indexed, including singleton groups.
+			if j.Version == 8 {
+				s.Candidate.Container = ""
+				for ordinal := 1; ordinal <= cfg.ReplicaCount(); ordinal++ {
+					s.Candidate.Instances = append(s.Candidate.Instances, releaseInstance{Ordinal: ordinal, Container: instanceName(j.App, name, j.Operation, ordinal)})
+				}
+			}
 			s.Phase = "prepared"
 		}
 		j.ServiceStates = planned
@@ -407,12 +418,8 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 		if j.ServiceStates[name].Skipped {
 			continue
 		}
-		v, err := m.multiInspect(ctx, j, j.ServiceStates[name].Current, false, true)
-		if err != nil {
+		if err := m.groupRunning(ctx, j, j.ServiceStates[name].Current); err != nil {
 			return fmt.Errorf("service %s: %w", name, err)
-		}
-		if !runtimeRunning(v) || v.HostConfig.RestartPolicy.Name != "unless-stopped" {
-			return fmt.Errorf("service %s: effective version is not running", name)
 		}
 	}
 	recordServiceHistory(j)

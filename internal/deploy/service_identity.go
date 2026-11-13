@@ -75,7 +75,10 @@ func upgradeServiceJournal(j *journal) {
 
 func prepareServiceIdentities(r Request, old, next *journal) error {
 	if !r.Partial {
-		if supportsServiceIdentities(old) {
+		if replicaConfig(next.Config) {
+			return errors.New("replicas require a current partial-manifest client")
+		}
+		if supportsServiceIdentity(old) {
 			return errors.New("this app requires service bindings and a current partial-manifest client")
 		}
 		return nil
@@ -84,7 +87,7 @@ func prepareServiceIdentities(r Request, old, next *journal) error {
 		return errors.New("bound host identity changed; explicitly bind to the intended host")
 	}
 	next.Version = 7
-	if old != nil && old.Version == 8 {
+	if replicaConfig(next.Config) || (old != nil && old.Version == 8) {
 		next.Version = 8
 	}
 	if old != nil && old.Phase != "destroyed" {

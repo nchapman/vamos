@@ -7,7 +7,7 @@ import "reflect"
 // is not a completed release: its recovery baseline remains Completed, not the
 // mixed Current slots. Unchanged services retain their independent predecessor.
 func recordServiceHistory(j *journal) {
-	if j == nil || j.Version < 7 || j.Completed == nil {
+	if !supportsServiceIdentity(j) || j.Completed == nil {
 		return
 	}
 	for name, s := range j.ServiceStates {

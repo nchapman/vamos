@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/nchapman/soar/internal/config"
@@ -189,9 +188,12 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		if r == nil {
 			return nil
 		}
-		port, e := strconv.Atoi(r.Port)
-		if e != nil || port < 1 || port > 65535 || strconv.Itoa(port) != r.Port {
-			return errors.New("invalid public route port")
+		upstreams := []string{}
+		for _, ref := range runtimeRefs(r) {
+			if !validPort(*ref.Port) {
+				return errors.New("invalid public route port")
+			}
+			upstreams = append(upstreams, "127.0.0.1:"+*ref.Port)
 		}
 		hosts, err := serviceHostnames(app, service, domain, r.Config)
 		if err != nil {
@@ -201,7 +203,7 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 			if _, exists := routes[host]; exists {
 				return errors.New("duplicate public route")
 			}
-			routes[host] = r.Port
+			routes[host] = strings.Join(upstreams, " ")
 		}
 		return nil
 	}
@@ -272,7 +274,7 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 			out += fmt.Sprintf("\n%s {\n\trespond \"Service unavailable\" 503\n}\n", k)
 			continue
 		}
-		out += fmt.Sprintf("\n%s {\n\treverse_proxy 127.0.0.1:%s\n}\n", k, routes[k])
+		out += fmt.Sprintf("\n%s {\n\treverse_proxy %s\n}\n", k, routes[k])
 	}
 	return out, nil
 }

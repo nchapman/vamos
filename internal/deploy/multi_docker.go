@@ -108,7 +108,19 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 }
 
 func multiIdentity(j *journal, r *release) error {
-	if r == nil || r.Config == nil || !operation.MatchString(r.Operation) || !imageID.MatchString(r.Image) || (r.Service != "" && (!label.MatchString(r.Service) || len(r.Service) > 63)) || r.Container != containerName(j.App, r.Service, r.Operation) {
+	if r == nil {
+		return errors.New("missing runtime")
+	}
+	for _, ref := range runtimeRefs(r) {
+		if err := instanceIdentity(j, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func instanceIdentity(j *journal, r runtimeRef) error {
+	if r.release == nil || r.Config == nil || !operation.MatchString(r.Operation) || !imageID.MatchString(r.Image) || (r.Service != "" && (!label.MatchString(r.Service) || len(r.Service) > 63)) || r.Container != instanceName(j.App, r.Service, r.Operation, r.Ordinal) || validateInstances(j, r.release) != nil {
 		return errors.New("invalid captured runtime identity")
 	}
 	if !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) {
@@ -127,12 +139,12 @@ func multiIdentity(j *journal, r *release) error {
 	return nil
 }
 
-func multiAliasing(j *journal, r *release) bool {
-	if j.Phase != "updating" || r == nil || r.Operation != j.Operation || r.Service == "" || r.Config == nil || r.Config.HTTP == nil {
+func multiAliasing(j *journal, r runtimeRef) bool {
+	if j.Phase != "updating" || r.release == nil || r.Operation != j.Operation || r.Service == "" || r.Config == nil || r.Config.HTTP == nil {
 		return false
 	}
 	s := j.ServiceStates[r.Service]
-	return s != nil && s.Phase == "aliasing" && s.Candidate != nil && s.Candidate.Container == r.Container && s.Candidate.Operation == r.Operation
+	return s != nil && s.Phase == "aliasing" && s.Candidate != nil && releaseHas(s.Candidate, r.Container) && s.Candidate.Operation == r.Operation
 }
 
 type multiEndpoint struct{ Aliases []string }
@@ -168,17 +180,17 @@ func validateMultiEndpoint(j *journal, v *inspection) error {
 	service := v.Config.Labels["soar.service"]
 	op := v.Config.Labels["soar.operation"]
 	name := strings.TrimPrefix(v.Name, "/")
-	if !operation.MatchString(op) || (service == "" && hasServiceLabel(v.Config.Labels)) || (service != "" && !label.MatchString(service)) || name != containerName(j.App, service, op) {
+	if !operation.MatchString(op) || (service == "" && hasServiceLabel(v.Config.Labels)) || (service != "" && !label.MatchString(service)) || name == "" {
 		return errors.New("foreign container on app network")
 	}
 	var ref *release
 	for _, r := range retainedReleases(j) {
-		if r.Container == name && r.Operation == op && r.Service == service {
+		if releaseHas(r, name) && r.Operation == op && r.Service == service {
 			ref = r
 			break
 		}
 	}
-	if ref == nil {
+	if ref == nil || !runtimeLabelMatches(ref, name, v.Config.Labels) {
 		return errors.New("unrecorded container on app network")
 	}
 	if v.Config.Image != ref.Image {
@@ -192,11 +204,11 @@ func validateMultiEndpoint(j *journal, v *inspection) error {
 	slot := j.ServiceStates[service]
 	if slot != nil {
 		for _, r := range []*release{slot.Current, slot.Retiring} {
-			if r != nil && r.Container == name {
+			if releaseHas(r, name) {
 				allowed = true
 			}
 		}
-		if r := slot.Candidate; r != nil && r.Container == name && r.Config != nil {
+		if r := slot.Candidate; releaseHas(r, name) && r.Config != nil {
 			allowed = r.Config.HTTP == nil || slot.Phase == "aliasing" || slot.Phase == "promoting"
 		}
 	}
@@ -234,8 +246,8 @@ func validRuntimePort(port string) bool {
 // Inspection deliberately accepts restart=no for retirement recovery. Adoption,
 // observation and readiness separately require unless-stopped. Detachment is
 // authorized only by the recorded public-candidate aliasing phase.
-func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allowDetached, requireAlias bool) (*inspection, error) {
-	if err := multiIdentity(j, r); err != nil {
+func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef, allowDetached, requireAlias bool) (*inspection, error) {
+	if err := instanceIdentity(j, r); err != nil {
 		return nil, err
 	}
 	if allowDetached && !multiAliasing(j, r) {
@@ -251,7 +263,7 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 	if err := verifyResources(v, r.Config.Resources); err != nil {
 		return nil, err
 	}
-	if err := m.verifyRuntimeMounts(ctx, j, r, v); err != nil {
+	if err := m.verifyRuntimeMounts(ctx, j, r.release, v); err != nil {
 		return nil, err
 	}
 	attached := len(v.NetworkSettings.Networks) == 1 && v.NetworkSettings.Networks[network(j)] != nil
@@ -297,6 +309,9 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 	labels["soar.host"] = j.HostID
 	labels["soar.app"] = j.App
 	labels["soar.operation"] = r.Operation
+	if r.Ordinal > 0 {
+		labels["soar.replica"] = strconv.Itoa(r.Ordinal)
+	}
 	if r.Service != "" {
 		labels["soar.service"] = r.Service
 	}
@@ -341,7 +356,7 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 		return nil, errors.New("runtime restart policy mismatch")
 	}
 	if r.Config.HTTP == nil {
-		if r.Port != "" || r.PublishPort != "" || len(v.HostConfig.PortBindings) != 0 {
+		if *r.Port != "" || *r.PublishPort != "" || len(v.HostConfig.PortBindings) != 0 {
 			return nil, errors.New("private service publishes ports")
 		}
 		for _, ports := range v.NetworkSettings.Ports {
@@ -358,14 +373,14 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 		if len(v.HostConfig.PortBindings) != 1 || len(ports) != 1 || ports[0].HostIP != "127.0.0.1" {
 			return nil, errors.New("runtime published ports mismatch")
 		}
-		if r.Service != "" && !validRuntimePort(r.PublishPort) {
+		if r.Service != "" && !validRuntimePort(*r.PublishPort) {
 			return nil, errors.New("missing explicit publish intent")
 		}
-		if r.PublishPort != "" {
-			if !validRuntimePort(r.PublishPort) || ports[0].HostPort != r.PublishPort || (r.Port != "" && r.Port != r.PublishPort) {
+		if *r.PublishPort != "" {
+			if !validRuntimePort(*r.PublishPort) || ports[0].HostPort != *r.PublishPort || (*r.Port != "" && *r.Port != *r.PublishPort) {
 				return nil, errors.New("runtime published port changed")
 			}
-		} else if r.Service != "" || !validRuntimePort(r.Port) || (ports[0].HostPort != "" && ports[0].HostPort != "0" && ports[0].HostPort != r.Port) {
+		} else if r.Service != "" || !validRuntimePort(*r.Port) || (ports[0].HostPort != "" && ports[0].HostPort != "0" && ports[0].HostPort != *r.Port) {
 			return nil, errors.New("legacy published port not proven")
 		}
 		for k, ports := range v.NetworkSettings.Ports {
@@ -378,9 +393,9 @@ func (m *Manager) multiInspect(ctx context.Context, j *journal, r *release, allo
 		// separately rejects Restarting. Inspection must still permit retirement.
 		if attached && v.State.Running && !v.State.Restarting {
 			effective := v.NetworkSettings.Ports[key]
-			expected := r.PublishPort
+			expected := *r.PublishPort
 			if expected == "" {
-				expected = r.Port
+				expected = *r.Port
 			}
 			if len(effective) != 1 || effective[0].HostIP != "127.0.0.1" || effective[0].HostPort != expected {
 				return nil, errors.New("runtime effective port changed")
@@ -405,27 +420,23 @@ func (m *Manager) multiEnsureCandidate(ctx context.Context, j *journal, r *relea
 
 // Volume candidates are created stopped and inspected before route withdrawal
 // or retiring a writer. The same captured identity is later started explicitly.
-func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release, prepareOnly bool) error {
-	if err := multiIdentity(j, r); err != nil {
+func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runtimeRef, prepareOnly bool) error {
+	if err := instanceIdentity(j, r); err != nil {
 		return err
 	}
 	if err := m.requireResourceSupport(ctx, r.Config.Resources); err != nil {
 		return err
 	}
 	slot := j.ServiceStates[r.Service]
-	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || slot.Candidate.Container != r.Container || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (r.Config.Volume == nil || slot.Phase != "prepared")) {
+	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || !releaseHas(slot.Candidate, r.Container) || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (r.Config.Volume == nil || slot.Phase != "prepared")) {
 		return errors.New("candidate creation requires starting intent")
 	}
 	if !prepareOnly && (r.Config.HTTP == nil || r.Config.Volume != nil) && slot.Current != nil {
 		if !slot.CurrentRetired {
 			return errors.New("private retirement intent missing")
 		}
-		old, err := m.multiInspect(ctx, j, slot.Current, false, true)
-		if err != nil {
+		if err := m.groupStopped(ctx, j, slot.Current); err != nil {
 			return err
-		}
-		if old.State.Running || old.State.Restarting || old.HostConfig.RestartPolicy.Name != "no" {
-			return errors.New("private retirement not proven")
 		}
 	}
 	// A candidate can never be an effective/retired identity, even if a corrupt
@@ -452,10 +463,10 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 	}
 	if !exists {
 		if r.Config.HTTP != nil {
-			if r.Port != "" {
+			if *r.Port != "" {
 				return errors.New("recorded candidate endpoint missing")
 			}
-			if r.PublishPort == "" {
+			if *r.PublishPort == "" {
 				allocate := m.AllocatePort
 				if allocate == nil {
 					allocate = allocatePort
@@ -464,16 +475,16 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 				if err != nil || !validRuntimePort(port) {
 					return errors.New("allocate candidate port failed")
 				}
-				r.PublishPort = port
+				*r.PublishPort = port
 				if m.save(j) != nil {
-					r.PublishPort = ""
+					*r.PublishPort = ""
 					return errors.New("save candidate publish intent failed")
 				}
 			}
-			if !validRuntimePort(r.PublishPort) {
+			if !validRuntimePort(*r.PublishPort) {
 				return errors.New("invalid candidate publish intent")
 			}
-		} else if r.Port != "" || r.PublishPort != "" {
+		} else if *r.Port != "" || *r.PublishPort != "" {
 			return errors.New("private service publishes ports")
 		}
 		args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j)}
@@ -482,11 +493,14 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 		}
 		args = append(args, resourceArgs(r.Config.Resources)...)
 		if r.Config.HTTP != nil {
-			args = append(args, "--publish", fmt.Sprintf("127.0.0.1:%s:%d", r.PublishPort, r.Config.HTTP.Port))
+			args = append(args, "--publish", fmt.Sprintf("127.0.0.1:%s:%d", *r.PublishPort, r.Config.HTTP.Port))
 		} else {
 			args = append(args, "--network-alias", r.Service)
 		}
 		args = append(args, "--label", "soar.host="+j.HostID, "--label", "soar.app="+j.App, "--label", "soar.operation="+r.Operation, "--label", "soar.service="+r.Service)
+		if r.Ordinal > 0 {
+			args = append(args, "--label", "soar.replica="+strconv.Itoa(r.Ordinal))
+		}
 		keys := make([]string, 0, len(r.Config.Env))
 		for k := range r.Config.Env {
 			keys = append(keys, k)
@@ -497,11 +511,11 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 		}
 		args = append(args, r.Image)
 		args = append(args, r.Config.Command...)
-		if m.runContainer(ctx, j, r, args) != nil {
+		if m.runContainer(ctx, j, r.release, args) != nil {
 			return errors.New("create candidate failed")
 		}
 	}
-	v, err := m.multiInspect(ctx, j, r, false, r.Config.HTTP == nil)
+	v, err := m.instanceInspect(ctx, j, r, false, r.Config.HTTP == nil)
 	if err != nil {
 		return err
 	}
@@ -512,7 +526,7 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 		return nil
 	}
 	if r.Config.Volume != nil {
-		if err := m.checkVolumeWriters(ctx, j, r); err != nil {
+		if err := m.checkVolumeWriters(ctx, j, r.release); err != nil {
 			return err
 		}
 		if !r.ExecutionIntent {
@@ -529,7 +543,7 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 			if _, err := m.cmd(ctx, "docker", "update", "--restart=unless-stopped", r.Container); err != nil {
 				return err
 			}
-			v, err = m.multiInspect(ctx, j, r, false, r.Config.HTTP == nil)
+			v, err = m.instanceInspect(ctx, j, r, false, r.Config.HTTP == nil)
 			if err != nil {
 				return err
 			}
@@ -542,7 +556,7 @@ func (m *Manager) multiEnsureRuntime(ctx context.Context, j *journal, r *release
 		if _, err := m.cmd(ctx, "docker", "start", r.Container); err != nil {
 			return errors.New("start candidate failed")
 		}
-		v, err = m.multiInspect(ctx, j, r, false, r.Config.HTTP == nil)
+		v, err = m.instanceInspect(ctx, j, r, false, r.Config.HTTP == nil)
 		if err != nil {
 			return err
 		}
@@ -557,8 +571,8 @@ func runtimeRunning(v *inspection) bool {
 	return v.State.Running && !v.State.Restarting && !v.State.Paused && !v.State.Dead
 }
 
-func (m *Manager) multiHealthy(ctx context.Context, j *journal, r *release) error {
-	if err := multiIdentity(j, r); err != nil {
+func (m *Manager) instanceHealthy(ctx context.Context, j *journal, r runtimeRef) error {
+	if err := instanceIdentity(j, r); err != nil {
 		return err
 	}
 	if r.Config.HTTP == nil {
@@ -567,19 +581,19 @@ func (m *Manager) multiHealthy(ctx context.Context, j *journal, r *release) erro
 	ctx, cancel := context.WithTimeout(ctx, m.HealthTimeout)
 	defer cancel()
 	slot := j.ServiceStates[r.Service]
-	initial := slot != nil && slot.Candidate != nil && slot.Candidate.Container == r.Container && (slot.Phase == "starting" || slot.Phase == "aliasing")
+	initial := slot != nil && slot.Candidate != nil && releaseHas(slot.Candidate, r.Container) && (slot.Phase == "starting" || slot.Phase == "aliasing")
 	requireAlias := r.Service != "" && !initial
 	for {
-		v, err := m.multiInspect(ctx, j, r, false, requireAlias)
+		v, err := m.instanceInspect(ctx, j, r, false, requireAlias)
 		if err != nil {
 			return err
 		}
 		if !runtimeRunning(v) || v.HostConfig.RestartPolicy.Name != "unless-stopped" {
 			return errors.New("candidate is not running")
 		}
-		port := r.PublishPort
+		port := *r.PublishPort
 		if port == "" {
-			port = r.Port
+			port = *r.Port
 		}
 		req, err := http.NewRequestWithContext(ctx, "GET", "http://127.0.0.1:"+port+r.Config.HTTP.Health, nil)
 		if err != nil {
@@ -592,14 +606,14 @@ func (m *Manager) multiHealthy(ctx context.Context, j *journal, r *release) erro
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				// Reinspect after HTTP: a successful response cannot conceal changed ports
 				// or a process that restarted while handling the request.
-				after, err := m.multiInspect(ctx, j, r, false, requireAlias)
+				after, err := m.instanceInspect(ctx, j, r, false, requireAlias)
 				if err != nil {
 					return err
 				}
 				if !runtimeRunning(after) || after.HostConfig.RestartPolicy.Name != "unless-stopped" || after.RestartCount != v.RestartCount || after.State.StartedAt != v.State.StartedAt {
 					return errors.New("candidate changed during readiness")
 				}
-				r.Port = port
+				*r.Port = port
 				return nil
 			}
 		}
@@ -613,11 +627,11 @@ func (m *Manager) multiHealthy(ctx context.Context, j *journal, r *release) erro
 // Explicit loopback publish bindings survive reconnect on the supported daemon.
 // Endpoint IPs/connections may change; old/new readiness-qualified aliases can
 // overlap briefly. No startup alias or DNS rollback guarantee is made.
-func (m *Manager) multiAdmitAlias(ctx context.Context, j *journal, r *release) error {
+func (m *Manager) instanceAdmitAlias(ctx context.Context, j *journal, r runtimeRef) error {
 	if !multiAliasing(j, r) {
 		return errors.New("alias admission requires recorded intent")
 	}
-	v, err := m.multiInspect(ctx, j, r, true, false)
+	v, err := m.instanceInspect(ctx, j, r, true, false)
 	if err != nil {
 		return err
 	}
@@ -625,13 +639,13 @@ func (m *Manager) multiAdmitAlias(ctx context.Context, j *journal, r *release) e
 		if _, err = m.cmd(ctx, "docker", "network", "connect", network(j), r.Container); err != nil {
 			return errors.New("reconnect candidate for readiness failed")
 		}
-		v, err = m.multiInspect(ctx, j, r, false, false)
+		v, err = m.instanceInspect(ctx, j, r, false, false)
 		if err != nil {
 			return err
 		}
 	}
 	if !hasAlias(v, network(j), r.Service) {
-		if err = m.multiHealthy(ctx, j, r); err != nil {
+		if err = m.instanceHealthy(ctx, j, r); err != nil {
 			return err
 		}
 		if _, err = m.cmd(ctx, "docker", "network", "disconnect", network(j), r.Container); err != nil {
@@ -639,7 +653,7 @@ func (m *Manager) multiAdmitAlias(ctx context.Context, j *journal, r *release) e
 		}
 		// Inspect the detached object before reconnecting; never use a failed
 		// command/inspect as evidence that an endpoint was actually removed.
-		v, err = m.multiInspect(ctx, j, r, true, false)
+		v, err = m.instanceInspect(ctx, j, r, true, false)
 		if err != nil {
 			return err
 		}
@@ -650,8 +664,8 @@ func (m *Manager) multiAdmitAlias(ctx context.Context, j *journal, r *release) e
 		// post-readiness/withdrawal rather than returning with unverified DNS.
 		_, _ = m.cmd(ctx, "docker", "network", "connect", "--alias", r.Service, network(j), r.Container)
 	}
-	if err = m.multiHealthy(ctx, j, r); err == nil {
-		_, err = m.multiInspect(ctx, j, r, false, true)
+	if err = m.instanceHealthy(ctx, j, r); err == nil {
+		_, err = m.instanceInspect(ctx, j, r, false, true)
 	}
 	if err == nil {
 		return nil
@@ -677,21 +691,21 @@ func (m *Manager) multiAdmitAlias(ctx context.Context, j *journal, r *release) e
 	if _, withdrawErr := m.cmd(ctx, "docker", "network", "disconnect", network(j), r.Container); withdrawErr != nil {
 		return errors.New("candidate readiness failed; endpoint withdrawal unconfirmed")
 	}
-	withdrawn, withdrawErr := m.multiInspect(ctx, j, r, true, false)
+	withdrawn, withdrawErr := m.instanceInspect(ctx, j, r, true, false)
 	if withdrawErr != nil || len(withdrawn.NetworkSettings.Networks) != 0 {
 		return errors.New("candidate readiness failed; endpoint withdrawal unconfirmed")
 	}
 	return errors.New("candidate readiness failed; endpoint withdrawn")
 }
 
-func (m *Manager) multiObserve(ctx context.Context, j *journal, r *release) error {
-	if err := multiIdentity(j, r); err != nil {
+func (m *Manager) instanceObserve(ctx context.Context, j *journal, r runtimeRef) error {
+	if err := instanceIdentity(j, r); err != nil {
 		return err
 	}
 	if r.Config.HTTP != nil {
 		return errors.New("private observation requires private service")
 	}
-	first, err := m.multiInspect(ctx, j, r, false, true)
+	first, err := m.instanceInspect(ctx, j, r, false, true)
 	if err != nil {
 		return err
 	}
@@ -709,7 +723,7 @@ func (m *Manager) multiObserve(ctx context.Context, j *journal, r *release) erro
 				return errors.New("private observation interrupted")
 			}
 		}
-		v, err := m.multiInspect(ctx, j, r, false, true)
+		v, err := m.instanceInspect(ctx, j, r, false, true)
 		if err != nil {
 			return err
 		}
@@ -726,8 +740,8 @@ func (m *Manager) multiRetire(ctx context.Context, j *journal, r *release) error
 	return m.multiStop(ctx, j, r, false, true)
 }
 
-func (m *Manager) multiStop(ctx context.Context, j *journal, r *release, allowDetached, requireAlias bool) error {
-	v, err := m.multiInspect(ctx, j, r, allowDetached, requireAlias)
+func (m *Manager) instanceStop(ctx context.Context, j *journal, r runtimeRef, allowDetached, requireAlias bool) error {
+	v, err := m.instanceInspect(ctx, j, r, allowDetached, requireAlias)
 	if err != nil {
 		return err
 	}
@@ -735,7 +749,7 @@ func (m *Manager) multiStop(ctx context.Context, j *journal, r *release, allowDe
 		if _, err = m.cmd(ctx, "docker", "update", "--restart=no", r.Container); err != nil {
 			return errors.New("disable runtime restart failed")
 		}
-		v, err = m.multiInspect(ctx, j, r, allowDetached, requireAlias)
+		v, err = m.instanceInspect(ctx, j, r, allowDetached, requireAlias)
 		if err != nil {
 			return err
 		}
@@ -748,7 +762,7 @@ func (m *Manager) multiStop(ctx context.Context, j *journal, r *release, allowDe
 			return errors.New("stop runtime container failed")
 		}
 	}
-	v, err = m.multiInspect(ctx, j, r, allowDetached, requireAlias)
+	v, err = m.instanceInspect(ctx, j, r, allowDetached, requireAlias)
 	if err != nil {
 		return err
 	}
@@ -760,14 +774,14 @@ func (m *Manager) multiStop(ctx context.Context, j *journal, r *release, allowDe
 
 func multiEffectiveContainer(j *journal, name string) bool {
 	for _, r := range []*release{j.Current, j.Previous} {
-		if r != nil && r.Container == name {
+		if releaseHas(r, name) {
 			return true
 		}
 	}
 	for _, s := range j.ServiceStates {
 		if s != nil {
 			for _, r := range []*release{s.Current, s.Retiring} {
-				if r != nil && r.Container == name {
+				if releaseHas(r, name) {
 					return true
 				}
 			}
@@ -776,7 +790,7 @@ func multiEffectiveContainer(j *journal, name string) bool {
 	for _, snapshot := range []*completedRelease{j.Completed, j.PreviousCompleted} {
 		if snapshot != nil {
 			for _, r := range snapshot.Services {
-				if r != nil && r.Container == name {
+				if releaseHas(r, name) {
 					return true
 				}
 			}
@@ -785,15 +799,15 @@ func multiEffectiveContainer(j *journal, name string) bool {
 	return false
 }
 
-func (m *Manager) multiDiscard(ctx context.Context, j *journal, r *release, allowDetached bool) error {
-	if err := multiIdentity(j, r); err != nil {
+func (m *Manager) instanceDiscard(ctx context.Context, j *journal, r runtimeRef, allowDetached bool) error {
+	if err := instanceIdentity(j, r); err != nil {
 		return err
 	}
 	if allowDetached && !multiAliasing(j, r) {
 		return errors.New("detached cleanup requires aliasing intent")
 	}
 	slot := j.ServiceStates[r.Service]
-	if slot == nil || slot.Candidate == nil || slot.Candidate.Container != r.Container || slot.Candidate.Operation != r.Operation {
+	if slot == nil || slot.Candidate == nil || !releaseHas(slot.Candidate, r.Container) || slot.Candidate.Operation != r.Operation {
 		return errors.New("discard requires recorded candidate")
 	}
 	if multiEffectiveContainer(j, r.Container) {
@@ -807,7 +821,7 @@ func (m *Manager) multiDiscard(ctx context.Context, j *journal, r *release, allo
 		return nil
 	}
 	// Public candidates before admission correctly have no service alias.
-	if err = m.multiStop(ctx, j, r, allowDetached, r.Config.HTTP == nil); err != nil {
+	if err = m.instanceStop(ctx, j, r, allowDetached, r.Config.HTTP == nil); err != nil {
 		return err
 	}
 	if _, err = m.cmd(ctx, "docker", "rm", r.Container); err != nil {

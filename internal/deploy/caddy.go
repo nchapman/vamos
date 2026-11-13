@@ -201,10 +201,12 @@ func (m *Manager) recordCancelledPromotion(j *journal) error {
 	} else {
 		j.Phase = "starting"
 	}
-	if candidate.PublishPort == "" {
-		candidate.PublishPort = candidate.Port
+	for _, ref := range runtimeRefs(candidate) {
+		if *ref.PublishPort == "" {
+			*ref.PublishPort = *ref.Port
+		}
+		*ref.Port = ""
 	}
-	candidate.Port = ""
 	j.OldCaddy, j.NewCaddy = "", ""
 	return m.save(j)
 }

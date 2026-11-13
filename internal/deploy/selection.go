@@ -94,7 +94,7 @@ func keepService(r Request, name string, cfg config.Service, current *release, s
 // The bundle captures selected local sources; the journal also contains
 // unselected effective services, which must not require local build contexts.
 func bundleConfig(j *journal) *config.App {
-	if supportsServiceIdentities(j) {
+	if supportsServiceIdentity(j) {
 		a := &config.App{Name: j.App, Services: map[string]config.Service{}}
 		for _, name := range j.Selected {
 			a.Services[name] = j.Config.Services[name]
@@ -161,7 +161,7 @@ func selectedServices(r Request) []string {
 }
 
 func capturedSelection(j *journal) []string {
-	if supportsServiceIdentities(j) {
+	if supportsServiceIdentity(j) {
 		return j.Selected
 	}
 	return selectedServices(Request{Service: j.Scope, Config: j.Config})

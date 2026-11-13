@@ -7,21 +7,35 @@ import (
 const MaxServices = 8
 const BundleFormat = "bundle-v1"
 
+type InstanceStatus struct {
+	Ordinal   int    `json:"ordinal"`
+	Container string `json:"container"`
+	Port      string `json:"port,omitempty"`
+	Running   bool   `json:"running"`
+	Available bool   `json:"available"`
+}
+
 type ServiceStatus struct {
-	Incarnation        string         `json:"incarnation,omitempty"`
-	Domains            []DomainStatus `json:"domains,omitempty"`
-	Unavailable        bool           `json:"unavailable,omitempty"`
-	DataMayHaveChanged bool           `json:"data_may_have_changed,omitempty"`
-	Kind               string         `json:"kind"`
-	Phase              string         `json:"phase"`
-	URL                string         `json:"url,omitempty"`
-	Operation          string         `json:"operation,omitempty"`
-	Container          string         `json:"container,omitempty"`
-	Candidate          string         `json:"candidate,omitempty"`
-	Image              string         `json:"image,omitempty"`
-	Port               string         `json:"port,omitempty"`
-	Running            bool           `json:"running"`
-	Available          bool           `json:"available"`
+	DesiredInstances   int              `json:"desired_instances,omitempty"`
+	CurrentInstances   int              `json:"current_instances,omitempty"`
+	RunningInstances   int              `json:"running_instances"`
+	AvailableInstances int              `json:"available_instances"`
+	Instances          []InstanceStatus `json:"instances,omitempty"`
+	CandidateInstances []InstanceStatus `json:"candidate_instances,omitempty"`
+	Incarnation        string           `json:"incarnation,omitempty"`
+	Domains            []DomainStatus   `json:"domains,omitempty"`
+	Unavailable        bool             `json:"unavailable,omitempty"`
+	DataMayHaveChanged bool             `json:"data_may_have_changed,omitempty"`
+	Kind               string           `json:"kind"`
+	Phase              string           `json:"phase"`
+	URL                string           `json:"url,omitempty"`
+	Operation          string           `json:"operation,omitempty"`
+	Container          string           `json:"container,omitempty"`
+	Candidate          string           `json:"candidate,omitempty"`
+	Image              string           `json:"image,omitempty"`
+	Port               string           `json:"port,omitempty"`
+	Running            bool             `json:"running"`
+	Available          bool             `json:"available"`
 }
 
 // Each slot describes effective state, not just the last requested app config.
@@ -94,7 +108,7 @@ func retainedOperation(j *journal, op string) bool {
 
 func retainedContainer(j *journal, name string) bool {
 	for _, r := range retainedReleases(j) {
-		if r.Container == name {
+		if releaseHas(r, name) {
 			return true
 		}
 	}

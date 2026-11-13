@@ -168,6 +168,8 @@ func TestEveryTargetFieldPinned(t *testing.T) {
 			field := reflect.ValueOf(&f.target).Elem().Field(i)
 			if field.Kind() == reflect.Bool {
 				field.SetBool(!field.Bool())
+			} else if field.Kind() == reflect.Int {
+				field.SetInt(field.Int() + 1)
 			} else {
 				field.SetString(field.String() + "changed")
 			}

@@ -44,6 +44,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	appFlag := flags.String("app", "", "app name for operations outside a project")
 	executorFile := flags.String("executor", "", "Linux executor artifact override")
 	service := flags.String("service", "", "service selector")
+	replica := flags.Int("replica", 0, "instance ordinal (logs only; required for multi-instance services)")
 	runOperation := flags.String("run", "", "captured run operation (status/logs only)")
 	candidate := flags.Bool("candidate", false, "candidate logs (logs only)")
 	follow := flags.Bool("follow", false, "stream selected container logs until disconnect (logs only; -f remains config file)")
@@ -82,8 +83,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	reuseDataProvided := false
 	allowDowntimeProvided := false
 	serviceProvided, candidateProvided, runProvided := false, false, false
-	followProvided, timeoutProvided := false, false
+	followProvided, timeoutProvided, replicaProvided := false, false, false
 	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "replica" {
+			replicaProvided = true
+		}
 		if f.Name == "follow" {
 			followProvided = true
 		}
@@ -109,6 +113,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			yesProvided = true
 		}
 	})
+	if replicaProvided && (action != "logs" || *replica < 1 || *replica > config.MaxReplicas || runProvided) {
+		return usageError(stderr, "--replica is service logs only and must be between 1 and 8")
+	}
 	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" && action != "rollback" && action != "service-remove" && action != "service-bind" || *service == "")) || (candidateProvided && action != "logs") {
 		return usageError(stderr, "--service requires deploy/run/status/logs/rollback; --candidate is logs only")
 	}
@@ -202,6 +209,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	request.AllowDowntime = *allowDowntime
 	request.Service = *service
 	request.Candidate = *candidate
+	request.Replica = *replica
 	request.RunOperation = *runOperation
 	if action == "run" {
 		request.Command = flags.Args()
@@ -337,7 +345,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		fmt.Fprintf(stdout, "Target %s (%s) / %s; selected service: %s\n", server.Name, server.Target, name, *service)
 	}
 	if *follow {
-		sessionRequest := deploy.SessionRequest{Version: 1, Action: "logs", App: name, Host: request.Host, Service: *service, Candidate: *candidate, Tail: *tail}
+		sessionRequest := deploy.SessionRequest{Version: 1, Action: "logs", App: name, Host: request.Host, Service: *service, Replica: *replica, Candidate: *candidate, Tail: *tail}
 		return runSession(ctx, server.Target, sessionRequest, binary, nil, stdout, stderr, deps)
 	}
 	response, err := deps.Run(ctx, server.Target, request, binary, archive)
@@ -559,6 +567,21 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 				continue
 			}
 			ss := s.Services[serviceName]
+			if hasReplicaGroup(ss) {
+				if _, err := fmt.Fprintf(stdout, "%s instances: desired=%d current=%d running=%d available=%d\n", serviceName, ss.DesiredInstances, ss.CurrentInstances, ss.RunningInstances, ss.AvailableInstances); err != nil {
+					return lifecycleError(stderr, err)
+				}
+				for _, instance := range ss.Instances {
+					if _, err := fmt.Fprintf(stdout, "  replica %d: container=%q port=%q running=%t available=%t\n", instance.Ordinal, instance.Container, instance.Port, instance.Running, instance.Available); err != nil {
+						return lifecycleError(stderr, err)
+					}
+				}
+				for _, instance := range ss.CandidateInstances {
+					if _, err := fmt.Fprintf(stdout, "  candidate replica %d: container=%q port=%q running=%t\n", instance.Ordinal, instance.Container, instance.Port, instance.Running); err != nil {
+						return lifecycleError(stderr, err)
+					}
+				}
+			}
 			if err := printDomainStatuses(stdout, ss.Domains); err != nil {
 				return lifecycleError(stderr, err)
 			}

@@ -18,10 +18,6 @@ func isMulti(j *journal) bool {
 	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6 || j.Version == 7 || j.Version == 8)
 }
 
-func supportsServiceIdentities(j *journal) bool {
-	return j != nil && (j.Version == 7 || j.Version == 8)
-}
-
 func journalDomain(j *journal) string { return strings.TrimPrefix(j.URL, "https://"+j.App+".") }
 
 func serviceOrder(j *journal) []string {
@@ -61,7 +57,7 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 	if r.Service != name && !(r.Service == "" && name == "web") {
 		return bad
 	}
-	if r.Container != containerName(j.App, r.Service, r.Operation) {
+	if validateInstances(j, r) != nil {
 		return bad
 	}
 	if r.Config == nil {
@@ -73,7 +69,7 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 		}
 	} else {
 		a := &config.App{Name: j.App, Services: map[string]config.Service{name: *r.Config}}
-		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || (j.Version < 4 && workflowConfig(a)) || (j.Version < 6 && domainConfig(a)) {
+		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || (j.Version < 4 && workflowConfig(a)) || (j.Version < 6 && domainConfig(a)) || (j.Version < 8 && replicaConfig(a)) {
 			return bad
 		}
 		if r.Config.Volume == nil {
@@ -83,20 +79,24 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 		} else if !supportsVolumes(j) || r.Service == "" || !operation.MatchString(r.VolumeID) {
 			return bad
 		}
-		if r.Config.HTTP == nil && (r.Port != "" || r.PublishPort != "") {
-			return bad
+		for _, ref := range runtimeRefs(r) {
+			if r.Config.HTTP == nil && (*ref.Port != "" || *ref.PublishPort != "") {
+				return bad
+			}
 		}
 	}
-	for _, port := range []string{r.Port, r.PublishPort} {
-		if port != "" && !validPort(port) {
+	for _, ref := range runtimeRefs(r) {
+		for _, port := range []string{*ref.Port, *ref.PublishPort} {
+			if port != "" && !validPort(port) {
+				return bad
+			}
+		}
+		if *ref.Port != "" && *ref.PublishPort != "" && *ref.Port != *ref.PublishPort {
 			return bad
 		}
-	}
-	if r.Port != "" && r.PublishPort != "" && r.Port != r.PublishPort {
-		return bad
-	}
-	if r.Service != "" && r.Port != "" && r.PublishPort == "" {
-		return bad
+		if r.Service != "" && *ref.Port != "" && *ref.PublishPort == "" {
+			return bad
+		}
 	}
 	return nil
 }
@@ -136,13 +136,13 @@ func validateMultiJournal(j *journal, app string) error {
 	settled := j.Phase == "ready" || j.Phase == "cleaning" || j.Phase == "destroying" || j.Phase == "removing"
 	abandoning := j.Phase == "removing" && j.Maintenance != nil && validateServiceAbandonment(j, j.Maintenance.Service) == nil
 	if j.Version == 5 || (j.Version >= 6 && j.Rollback != nil) {
-		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || (len(j.Rollback.Targets) == 0 && !(supportsServiceIdentities(j) && settled && len(j.Selected) == 0)) || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
+		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || (len(j.Rollback.Targets) == 0 && !(supportsServiceIdentity(j) && settled && len(j.Selected) == 0)) || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
 			return bad
 		}
 	} else if j.Rollback != nil || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
 		return bad
 	}
-	if j.Version < 6 && domainConfig(j.Config) {
+	if (j.Version < 6 && domainConfig(j.Config)) || (j.Version < 8 && replicaConfig(j.Config)) {
 		return bad
 	}
 	if j.Status.Run != nil || len(j.Volumes) != 0 || (!supportsVolumes(j) && j.ReuseData) || (j.Version < 4 && (j.Scope != "" || workflowConfig(j.Config))) {
@@ -206,10 +206,12 @@ func validateMultiJournal(j *journal, app string) error {
 				return bad
 			}
 		}
-		if old := known[r.Container]; old != nil && !reflect.DeepEqual(old, r) {
-			return errors.New("conflicting service release identities")
+		for _, ref := range runtimeRefs(r) {
+			if old := known[ref.Container]; old != nil && !reflect.DeepEqual(old, r) {
+				return errors.New("conflicting service release identities")
+			}
+			known[ref.Container] = r
 		}
-		known[r.Container] = r
 		return nil
 	}
 	if j.Rollback != nil {
@@ -227,7 +229,7 @@ func validateMultiJournal(j *journal, app string) error {
 		if s == nil || (j.Rollback != nil && (j.Rollback.Targets[name] == nil) != s.Skipped) {
 			return bad
 		}
-		if supportsServiceIdentities(j) {
+		if supportsServiceIdentity(j) {
 			if !operation.MatchString(s.Incarnation) {
 				return bad
 			}
@@ -295,14 +297,14 @@ func validateMultiJournal(j *journal, app string) error {
 		if cfg.Volume != nil && (s.Phase == "aliasing" || s.Phase == "promoting") && (s.Candidate == nil || !s.Candidate.ExecutionIntent) {
 			return bad
 		}
-		if s.Current != nil && s.Current.Config.HTTP != nil && s.Current.Port == "" {
+		if s.Current != nil && s.Current.Config.HTTP != nil && !releasePortsReady(s.Current) {
 			return bad
 		}
 		if s.Candidate != nil {
 			if s.Candidate.Operation != j.Operation || s.Candidate.Service != name || !reflect.DeepEqual(*s.Candidate.Config, cfg) || !maps.Equal(s.Candidate.SecretRefs, s.SecretRefs) || s.Candidate.Image != selectedImage(j, name) {
 				return bad
 			}
-			if s.Current != nil && s.Current.Container == s.Candidate.Container {
+			if s.Current != nil && s.Current.Operation == s.Candidate.Operation {
 				return bad
 			}
 		}
@@ -311,7 +313,7 @@ func validateMultiJournal(j *journal, app string) error {
 				return bad
 			}
 		}
-		if s.Retiring != nil && (s.Phase != "draining" || s.Current == nil || s.Retiring.Container == s.Current.Container || cfg.HTTP == nil) {
+		if s.Retiring != nil && (s.Phase != "draining" || s.Current == nil || s.Retiring.Operation == s.Current.Operation || cfg.HTTP == nil) {
 			return bad
 		}
 		switch s.Phase {
@@ -380,7 +382,7 @@ func validateMultiJournal(j *journal, app string) error {
 			if err := record(name, r, true); err != nil {
 				return err
 			}
-			if r.Config != nil && r.Config.HTTP != nil && r.Port == "" {
+			if r.Config != nil && r.Config.HTTP != nil && !releasePortsReady(r) {
 				return bad
 			}
 		}

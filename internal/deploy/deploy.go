@@ -40,6 +40,7 @@ type Request struct {
 	ContextFormat  string            `json:"context_format,omitempty"`
 	Service        string            `json:"service,omitempty"`
 	Candidate      bool              `json:"candidate,omitempty"`
+	Replica        int               `json:"replica,omitempty"`
 	SecretName     string            `json:"secret_name,omitempty"`
 	Apply          bool              `json:"apply,omitempty"`
 	Supersede      string            `json:"supersede,omitempty"`
@@ -103,7 +104,15 @@ type Status struct {
 	LastError    string                   `json:"last_error"`
 	Running      bool                     `json:"running"`
 }
+type releaseInstance struct {
+	Ordinal     int
+	Container   string
+	Port        string
+	PublishPort string
+}
+
 type release struct {
+	Instances       []releaseInstance      `json:",omitempty"`
 	VolumeID        string                 `json:",omitempty"`
 	ExecutionIntent bool                   `json:",omitempty"`
 	Service         string                 `json:",omitempty"`
@@ -205,6 +214,8 @@ func ValidateApp(a *config.App) error {
 	}
 	mappings := 0
 	for name, s := range a.Services {
+		s.NormalizeReplicas()
+		a.Services[name] = s
 		if s.Image != "" {
 			if err := validImageReference(s.Image); err != nil {
 				return fmt.Errorf("service %s: %w", name, err)
@@ -234,7 +245,7 @@ func validateLegacyApp(a *config.App) error {
 		}
 	}
 	s, ok := a.Services["web"]
-	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || s.Build == nil || s.Update == config.UpdateManual || len(s.HTTP.Domains) != 0 {
+	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || s.Build == nil || s.ReplicaCount() != 1 || s.Update == config.UpdateManual || len(s.HTTP.Domains) != 0 {
 		return errors.New("legacy protocol supports only one public web service; use a current client with a captured build bundle")
 	}
 	return nil
@@ -251,6 +262,9 @@ func ValidateRequest(r Request) error {
 		if r.Service != "" && r.Service != r.Config.Release.Service {
 			return errors.New("release runner is outside the selected service scope; use a manifest without a release command for dependency-only deployment")
 		}
+	}
+	if r.Replica < 0 || r.Replica > config.MaxReplicas || (r.Replica != 0 && (r.Action != "logs" || r.RunOperation != "")) {
+		return errors.New("replica ordinal is logs-only and must be between 1 and 8")
 	}
 	if r.Partial && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
 		return errors.New("partial manifests require deploy with a current build bundle")
@@ -679,8 +693,15 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 				err = errors.New("app has no current release")
 				return
 			}
-			if _, err = m.container(ctx, j, target); err != nil {
-				return
+			v, inspectErr := m.container(ctx, j, target)
+			if inspectErr != nil {
+				return resp, inspectErr
+			}
+			if !sessionContainerID.MatchString(v.ID) {
+				return resp, errors.New("inspection has no immutable container ID")
+			}
+			if r.Replica > 1 {
+				return resp, errors.New("selected replica has no recorded container")
 			}
 			n := r.Tail
 			if n == 0 {
@@ -690,7 +711,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			resp.LogService = "web"
 			resp.LogContainer = target.Container
 			resp.LogCandidate = r.Candidate
-			out, err = m.Run(ctx, "docker", []string{"logs", "--timestamps", "--tail", fmt.Sprint(n), target.Container}, nil)
+			out, err = m.Run(ctx, "docker", []string{"logs", "--timestamps", "--tail", fmt.Sprint(n), v.ID}, nil)
 			resp.Logs = diagnostic(string(out.Stdout) + string(out.Stderr))
 		}
 		return
@@ -961,7 +982,7 @@ func validateJournal(j *journal, app string) error {
 		if r == nil {
 			continue
 		}
-		if r.ExecutionIntent || r.VolumeID != "" || r.Service != "" || r.Config != nil || !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
+		if len(r.Instances) != 0 || r.ExecutionIntent || r.VolumeID != "" || r.Service != "" || r.Config != nil || !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
 			return bad
 		}
 		for _, port := range []string{r.Port, r.PublishPort} {

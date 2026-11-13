@@ -18,14 +18,15 @@ import (
 )
 
 const sessionHelp = `Usage:
-  soar exec [-f soar.yaml | --server NAME --app APP] [--service NAME] [-i] [-t] -- COMMAND [ARG...]
-  soar console [-f soar.yaml | --server NAME --app APP] [--service NAME] [--shell /bin/sh]
+  soar exec [-f soar.yaml | --server NAME --app APP] [--service NAME] [--replica ORDINAL] [-i] [-t] -- COMMAND [ARG...]
+  soar console [-f soar.yaml | --server NAME --app APP] [--service NAME] [--replica ORDINAL] [--shell /bin/sh]
 
 Both accept --executor FILE and --timeout DURATION (default: no session deadline).
 Exec preserves arguments without an implicit shell. -i/--interactive forwards stdin;
 -t/--tty requires -i and real input/output terminals. Console opens /bin/sh with
 stdin and a terminal; --shell selects another executable without fallback.
 Without --service, select web or the sole deployed service; ambiguous apps require it.
+Multi-instance services require --replica (1-based ordinal).
 Commands use the current container's user, working directory, secrets and volumes.
 No build, restart, secret update or automatic retry occurs. Deployment can stop the
 pinned container and end the session. A disconnected command may keep running;
@@ -46,6 +47,7 @@ func sessionCommand(ctx context.Context, action string, args []string, stdin io.
 	serverFlag := flags.String("server", "", "registered server override")
 	appFlag := flags.String("app", "", "explicit app outside a project; requires --server")
 	service := flags.String("service", "", "existing service (default: web or sole service)")
+	replica := flags.Int("replica", 0, "instance ordinal; required for multi-instance services")
 	executorFile := flags.String("executor", "", "Linux executor artifact override")
 	timeout := flags.Duration("timeout", 0, "session deadline; zero means no deadline, not guaranteed remote cancellation")
 	shell := flags.String("shell", "/bin/sh", "console shell executable; console only")
@@ -60,11 +62,15 @@ func sessionCommand(ctx context.Context, action string, args []string, stdin io.
 		}
 		return 2
 	}
-	var shellProvided, ioProvided bool
+	var shellProvided, ioProvided, replicaProvided bool
 	flags.Visit(func(f *flag.Flag) {
+		replicaProvided = replicaProvided || f.Name == "replica"
 		shellProvided = shellProvided || f.Name == "shell"
 		ioProvided = ioProvided || f.Name == "interactive" || f.Name == "i" || f.Name == "tty" || f.Name == "t"
 	})
+	if replicaProvided && (*replica < 1 || *replica > config.MaxReplicas) {
+		return usageError(stderr, "--replica must be between 1 and 8")
+	}
 	if *timeout < 0 || (*appFlag != "" && *serverFlag == "") {
 		return usageError(stderr, "invalid timeout or --app without --server")
 	}
@@ -105,7 +111,7 @@ func sessionCommand(ctx context.Context, action string, args []string, stdin io.
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
-	request := deploy.SessionRequest{Version: 1, Action: "exec", App: name, Service: *service, Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}, Command: command, Stdin: interactive, TTY: tty}
+	request := deploy.SessionRequest{Version: 1, Action: "exec", App: name, Service: *service, Replica: *replica, Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}, Command: command, Stdin: interactive, TTY: tty}
 	if dir != "" {
 		bindings, err := readServiceBindings(dir, server.Target, name)
 		if err != nil {

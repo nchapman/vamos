@@ -71,7 +71,7 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 	}
 	// A ready v7 scoped rollback follows that service's history, not the
 	// last app-wide update (which may have changed only another service).
-	if old.Version >= 7 && old.Phase == "ready" && r.Service != "" {
+	if supportsServiceIdentity(old) && old.Phase == "ready" && r.Service != "" {
 		previous := old.ServiceStates[r.Service].Previous
 		if previous == nil || reflect.DeepEqual(previous, old.ServiceStates[r.Service].Current) {
 			return nil, nil, errors.New("selected service has no previous completed release available for rollback")
@@ -87,7 +87,7 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 	if old.Version >= 6 {
 		next.Version = old.Version
 	}
-	if old.Version >= 7 {
+	if supportsServiceIdentity(old) {
 		next.Removed = maps.Clone(old.Removed)
 		next.HostIdentity = old.HostIdentity
 	}
@@ -156,7 +156,7 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 		}
 		preview.Services = append(preview.Services, item)
 	}
-	if next.Version >= 7 {
+	if supportsServiceIdentity(next) {
 		for _, name := range names {
 			next.ServiceStates[name].Incarnation = old.ServiceStates[name].Incarnation
 			next.ServiceStates[name].Previous = old.ServiceStates[name].Previous

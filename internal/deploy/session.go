@@ -23,6 +23,7 @@ type SessionBinding struct {
 // SessionRequest contains only session metadata, never build inputs or secrets.
 // Logs always follows; recorded run operations are not session targets.
 type SessionRequest struct {
+	Replica   int                       `json:"replica,omitempty"`
 	Version   int                       `json:"version"`
 	Action    string                    `json:"action"`
 	Host      lifecycle.Config          `json:"host"`
@@ -40,6 +41,7 @@ type SessionRequest struct {
 // and compare the entire target, then address Docker by ContainerID, never by
 // the display name. The admission lock is not held for the session lifetime.
 type SessionTarget struct {
+	Replica      int    `json:"replica,omitempty"`
 	HostIdentity string `json:"host_identity"`
 	App          string `json:"app"`
 	Service      string `json:"service"`
@@ -55,6 +57,9 @@ var sessionContainerID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // ValidateSessionRequest checks the bounded, action-specific session envelope.
 // Command arguments are validated without trimming, parsing, or rewriting them.
 func ValidateSessionRequest(r SessionRequest) error {
+	if r.Replica < 0 || r.Replica > 8 {
+		return errors.New("replica ordinal must be between 1 and 8")
+	}
 	if r.Version != 1 {
 		return errors.New("unsupported session request version")
 	}
@@ -202,6 +207,10 @@ func (m *Manager) ResolveSession(ctx context.Context, r SessionRequest) (Session
 	if rel == nil {
 		return zero, errors.New("selected session target has no recorded container")
 	}
+	ref, err := selectRuntime(rel, r.Replica)
+	if err != nil {
+		return zero, err
+	}
 	incarnation := serviceIncarnation(j, name)
 	if binding, ok := r.Bindings[name]; ok && (binding.HostIdentity != h.ID || binding.Incarnation != incarnation) {
 		return zero, errors.New("selected service binding does not match host or incarnation")
@@ -216,7 +225,7 @@ func (m *Manager) ResolveSession(ctx context.Context, r SessionRequest) (Session
 	}
 	var v *inspection
 	if slot != nil {
-		v, err = m.multiInspect(ctx, j, rel, r.Candidate && slot.Phase == "aliasing", !r.Candidate)
+		v, err = m.instanceInspect(ctx, j, ref, r.Candidate && slot.Phase == "aliasing", !r.Candidate)
 	} else {
 		v, err = m.container(ctx, j, rel)
 	}
@@ -232,5 +241,5 @@ func (m *Manager) ResolveSession(ctx context.Context, r SessionRequest) (Session
 	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
-	return SessionTarget{HostIdentity: h.ID, App: j.App, Service: name, Incarnation: incarnation, Operation: rel.Operation, ContainerID: v.ID, Container: rel.Container, Candidate: r.Candidate}, nil
+	return SessionTarget{HostIdentity: h.ID, App: j.App, Service: name, Incarnation: incarnation, Operation: rel.Operation, ContainerID: v.ID, Container: ref.Container, Replica: ref.Ordinal, Candidate: r.Candidate}, nil
 }

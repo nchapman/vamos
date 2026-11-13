@@ -34,7 +34,27 @@ type Release struct {
 	Command []string `yaml:"command"`
 }
 
+const MaxReplicas = 8
+const MaxAppReplicas = 32
+
+// ReplicaCount returns the effective per-service count; omission is one.
+func (s Service) ReplicaCount() int {
+	if s.Replicas == nil {
+		return 1
+	}
+	return *s.Replicas
+}
+
+// NormalizeReplicas keeps explicit one equivalent to omission, including in
+// captured configuration equality and canonical historical run records.
+func (s *Service) NormalizeReplicas() {
+	if s.Replicas != nil && *s.Replicas == 1 {
+		s.Replicas = nil
+	}
+}
+
 type Service struct {
+	Replicas  *int              `yaml:"replicas,omitempty" json:"Replicas,omitempty"`
 	Build     *Build            `yaml:"build,omitempty"`
 	Image     string            `yaml:"image,omitempty"`
 	Command   []string          `yaml:"command,omitempty"`
@@ -69,6 +89,7 @@ func (s *Service) UnmarshalJSON(data []byte) error {
 		}
 	}
 	*s = Service(decoded)
+	s.NormalizeReplicas()
 	return nil
 }
 
@@ -124,10 +145,11 @@ func Decode(r io.Reader) (*App, error) {
 	}
 
 	for name, service := range app.Services {
+		service.NormalizeReplicas()
 		if service.Update == "" {
 			service.Update = UpdateAuto
-			app.Services[name] = service
 		}
+		app.Services[name] = service
 	}
 	if err := app.Validate(); err != nil {
 		return nil, err

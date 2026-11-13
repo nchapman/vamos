@@ -71,8 +71,14 @@ func (p *presentation) statusReport(s *deploy.Status, r appReport) string {
 		}
 		if inspectService != "" {
 			args := []string{"--service", inspectService}
-			if s.Services[inspectService].Candidate != "" {
+			ss := s.Services[inspectService]
+			instances := ss.Instances
+			if ss.Candidate != "" || len(ss.CandidateInstances) > 0 {
+				instances = ss.CandidateInstances
 				args = append(args, "--candidate")
+			}
+			if len(instances) > 1 {
+				args = append(args, "--replica", fmt.Sprint(instances[0].Ordinal))
 			}
 			b.WriteString(p.section("Inspect before retrying"))
 			b.WriteString(p.command(r.command("logs", args...)))
@@ -105,6 +111,7 @@ func (p *presentation) statusReport(s *deploy.Status, r appReport) string {
 			if ss.Candidate != "" {
 				b.WriteString(p.field("Candidate", ss.Candidate))
 			}
+			b.WriteString(p.replicaReport(ss))
 			b.WriteString(p.domainReport(ss.Domains))
 		}
 	} else if len(s.Services) == 0 && s.Phase != "staged" {
@@ -290,4 +297,32 @@ func (p *presentation) rollbackPreview(preview *deploy.RollbackPreview) string {
 		text += "\n" + p.ink("warning", "Preview only", true) + "\n" + p.prose("Rerun rollback with --yes to apply; use --allow-downtime to authorize stop/start where required.")
 	}
 	return text
+}
+
+// Keep historical singleton output stable; include group detail during scale-up,
+// scale-down and partial creation, even when only one current member remains.
+func hasReplicaGroup(s deploy.ServiceStatus) bool {
+	return s.DesiredInstances > 1 || s.CurrentInstances > 1 || len(s.Instances) > 1 || len(s.CandidateInstances) > 1
+}
+
+func (p *presentation) replicaReport(s deploy.ServiceStatus) string {
+	if !hasReplicaGroup(s) {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(p.field("Instances", fmt.Sprintf("Desired %d / Current %d / Running %d / Available %d", s.DesiredInstances, s.CurrentInstances, s.RunningInstances, s.AvailableInstances)))
+	for _, instance := range s.Instances {
+		b.WriteString(p.section(fmt.Sprintf("Replica %d", instance.Ordinal)))
+		b.WriteString(p.field("Container", instance.Container))
+		b.WriteString(p.field("Port", instance.Port))
+		b.WriteString(p.field("Running", yesNo(instance.Running)))
+		b.WriteString(p.field("Available", yesNo(instance.Available)))
+	}
+	for _, instance := range s.CandidateInstances {
+		b.WriteString(p.section(fmt.Sprintf("Candidate replica %d", instance.Ordinal)))
+		b.WriteString(p.field("Container", instance.Container))
+		b.WriteString(p.field("Port", instance.Port))
+		b.WriteString(p.field("Running", yesNo(instance.Running)))
+	}
+	return b.String()
 }

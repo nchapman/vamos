@@ -28,8 +28,8 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 			"soar status --server home --app notes --json",
 		},
 		"logs": {
-			"soar logs [OPTIONS]", "app service run candidate follow tail",
-			"Snapshot logs are byte bounded; --follow streams one pinned container and never retargets replacements.\nSnapshot deadline defaults to 15s; follow defaults to no deadline (explicit --timeout 0 is also unlimited).\n--run diagnostics are snapshots and cannot combine with --follow, --service, or --candidate.\n-f remains the configuration file. Snapshot workload logs go to stdout; target metadata goes to stderr.",
+			"soar logs [OPTIONS]", "app service replica run candidate follow tail",
+			"Multi-instance services require --replica ORDINAL (1-based); singleton services default to their sole instance.\nSnapshot logs are byte bounded; --follow streams one pinned container and never retargets replacements.\nSnapshot deadline defaults to 15s; follow defaults to no deadline (explicit --timeout 0 is also unlimited).\n--run diagnostics are snapshots and cannot combine with --follow, --service, --replica, or --candidate.\n-f remains the configuration file. Snapshot workload logs go to stdout; target metadata goes to stderr.",
 			"soar logs --service web --follow --tail 100",
 		},
 		"resume": {

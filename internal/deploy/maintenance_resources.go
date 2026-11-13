@@ -78,7 +78,7 @@ func resourceContainer(v *resourceInspection, j *journal, r resourceRow) error {
 	if service, present := v.Config.Labels["soar.service"]; present && service == "" {
 		return errors.New("empty maintenance service label")
 	}
-	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (!supportsVolumes(j) && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || (!supportsVolumes(j) && len(v.Config.Volumes) != 0) || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
+	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op, replicaLabel(v.Config.Labels)) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (!supportsVolumes(j) && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || (!supportsVolumes(j) && len(v.Config.Volumes) != 0) || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
 		return errors.New("unsafe or changed maintenance container")
 	}
 	return nil
@@ -274,7 +274,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 			}
 			runBatch++
 		}
-		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o, Service: v.Config.Labels["soar.service"]})
+		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o, Service: v.Config.Labels["soar.service"], Replica: replicaLabel(v.Config.Labels)})
 		w.Plan.Containers = append(w.Plan.Containers, r.Name)
 		exclude[r.ID] = true
 	}
@@ -445,7 +445,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 }
 
 func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p plannedContainer) (*resourceInspection, error) {
-	if !resourceID.MatchString(p.ID) || !resourceID.MatchString(p.NetworkID) || !imageID.MatchString(p.Image) || !operation.MatchString(p.Operation) || !maintenanceContainerIdentity(j, p.Name, p.Service, p.Operation) {
+	if !resourceID.MatchString(p.ID) || !resourceID.MatchString(p.NetworkID) || !imageID.MatchString(p.Image) || !operation.MatchString(p.Operation) || !maintenanceContainerIdentity(j, p.Name, p.Service, p.Operation, p.Replica) {
 		return nil, errors.New("invalid planned container")
 	}
 	rows, e := m.resourceList(ctx, "container")
@@ -474,7 +474,7 @@ func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p pl
 	if e = m.verifyResourceContainer(ctx, v, j, resourceRow{ID: p.ID, Name: p.Name}); e != nil {
 		return nil, e
 	}
-	if v.Image != p.Image || v.Config.Labels["soar.operation"] != p.Operation || v.Config.Labels["soar.service"] != p.Service {
+	if replicaLabel(v.Config.Labels) != p.Replica || v.Image != p.Image || v.Config.Labels["soar.operation"] != p.Operation || v.Config.Labels["soar.service"] != p.Service {
 		return nil, errors.New("changed planned container")
 	}
 	nv, e := m.resourceInspect(ctx, "network", network(j))
@@ -670,6 +670,9 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 	if err := resourceContainer(v, j, row); err != nil {
 		return err
 	}
+	if err := m.replicaResourceProvenance(j, v, row.Name); err != nil {
+		return err
+	}
 	if !supportsVolumes(j) {
 		return nil
 	}
@@ -707,7 +710,7 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 	proven := false
 	op := v.Config.Labels["soar.operation"]
 	for _, rel := range retainedReleases(j) {
-		if rel.Container == row.Name && rel.Service == service && rel.Operation == op && rel.VolumeID == rec.ID && rel.Image == v.Config.Image {
+		if releaseHas(rel, row.Name) && runtimeLabelMatches(rel, row.Name, v.Config.Labels) && rel.Service == service && rel.Operation == op && rel.VolumeID == rec.ID && rel.Image == v.Config.Image {
 			proven = true
 		}
 	}

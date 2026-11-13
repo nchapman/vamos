@@ -30,11 +30,21 @@ func (a App) Validate() error {
 		add("services must contain at least one service")
 	}
 
+	totalReplicas := 0
 	domains := make(map[string]string)
 	volumes := make(map[string]string)
 	for _, name := range sortedKeys(a.Services) {
 		s := a.Services[name]
 		prefix := "services." + name
+		count := s.ReplicaCount()
+		if count < 1 || count > MaxReplicas {
+			add("%s.replicas must be between 1 and %d", prefix, MaxReplicas)
+		} else {
+			totalReplicas += count
+		}
+		if s.Volume != nil && count > 1 {
+			add("%s: volume-backed services cannot have multiple replicas", prefix)
+		}
 		if !validLabel(name) {
 			add("%s: service name must be a lowercase DNS label (1–63 characters)", prefix)
 		}
@@ -141,6 +151,9 @@ func (a App) Validate() error {
 		if total > 32<<10 {
 			add("release.command must be at most 32768 bytes total")
 		}
+	}
+	if totalReplicas > MaxAppReplicas {
+		add("at most %d replicas per app are supported", MaxAppReplicas)
 	}
 	if len(domains) > 32 {
 		add("at most 32 custom domains per app are supported")

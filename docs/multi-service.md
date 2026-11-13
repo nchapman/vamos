@@ -38,6 +38,54 @@ Flags precede positional arguments. Deploy defaults to the local manifest select
 
 See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. [Independent service directories](services.md) support partial manifests, explicit bindings and preview-first service removal in the v7 implementation being integrated. Omitted services remain untouched, never implicitly deleted. Public/private kind changes and interactive command attachment remain unsupported.
 
+## Replica groups
+
+Set `replicas: 2` on a service to run two instances of one captured release.
+Omission and `replicas: 1` are equivalent. Counts are bounded to **1–8 per
+service and 32 desired instances across the merged app**; these are accounting
+bounds, not host-capacity reservations. Volume-backed services require one
+instance. Zero does not stop or remove a service. Count changes respect scoped
+selection and manual-service protection like other configuration changes.
+
+All instances share one immutable image, configuration and secret-version set.
+A public, volume-free replacement starts and readiness-checks the entire new
+group, admits aliases and rechecks readiness, then switches the generated and
+custom hostnames to the complete ordered upstream set. Only afterward does it
+drain and retire every old member. Budget host capacity for both groups during
+replacement. Private replacements stop and prove **all** old instances stopped
+before starting any new instance; new private workers may run concurrently and
+the application must support that concurrency. Volume-backed replacements retain
+their existing singleton stop/start and durable public 503 behavior.
+
+Partial creation, alias admission and retirement retain exact member identities
+and port intents for resume. Rollback restores captured counts through normal
+group replacement; cleanup, service removal and destruction cover every member.
+Status includes desired/current/running/available counts and per-instance
+observations. A partially running group is not reported as fully available.
+These observations are not continuous application-health monitoring; Docker's
+restart policy remains responsible for restarting containers. Same-host replicas
+do not provide host availability. Service DNS admission remains non-atomic and
+can temporarily expose both generations.
+
+Logs, exec and console default to the sole instance for singleton services.
+For a multi-instance current or candidate group, select an explicit 1-based
+ordinal; sessions pin the actual Docker ID and never follow a replacement:
+
+```sh
+soar logs --service web --replica 2
+soar logs --service web --candidate --replica 1 --follow
+soar exec --service web --replica 2 -- printenv HOSTNAME
+soar console --service web --replica 1
+```
+
+Replica operations use journal v8 and preserve v7 service incarnations and
+per-service history. Existing v1–v7 state remains readable and recoverable;
+legacy scalar container names and ports are preserved, and unchanged singleton
+route rendering is byte-compatible. Removing replicas does not downgrade a v8
+journal. The new group recovery paths have offline regression coverage; the
+historical live results below do **not** verify replica behavior on real Docker
+or Caddy.
+
 ## Deployment and partial success
 
 1. Validate all configuration, transitions, secrets, hostname ownership, and supported daemon policy. Capture immutable secret references before superseding anything.

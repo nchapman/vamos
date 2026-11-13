@@ -98,12 +98,23 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 		slot := j.ServiceStates[name]
 		s := ServiceStatus{Kind: "private", Phase: slot.Phase, Unavailable: slot.Unavailable, DataMayHaveChanged: slot.DataMayHaveChanged}
 		cfg := j.Config.Services[name]
+		s.DesiredInstances = cfg.ReplicaCount()
 		if cfg.HTTP != nil {
 			s.Kind = "public"
 			s.URL = ServiceURL(j.App, name, journalDomain(j))
 		}
 		if slot.Candidate != nil {
 			s.Candidate = slot.Candidate.Container
+			if refs := runtimeRefs(slot.Candidate); len(refs) == 1 {
+				s.Candidate = refs[0].Container
+			}
+			for _, ref := range runtimeRefs(slot.Candidate) {
+				item := InstanceStatus{Ordinal: max(1, ref.Ordinal), Container: ref.Container, Port: *ref.Port}
+				if v, err := m.instanceInspect(ctx, j, ref, slot.Phase == "aliasing", false); err == nil {
+					item.Running = runtimeRunning(v)
+				}
+				s.CandidateInstances = append(s.CandidateInstances, item)
+			}
 		}
 		if slot.Current != nil {
 			r := slot.Current
@@ -111,15 +122,11 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 			s.Operation = r.Operation
 			s.Image = r.Image
 			s.Port = r.Port
-			v, err := m.multiInspect(ctx, j, r, false, true)
-			if err == nil {
-				s.Running = v.State.Running
-				s.Available = runtimeRunning(v) && !slot.CurrentRetired && !slot.Unavailable && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
-			} else if j.Phase != "destroying" && out.LastError == "" {
+			if err := m.observeServiceInstances(ctx, j, slot, &s); err != nil && j.Phase != "destroying" && out.LastError == "" {
 				out.LastError = diagnostic(fmt.Sprintf("service %s: %s", name, err))
 			}
 			if name == "web" || selected == name {
-				out.Container = r.Container
+				out.Container = s.Container
 				out.URL = s.URL
 			}
 		}
@@ -130,6 +137,39 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 		out.Running = false
 	}
 	return out
+}
+
+// Shared by ordinary status and maintenance; an aggregate is true only when
+// every recorded current member is observed in that state.
+func (m *Manager) observeServiceInstances(ctx context.Context, j *journal, slot *serviceState, s *ServiceStatus) error {
+	refs := runtimeRefs(slot.Current)
+	s.CurrentInstances = len(refs)
+	s.RunningInstances, s.AvailableInstances = 0, 0
+	s.Instances = nil
+	if len(refs) == 1 {
+		s.Container, s.Port = refs[0].Container, *refs[0].Port
+	}
+	var first error
+	for _, ref := range refs {
+		item := InstanceStatus{Ordinal: max(1, ref.Ordinal), Container: ref.Container, Port: *ref.Port}
+		v, err := m.instanceInspect(ctx, j, ref, false, true)
+		if err == nil {
+			item.Running = runtimeRunning(v)
+			item.Available = item.Running && !slot.CurrentRetired && !slot.Unavailable && j.Phase != "destroying" && v.HostConfig.RestartPolicy.Name == "unless-stopped"
+		} else if first == nil {
+			first = fmt.Errorf("replica %d: %w", item.Ordinal, err)
+		}
+		if item.Running {
+			s.RunningInstances++
+		}
+		if item.Available {
+			s.AvailableInstances++
+		}
+		s.Instances = append(s.Instances, item)
+	}
+	s.Running = s.RunningInstances == s.CurrentInstances && s.CurrentInstances > 0
+	s.Available = s.AvailableInstances == s.CurrentInstances && s.CurrentInstances > 0
+	return first
 }
 
 func (m *Manager) readMulti(ctx context.Context, r Request, j *journal, state *secrets.State, active bool) (resp Response, err error) {
@@ -172,17 +212,25 @@ func (m *Manager) readMulti(ctx context.Context, r Request, j *journal, state *s
 	if target == nil {
 		return resp, errors.New("selected log target has no container; use --candidate for a pending replacement")
 	}
-	if _, err = m.multiInspect(ctx, j, target, r.Candidate && slot.Phase == "aliasing", !r.Candidate); err != nil {
-		return
+	ref, err := selectRuntime(target, r.Replica)
+	if err != nil {
+		return resp, err
+	}
+	v, err := m.instanceInspect(ctx, j, ref, r.Candidate && slot.Phase == "aliasing", !r.Candidate)
+	if err != nil {
+		return resp, err
+	}
+	if !sessionContainerID.MatchString(v.ID) {
+		return resp, errors.New("inspection has no immutable container ID")
 	}
 	n := r.Tail
 	if n == 0 {
 		n = 100
 	}
 	resp.LogService = name
-	resp.LogContainer = target.Container
+	resp.LogContainer = ref.Container
 	resp.LogCandidate = r.Candidate
-	out, err := m.Run(ctx, "docker", []string{"logs", "--timestamps", "--tail", fmt.Sprint(n), target.Container}, nil)
+	out, err := m.Run(ctx, "docker", []string{"logs", "--timestamps", "--tail", fmt.Sprint(n), v.ID}, nil)
 	resp.Logs = diagnostic(string(out.Stdout) + string(out.Stderr))
 	return resp, err
 }

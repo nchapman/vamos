@@ -297,7 +297,7 @@ func (m *Manager) volumeReferences(ctx context.Context, j *journal, rec volumes.
 			return e
 		}
 		op := v.Config.Labels["soar.operation"]
-		if !owned(v.Config.Labels, j, op) || !operation.MatchString(op) || v.Config.Labels["soar.service"] != rec.Service || row.Names != containerName(j.App, rec.Service, op) || strings.TrimPrefix(v.Name, "/") != row.Names {
+		if !owned(v.Config.Labels, j, op) || !operation.MatchString(op) || v.Config.Labels["soar.service"] != rec.Service || !maintenanceContainerIdentity(j, row.Names, rec.Service, op, replicaLabel(v.Config.Labels)) || strings.TrimPrefix(v.Name, "/") != row.Names {
 			return errors.New("foreign volume reference")
 		}
 		if e = validateVolumeMounts(v, rec); e != nil {
@@ -309,7 +309,7 @@ func (m *Manager) volumeReferences(ctx context.Context, j *journal, rec volumes.
 		permitted := false
 		if row.Names == allow {
 			for _, rel := range retainedReleases(j) {
-				if rel.Container == allow && rel.Service == rec.Service && rel.VolumeID == rec.ID && rel.Operation == op && rel.Image == v.Config.Image {
+				if releaseHas(rel, allow) && runtimeLabelMatches(rel, allow, v.Config.Labels) && rel.Service == rec.Service && rel.VolumeID == rec.ID && rel.Operation == op && rel.Image == v.Config.Image {
 					permitted = true
 				}
 			}
@@ -320,7 +320,7 @@ func (m *Manager) volumeReferences(ctx context.Context, j *journal, rec volumes.
 		if preflight {
 			if slot := j.ServiceStates[rec.Service]; slot != nil {
 				for _, r := range []*release{slot.Current, slot.Candidate} {
-					if r != nil && r.Container == row.Names && r.VolumeID == rec.ID && r.Operation == op && r.Image == v.Config.Image {
+					if releaseHas(r, row.Names) && runtimeLabelMatches(r, row.Names, v.Config.Labels) && r.VolumeID == rec.ID && r.Operation == op && r.Image == v.Config.Image {
 						permitted = true
 					}
 				}
@@ -338,7 +338,7 @@ func (m *Manager) volumeReferences(ctx context.Context, j *journal, rec volumes.
 func (m *Manager) volumeContainerProvenance(j *journal, rec volumes.Record, v *inspection) error {
 	name, op := strings.TrimPrefix(v.Name, "/"), v.Config.Labels["soar.operation"]
 	for _, rel := range retainedReleases(j) {
-		if rel.Container == name && rel.Service == rec.Service && rel.Operation == op && rel.VolumeID == rec.ID && rel.Image == v.Config.Image {
+		if releaseHas(rel, name) && runtimeLabelMatches(rel, name, v.Config.Labels) && rel.Service == rec.Service && rel.Operation == op && rel.VolumeID == rec.ID && rel.Image == v.Config.Image {
 			return nil
 		}
 	}
@@ -382,7 +382,11 @@ func (m *Manager) checkVolumeWriters(ctx context.Context, j *journal, r *release
 	} else if !yes {
 		return errors.New("writer volume missing")
 	}
-	return m.volumeReferences(ctx, j, rec, r.Container, false)
+	ref, err := selectRuntime(r, 0)
+	if err != nil {
+		return err
+	}
+	return m.volumeReferences(ctx, j, rec, ref.Container, false)
 }
 func (m *Manager) volumeStatuses(ctx context.Context, app, hostID string, j *journal, service string) ([]VolumeStatus, error) {
 	s, err := m.volumeStore().Load(app, hostID)
