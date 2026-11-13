@@ -253,6 +253,73 @@ func TestReleaseCommandLostStartAndInterruptedWaitResumeObservation(t *testing.T
 	}
 }
 
+func TestLegacyJournalRejectsReleaseMetadata(t *testing.T) {
+	for _, field := range []string{"capture", "status"} {
+		t.Run(field, func(t *testing.T) {
+			m, _ := setup(t)
+			j := saveRouteLegacy(t, m, "notes", "building")
+			if field == "capture" {
+				j.Hook = &releaseCapture{Operation: strings.Repeat("1", 32), Directive: config.Release{Service: "web", Command: []string{"bin/release"}}}
+			} else {
+				j.Status.Release = &RunResult{Operation: strings.Repeat("1", 32), Service: "web", Phase: "complete"}
+			}
+			if err := validateJournal(j, j.App); err == nil {
+				t.Fatal("legacy journal silently accepted release metadata")
+			}
+		})
+	}
+}
+
+func TestReleaseCommandIsNotRepeatedAfterRuntimeReadinessFailure(t *testing.T) {
+	f := newReleaseFlow(t)
+	f.failHealth["web"] = true
+	op := strings.Repeat("1", 32)
+	if _, err := f.deploy(releaseApp("first"), op); err == nil {
+		t.Fatal("expected runtime readiness failure")
+	}
+	j := f.load()
+	if j.Phase != "updating" || j.Hook.ExitCode == nil || *j.Hook.ExitCode != 0 {
+		t.Fatal("successful release gate was not durable")
+	}
+	f.failHealth["web"] = false
+	if _, err := f.resumeHook(op); err != nil {
+		t.Fatal(err)
+	}
+	if f.starts != 1 || f.load().Phase != "ready" {
+		t.Fatal("runtime recovery repeated the release command")
+	}
+}
+
+func TestReleaseCommandReplicaGroupSharesLimitsAndOneExecution(t *testing.T) {
+	f := newReleaseFlow(t)
+	a := releaseApp("group")
+	cfg := a.Services["web"]
+	count := 2
+	cpu := 0.5
+	memory := int64(64)
+	cfg.Replicas = &count
+	cfg.Resources = &config.Resources{CPUs: &cpu, MemoryMB: &memory}
+	a.Services["web"] = cfg
+	if _, err := f.deploy(a, strings.Repeat("1", 32)); err != nil {
+		t.Fatal(err)
+	}
+	j := f.load()
+	members := runtimeRefs(j.ServiceStates["web"].Current)
+	if len(members) != 2 || f.starts != 1 {
+		t.Fatal("release was not once for the whole group")
+	}
+	names := []string{"soar-run-" + j.Hook.Operation}
+	for _, member := range members {
+		names = append(names, member.Container)
+	}
+	for _, name := range names {
+		v := f.docker.containers[name]
+		if v == nil || v.HostConfig.NanoCPUs != 500000000 || v.HostConfig.Memory != 64*1024*1024 || v.HostConfig.MemorySwap != v.HostConfig.Memory {
+			t.Fatalf("limits differ for %s", name)
+		}
+	}
+}
+
 func TestReleaseCommandRejectsExcludedRunner(t *testing.T) {
 	f := newReleaseFlow(t)
 	if _, err := f.deploy(multiApp(), strings.Repeat("1", 32)); err != nil {

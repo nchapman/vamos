@@ -933,7 +933,7 @@ func validateJournal(j *journal, app string) error {
 	if isMulti(j) {
 		return validateMultiJournal(j, app)
 	}
-	if len(j.Selected) != 0 || len(j.Removed) != 0 || j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+	if j.Hook != nil || j.Status.Release != nil || len(j.Selected) != 0 || len(j.Removed) != 0 || j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
 		return errors.New("invalid legacy app journal")
 	}
 	bad := errors.New("invalid app journal")
