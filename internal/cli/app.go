@@ -418,6 +418,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 				continue
 			}
 			ss := s.Services[serviceName]
+			if err := printDomainStatuses(stdout, ss.Domains); err != nil {
+				return lifecycleError(stderr, err)
+			}
 			if ss.Candidate != "" {
 				if _, err := fmt.Fprintf(stdout, "%s candidate: %q\n", serviceName, ss.Candidate); err != nil {
 					return lifecycleError(stderr, err)

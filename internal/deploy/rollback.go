@@ -14,6 +14,8 @@ import (
 )
 
 type RollbackService struct {
+	CurrentDomains []string          `json:"current_domains,omitempty"`
+	TargetDomains  []string          `json:"target_domains,omitempty"`
 	Name           string            `json:"name"`
 	CurrentImage   string            `json:"current_image,omitempty"`
 	TargetImage    string            `json:"target_image,omitempty"`
@@ -73,6 +75,9 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 	next := &journal{Version: 5, Status: Status{App: old.App, URL: old.URL, Operation: r.Operation, Phase: "building"}, HostID: old.HostID, Scope: r.Service, ReuseData: old.ReuseData,
 		Config: &config.App{Name: old.App, Services: map[string]config.Service{}}, ServiceStates: map[string]*serviceState{}, Completed: old.Completed, PreviousCompleted: old.PreviousCompleted,
 		Rollback: &rollbackCapture{TargetOperation: target.Operation, AllowDowntime: r.AllowDowntime, Targets: map[string]*release{}}}
+	if old.Version == 6 {
+		next.Version = 6
+	}
 	preview := &RollbackPreview{TargetOperation: target.Operation, NeedsConfirmation: !r.Apply}
 	names := make([]string, 0, len(old.ServiceStates))
 	for name := range old.ServiceStates {
@@ -85,9 +90,15 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 		item := RollbackService{Name: name}
 		if prior.Current != nil {
 			item.CurrentImage = prior.Current.Image
+			if prior.Current.Config.HTTP != nil {
+				item.CurrentDomains = prior.Current.Config.HTTP.Domains
+			}
 		}
 		if wanted != nil {
 			item.TargetImage = wanted.Image
+			if wanted.Config != nil && wanted.Config.HTTP != nil {
+				item.TargetDomains = wanted.Config.HTTP.Domains
+			}
 		}
 		currentCfg := old.Config.Services[name]
 		if prior.Current != nil {

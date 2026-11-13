@@ -67,10 +67,12 @@ Rollback does not bypass active-operation or uncertain-runtime recovery guards.
 Interrupted rollback uses the normal `soar resume OP` command and captured inputs;
 do not add new rollback selection or authorization flags to resume.
 
-Rollback writes a **v5 rollback-only journal**. Older v1–v4 journals remain
+For no-alias apps, rollback writes a **v5 rollback-only journal**. Older v1–v4 journals remain
 readable under their recovery rules. Legacy v1 history lacks captured service
 configurations and cannot be rolled back until modern release history exists.
-A normal deploy after rollback returns to the v4 deployment journal format.
+A normal deploy after no-alias v5 rollback returns to the v4 deployment journal format.
+Domain-capable apps use v6 for both deployment and rollback and stay v6 after
+alias removal to preserve history. Versions 1–5 strictly reject aliases.
 
 Public stateless replacement retains the normal readiness/routing behavior;
 private services use stop/start. App-wide completion is not atomic, and rollback
@@ -116,4 +118,14 @@ volume-backed single-writer recovery. Review found no actionable issues.
 
 Live volume-backed code rollback, forced worker termination, hard power loss,
 private-registry outages, native Windows execution and arm64 host execution were
-not exercised. Backup/restore and custom-domain scope are unchanged.
+not exercised. Backup/restore remains deferred. This evidence does not verify custom domains.
+
+## Custom-domain ownership
+
+Rollback restores captured aliases for selected services, retaining their generated
+URLs. Preview shows current and target custom domains. Historical snapshots do
+not reserve removed aliases: rollback rechecks server-wide ownership and refuses
+an alias reclaimed by another service/app before making changes. Release that
+alias from its current owner with a successful deployment before retrying, or
+use a forward deploy with corrected aliases instead. Do not edit journals or
+Caddy manually. See [domain workflow and collision recovery](domains.md).

@@ -54,7 +54,7 @@ func workflowConfig(a *config.App) bool {
 }
 
 func supportsVolumes(j *journal) bool {
-	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5)
+	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6)
 }
 
 func protectedChange(name string) error {

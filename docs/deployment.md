@@ -4,7 +4,7 @@ See [persistent local volumes](volumes.md) for single-writer replacement, durabl
 
 Implemented: up to eight Dockerfile-built or prebuilt-image public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
 
-Not implemented: custom domain aliases, service removal, `exec`, backup/restore automation, public/private kind changes, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
+Not implemented: service removal, `exec`, backup/restore automation, public/private kind changes, streaming logs, `init`, or automatic garbage collection. Unsupported configurations fail explicitly, not through partial application. Apps have separate networks and merged Caddy routes.
 
 ## Roll back captured code/config
 
@@ -175,3 +175,13 @@ The macOS client tested the disposable Ubuntu 26.04 amd64 droplet as root, using
 `mise run check` passed locally, including race-enabled tests and Linux amd64/arm64 builds. Windows test binaries cross-compiled. A 1,000-file context archive also passed with garbage collection disabled and a **64-file-descriptor limit**.
 
 Native Windows/Linux client runs, arm64 execution, forced power-loss recovery, and all possible external Docker/Caddy edits still need separate verification; cross-compilation is not native execution. Subsequent two-app routing, container/Docker restart, and full host reboot tests are recorded in [app lifecycle](app-lifecycle.md#verification). Client timeout/recovery was tested, not a forced kill of the remote worker during Caddy promotion.
+
+## Custom domains
+
+Public services accept `http.domains` (up to 8 per service, 32 per app).
+Edit YAML and use normal `soar deploy`, optionally scoped with `--service`;
+there is no route-only `soar domains` command. Generated URLs remain available.
+Alias replacement follows service readiness and atomic Caddy routing, not an
+app-wide transaction. Use explicit `soar status` after completion for DNS and
+local certificate observations; deploy output is not HTTPS readiness evidence.
+See [custom domains](domains.md) for workflow, ownership and probe limits.

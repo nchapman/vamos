@@ -1,8 +1,8 @@
 # Soar: a small app platform for one server
 
-**Status: multi-service deployment, persistent local volumes and the PostgreSQL workflow are implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built or prebuilt-image services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Protected manual updates, scoped deployment and noninteractive one-off migration commands work. Preview-first code/config [rollback](docs/rollback.md) is implemented. Exec, custom domains, backup/restore and other broader workflows below remain proposed. Examples below that use these deferred commands describe design targets, not available CLI APIs. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
+**Status: multi-service deployment, persistent local volumes and the PostgreSQL workflow are implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built or prebuilt-image services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Protected manual updates, scoped deployment and noninteractive one-off migration commands work. Preview-first code/config [rollback](docs/rollback.md) is implemented. Exec, backup/restore and other broader workflows below remain proposed. Examples below that use these deferred commands describe design targets, not available CLI APIs. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
 
-The implemented [storage lifecycle](docs/volumes.md) supersedes the original volume proposal. It uses immutable owned local volumes, single-writer stop/start, durable public 503 routes, retained data, and explicit `--reuse-data` after destroy. Storage journals use v3; ready/incomplete v1/v2 remain recoverable. Backup/restore/preparation and data deletion are deferred. Database/manual-update/scoped-deploy and prebuilt images are implemented; custom domains remain proposed; code/config rollback is implemented; acceptance scenarios are not claims of completed live or full-suite validation.
+The implemented [storage lifecycle](docs/volumes.md) supersedes the original volume proposal. It uses immutable owned local volumes, single-writer stop/start, durable public 503 routes, retained data, and explicit `--reuse-data` after destroy. Storage journals use v3; ready/incomplete v1/v2 remain recoverable. Backup/restore/preparation and data deletion are deferred. Database/manual-update/scoped-deploy and prebuilt images are implemented; custom domains are implemented via normal deploy; code/config rollback is implemented; acceptance scenarios are not claims of completed live or full-suite validation.
 
 See [PostgreSQL](docs/postgres.md), the [runnable Ledger recipe](examples/ledger/README.md)
 and [run recovery and limits](docs/deployment.md#one-off-commands) for the current contract.
@@ -70,29 +70,13 @@ SSH remains the management boundary. There is no public Soar administration API.
 
 ### Domains are normal app configuration
 
-```sh
-# In the project: update soar.yaml and apply a routing-only change to the deployed app.
-soar domains add notes.example.com --service web
-soar domains add www.notes.example.com --service web
-soar domains list
-soar domains remove www.notes.example.com --service web
-```
-
-These commands are conveniences over `services.<name>.http.domains`. They do not rebuild or restart containers, and do not silently apply other pending local configuration changes. The next `soar deploy` also reconciles domains from the file. If applying a domain change fails, preserve working routes and report the unapplied local edit. Repeat the same add/remove command to retry only that edit; these commands are idempotent.
-
-`domains add` prints the DNS target and distinguishes route configuration from DNS validation and certificate issuance:
-
-```text
-home / notes / web
-Route configured
-DNS pending: point notes.example.com at 203.0.113.10
-Certificate pending
-Existing URL: https://notes.apps.example.com
-```
-
-`domains list` reports DNS pending/incorrect, certificate pending/failed, or HTTPS ready. Pending custom-domain validation never blocks deployment on the generated hostname or disables working aliases. Invalid names and ownership collisions fail validation; unresolved DNS is an asynchronous status, not a reason to tear down a working app. A successful Caddy reload is not proof that HTTPS is ready.
-
-Each public service always gets a generated hostname: `<app>.<base-domain>` for `web`, or `<app>-<service>.<base-domain>` for other services. Custom domains are additional aliases, not automatic redirects. Reserve all hostnames globally on the server, including generated names; reject collisions rather than taking another app's route. Wildcard custom domains and path-based routing are outside v1.
+Custom domains are implemented as `services.<name>.http.domains` aliases applied
+by normal deployment, not route-only commands. Edit YAML, run `soar deploy`
+(or `soar deploy --service web`), then `soar status`. There is no `soar domains`
+CLI command. See [custom domains](docs/domains.md) for validation, ownership,
+DNS/TLS checks and rollback recovery. Generated URLs are always retained;
+aliases are additional routes, not redirects. Operators configure DNS; Caddy
+obtains public certificates automatically.
 
 ## 3. The small configuration model
 
@@ -216,7 +200,7 @@ Restore eligible services:  soar rollback
 
 An SSH disconnect does not imply cancellation or successful completion. `status` reconciles the operation journal with live containers and routes and reports what is running, whether an executor is still active, and the next supported action. `resume <id>` waits for/acquires the operation lock, reconciles first, and continues the captured images, config, and secret versions—not the caller's current working tree. It never launches a second executor for an active operation.
 
-A fresh `deploy` refuses to start while an incomplete deployment exists and points to resume or rollback. If the captured configuration itself needs correction, `soar deploy --supersede op-42` reconciles and closes that stopped operation, then plans from the current project and actual running state; it cannot supersede an active executor or automatically undo data changes. Failed volume-backed updates remain unavailable until explicitly resumed with the same image or superseded with a corrected build. Domain command retries stay route-only; one-off commands are never silently resumed.
+A fresh `deploy` refuses to start while an incomplete deployment exists and points to resume or rollback. If the captured configuration itself needs correction, `soar deploy --supersede op-42` reconciles and closes that stopped operation, then plans from the current project and actual running state; it cannot supersede an active executor or automatically undo data changes. Failed volume-backed updates remain unavailable until explicitly resumed with the same image or superseded with a corrected build. Domain edits use normal deployment recovery; one-off commands are never silently resumed.
 
 ### Operations that cannot be hand-waved away
 
@@ -230,7 +214,7 @@ A fresh `deploy` refuses to start while an incomplete deployment exists and poin
 
 ## 5. Five configurations to test the model
 
-These are design scenarios; journal and Ledger are runnable, while the broader custom-domain workflows remain proposed; rollback is implemented as documented in [rollback](docs/rollback.md). Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `soar.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Soar.
+These are design scenarios; journal and Ledger are runnable, with custom aliases applied through normal deployment; rollback is implemented as documented in [rollback](docs/rollback.md). Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `soar.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Soar.
 
 ### 1. A stateless website with two custom domains
 
@@ -251,14 +235,15 @@ services:
 
 ```sh
 soar deploy
-soar domains add preview.studio.example.com --service web
-soar domains list
+# Add preview.studio.example.com to web.http.domains in soar.yaml
+soar deploy --service web
+soar status
 # Edit code, then:
 soar deploy
 soar rollback
 ```
 
-**Tests:** the smallest useful app; multiple hostnames; generated `studio.apps.example.com` still works even when custom DNS is pending. Adding a domain must not rebuild the image. Domain aliases do not imply redirects or solve application-level host validation. A bad build/readiness check leaves the previous route live; `status` explains whether to resume or supersede the failed deployment.
+**Tests:** the smallest useful app; multiple hostnames; generated `studio.apps.example.com` still works even when custom DNS is pending. Adding a domain follows the normal deployment/build and readiness path. Domain aliases do not imply redirects or solve application-level host validation. A bad build/readiness check leaves the previous route live; `status` explains whether to resume or supersede the failed deployment.
 
 ### 2. A small app with SQLite and uploaded files
 
@@ -446,7 +431,9 @@ services:
 
 ```sh
 soar deploy
-soar domains add preview.workspace.example.com --service web
+# Add preview.workspace.example.com to web.http.domains in soar.yaml
+soar deploy --service web
+soar status
 soar logs --service renderer --follow
 # Update any of the Dockerfiles, then:
 soar deploy
@@ -462,7 +449,7 @@ On later deployments, API and renderer versions must tolerate overlap. If a rend
 | --- | --- |
 | “Can I add Postgres or Redis?” | Yes: private image-based services with volumes and explicit update protection. |
 | “Can my worker reach them?” | Yes: app-local service DNS, without public ports or link declarations. |
-| “Can I attach several domains?” | Planned: custom aliases and domain commands remain deferred. |
+| “Can I attach several domains?” | Yes: up to 8 aliases per public service and 32 per app, via YAML and deploy. |
 | “Can one app expose web and API?” | Yes: opt-in HTTP per service; everything else stays private. |
 | “Do volume-backed apps use normal deploy?” | Yes, with stop/start downtime; manual update protection is a separate choice. |
 | “Does rollback restore my database?” | No: code/config rollback and data recovery are separate operations. |
@@ -480,10 +467,12 @@ Current implementation checklist (not a live-test completion checklist):
 - [x] Noninteractive one-off commands with bounded results and explicit unknown-outcome recovery.
 - [x] Terminal run cleanup and bounded result retention; destroy retains volumes/secrets.
 - [x] Preview-first captured code/config rollback, scoped selection and explicit volume downtime authorization (not data rollback).
-- [ ] Custom domains, exec/interactive commands and service removal.
+- [x] Custom aliases via normal deploy and rollback; explicit status DNS/local TLS observations.
+- [ ] Exec/interactive commands and service removal.
 - [ ] Backup/restore tooling and tested off-host recovery for important data.
 - [x] PostgreSQL live acceptance evidence recorded in [PostgreSQL verification](docs/postgres.md#verification-for-this-milestone), separately from earlier volume tests.
-- [ ] Rollback live acceptance evidence (not claimed by this documentation update).
+- [x] Rollback live acceptance evidence recorded in [rollback verification](docs/rollback.md#verification-for-this-milestone).
+- [x] Custom-domain live acceptance recorded in [domain verification](docs/domains.md#live-acceptance), including HTTPS, alias replacement/rollback, collisions and incorrect DNS.
 
 The sequence below retains design/acceptance targets, including deferred features:
 

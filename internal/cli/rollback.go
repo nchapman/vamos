@@ -25,6 +25,11 @@ func printRollbackPreview(w io.Writer, p *deploy.RollbackPreview) error {
 		if _, err := fmt.Fprintf(w, "Service %q: %s -> %s (downtime=%t)\n", s.Name, s.CurrentImage, s.TargetImage, s.Downtime); err != nil {
 			return err
 		}
+		if len(s.CurrentDomains) != 0 || len(s.TargetDomains) != 0 {
+			if _, err := fmt.Fprintf(w, "  Custom domains: %q -> %q\n", s.CurrentDomains, s.TargetDomains); err != nil {
+				return err
+			}
+		}
 		names := make([]string, 0, len(s.SecretVersions))
 		for name := range s.SecretVersions {
 			names = append(names, name)

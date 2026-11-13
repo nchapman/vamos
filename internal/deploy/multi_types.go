@@ -8,18 +8,19 @@ const MaxServices = 8
 const BundleFormat = "bundle-v1"
 
 type ServiceStatus struct {
-	Unavailable        bool   `json:"unavailable,omitempty"`
-	DataMayHaveChanged bool   `json:"data_may_have_changed,omitempty"`
-	Kind               string `json:"kind"`
-	Phase              string `json:"phase"`
-	URL                string `json:"url,omitempty"`
-	Operation          string `json:"operation,omitempty"`
-	Container          string `json:"container,omitempty"`
-	Candidate          string `json:"candidate,omitempty"`
-	Image              string `json:"image,omitempty"`
-	Port               string `json:"port,omitempty"`
-	Running            bool   `json:"running"`
-	Available          bool   `json:"available"`
+	Domains            []DomainStatus `json:"domains,omitempty"`
+	Unavailable        bool           `json:"unavailable,omitempty"`
+	DataMayHaveChanged bool           `json:"data_may_have_changed,omitempty"`
+	Kind               string         `json:"kind"`
+	Phase              string         `json:"phase"`
+	URL                string         `json:"url,omitempty"`
+	Operation          string         `json:"operation,omitempty"`
+	Container          string         `json:"container,omitempty"`
+	Candidate          string         `json:"candidate,omitempty"`
+	Image              string         `json:"image,omitempty"`
+	Port               string         `json:"port,omitempty"`
+	Running            bool           `json:"running"`
+	Available          bool           `json:"available"`
 }
 
 // Each slot describes effective state, not just the last requested app config.

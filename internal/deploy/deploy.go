@@ -138,6 +138,7 @@ type journal struct {
 }
 type Runner func(context.Context, string, []string, []byte) (process.Result, error)
 type Manager struct {
+	DomainProbe func(context.Context, string) DomainStatus
 	// RuntimeDir is the private worker staging directory for transient env files.
 	RuntimeDir string
 	// AllocatePort selects an advisory loopback reservation. Docker's bind is authoritative.
@@ -192,9 +193,6 @@ func ValidateApp(a *config.App) error {
 	}
 	mappings := 0
 	for name, s := range a.Services {
-		if s.HTTP != nil && len(s.HTTP.Domains) > 0 {
-			return fmt.Errorf("service %s: custom domains are not supported", name)
-		}
 		if s.Image != "" {
 			if err := validImageReference(s.Image); err != nil {
 				return fmt.Errorf("service %s: %w", name, err)
@@ -216,7 +214,7 @@ func validateLegacyApp(a *config.App) error {
 		return err
 	}
 	s, ok := a.Services["web"]
-	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || s.Build == nil || s.Update == config.UpdateManual {
+	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || s.Build == nil || s.Update == config.UpdateManual || len(s.HTTP.Domains) != 0 {
 		return errors.New("legacy protocol supports only one public web service; use a current client with a captured build bundle")
 	}
 	return nil
@@ -550,6 +548,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	if e != nil {
 		return resp, e
 	}
+	defer func() { m.enrichDomainResponse(ctx, r, &resp) }()
 	defer func() { m.enrichVolumeResponse(ctx, r, h.ID, &resp) }()
 	if !mut {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

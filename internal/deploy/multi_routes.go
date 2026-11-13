@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/lifecycle"
 )
 
@@ -89,6 +90,13 @@ func claimHostname(claims map[string]hostnameOwner, app, service, domain string)
 		return errors.New("invalid service hostname claim")
 	}
 	hostname := strings.TrimPrefix(ServiceURL(app, service, domain), "https://")
+	return claimNamedHostname(claims, app, service, hostname)
+}
+
+func claimNamedHostname(claims map[string]hostnameOwner, app, service, hostname string) error {
+	if !config.ValidDomain(hostname) {
+		return errors.New("invalid public hostname claim")
+	}
 	owner := hostnameOwner{app, service}
 	if prev, ok := claims[hostname]; ok && prev != owner {
 		return fmt.Errorf("public hostname %s is claimed by both %s/%s and %s/%s", hostname, prev.app, prev.service, app, service)
@@ -99,6 +107,21 @@ func claimHostname(claims map[string]hostnameOwner, app, service, domain string)
 
 func reserveJournalHostnames(all []*journal, domain string) error {
 	claims := map[string]hostnameOwner{}
+	claim := func(app, service string, cfg *config.Service) error {
+		if !label.MatchString(service) || len(service) > 63 {
+			return errors.New("invalid service hostname claim")
+		}
+		names, err := serviceHostnames(app, service, domain, cfg)
+		if err != nil {
+			return err
+		}
+		for _, host := range names {
+			if err := claimNamedHostname(claims, app, service, host); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for _, j := range all {
 		if j.Phase == "destroyed" {
 			continue
@@ -108,7 +131,7 @@ func reserveJournalHostnames(all []*journal, domain string) error {
 		}
 		for name, cfg := range j.Config.Services {
 			if cfg.HTTP != nil {
-				if e := claimHostname(claims, j.App, name, domain); e != nil {
+				if e := claim(j.App, name, &cfg); e != nil {
 					return e
 				}
 			}
@@ -133,7 +156,7 @@ func reserveJournalHostnames(all []*journal, domain string) error {
 					return errors.New("missing effective service config")
 				}
 				if r.Config.HTTP != nil {
-					if e := claimHostname(claims, j.App, name, domain); e != nil {
+					if e := claim(j.App, name, r.Config); e != nil {
 						return e
 					}
 				}
@@ -170,11 +193,16 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		if e != nil || port < 1 || port > 65535 || strconv.Itoa(port) != r.Port {
 			return errors.New("invalid public route port")
 		}
-		host := strings.TrimPrefix(ServiceURL(app, service, domain), "https://")
-		if _, exists := routes[host]; exists {
-			return errors.New("duplicate public route")
+		hosts, err := serviceHostnames(app, service, domain, r.Config)
+		if err != nil {
+			return err
 		}
-		routes[host] = r.Port
+		for _, host := range hosts {
+			if _, exists := routes[host]; exists {
+				return errors.New("duplicate public route")
+			}
+			routes[host] = r.Port
+		}
 		return nil
 	}
 	// Render the caller's own in-memory state, even before its first save. The
@@ -207,11 +235,16 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 				r = slot.Candidate
 			}
 			if unavailable {
-				host := strings.TrimPrefix(ServiceURL(other.App, name, domain), "https://")
-				if _, exists := routes[host]; exists {
-					return "", errors.New("duplicate unavailable route")
+				hosts, err := unavailableHostnames(other, name, domain, slot)
+				if err != nil {
+					return "", err
 				}
-				routes[host] = "unavailable"
+				for _, host := range hosts {
+					if _, exists := routes[host]; exists {
+						return "", errors.New("duplicate unavailable route")
+					}
+					routes[host] = "unavailable"
+				}
 				continue
 			}
 			if r == nil {

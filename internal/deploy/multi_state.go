@@ -15,7 +15,7 @@ import (
 )
 
 func isMulti(j *journal) bool {
-	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4 || j.Version == 5)
+	return j != nil && (j.Version == 2 || j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6)
 }
 
 func journalDomain(j *journal) string { return strings.TrimPrefix(j.URL, "https://"+j.App+".") }
@@ -69,7 +69,7 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 		}
 	} else {
 		a := &config.App{Name: j.App, Services: map[string]config.Service{name: *r.Config}}
-		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || (j.Version < 4 && workflowConfig(a)) {
+		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || (j.Version < 4 && workflowConfig(a)) || (j.Version < 6 && domainConfig(a)) {
 			return bad
 		}
 		if r.Config.Volume == nil {
@@ -102,11 +102,14 @@ func validateMultiJournal(j *journal, app string) error {
 	if !isMulti(j) || j.App != app || len(app) > 63 || !label.MatchString(app) || !operation.MatchString(j.Operation) || !operation.MatchString(j.HostID) || ValidateApp(j.Config) != nil || j.Config.Name != app {
 		return bad
 	}
-	if j.Version == 5 {
+	if j.Version == 5 || (j.Version == 6 && j.Rollback != nil) {
 		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || len(j.Rollback.Targets) == 0 || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
 			return bad
 		}
 	} else if j.Rollback != nil || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
+		return bad
+	}
+	if j.Version < 6 && domainConfig(j.Config) {
 		return bad
 	}
 	if j.Status.Run != nil || len(j.Volumes) != 0 || (!supportsVolumes(j) && j.ReuseData) || (j.Version < 4 && (j.Scope != "" || workflowConfig(j.Config))) {

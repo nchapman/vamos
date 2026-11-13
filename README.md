@@ -237,3 +237,14 @@ mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar
 ```
 
 Staged secrets, multi-service apps and [persistent local volumes](docs/volumes.md) are implemented. The original volume proposal is superseded; backup/restore/preparation remain deferred, and new storage full-suite/live acceptance results are not claimed here; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).
+
+## Custom domains
+
+Public services support [custom-domain aliases](docs/domains.md) through
+`http.domains`: up to 8 per service and 32 per app. Edit YAML, `soar deploy`,
+then `soar status`; there is no separate `soar domains` command. Generated URLs
+are always retained, and aliases do not redirect. Operators configure DNS and
+open ports 80/443; Caddy manages public certificates automatically. Status
+separates route state, DNS matching and locally verified TLS; it does not prove
+Internet reachability or application health. Captured aliases participate in
+[rollback](docs/rollback.md), subject to fresh server-wide ownership checks.

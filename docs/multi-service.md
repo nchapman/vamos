@@ -36,7 +36,7 @@ soar deploy --supersede OPERATION_ID
 
 Flags precede positional arguments. Deploy defaults to the whole app; `deploy --service NAME` selects one service without applying other local changes. Existing `update: manual` services require scoped deployment with `--yes` to update; ordinary deploy creates missing manual services but leaves unchanged existing ones pinned. Changed protected configuration or staged secrets cause preflight refusal. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
 
-See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. Custom domains, service removal, public/private kind changes, and interactive command attachment remain unsupported. Omitting an effective service is an error, never deletion authorization.
+See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. Service removal, public/private kind changes, and interactive command attachment remain unsupported. Omitting an effective service is an error, never deletion authorization.
 
 ## Deployment and partial success
 
@@ -114,3 +114,23 @@ The recovery change in commit `1e79e18` was subsequently exercised against real 
 The health-check count is a fixture for this implementation, not a public API contract. Uncertain/live-new route refusal and interrupted cancellation remain covered by local regressions; this follow-up did not repeat those cases remotely or perform another reboot.
 
 Local `mise run check` passed (formatting, vet, race tests, and native/Linux amd64/arm64 builds); Windows packages also cross-compiled. Native Windows/Linux client execution, arm64 host execution, forced power loss, and exhaustive remote worker-kill injection remain separate verification work.
+
+## Custom-domain routing and recovery
+
+[Custom aliases](domains.md) extend each public service's generated hostname;
+they never replace it or imply redirects. Server-wide ownership includes desired,
+current, candidate and retiring service configurations across apps, including
+custom/generated collisions. Historical snapshots alone do not reserve aliases.
+Release an alias through a completed deploy before transferring it to another
+service; a single cross-service move cannot bypass the old effective claim.
+
+Alias edits use normal readiness-checked deployment with atomic Caddy route
+replacement per service. For public volume replacement, durable 503 routing
+covers the union of old and new aliases until promotion. No app-wide atomicity
+is promised. Rollback rechecks ownership before changes and may refuse a
+historical alias now owned elsewhere.
+
+Version 6 journals support domain-capable normal deploy and rollback. Versions
+1–5 remain strict, recoverable no-alias formats; v5 remains rollback-only for
+no-alias apps. Once upgraded to v6, an app stays v6 even after all aliases are
+removed, so captured domain history remains valid.

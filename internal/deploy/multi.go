@@ -48,6 +48,9 @@ func multiPlan(r Request, h *lifecycle.State, old *journal, state *secrets.State
 	if r.Service != "" || workflowConfig(r.Config) || (old != nil && old.Version >= 4) {
 		j.Version = 4
 	}
+	if domainConfig(r.Config) || (old != nil && old.Version == 6) {
+		j.Version = 6
+	}
 	previousSlots := map[string]*serviceState{}
 	if old != nil && old.Phase != "destroyed" {
 		if isMulti(old) {

@@ -86,6 +86,9 @@ func (a App) Validate() error {
 			}
 		}
 		if s.HTTP != nil {
+			if len(s.HTTP.Domains) > 8 {
+				add("%s.http.domains: at most 8 aliases per service are supported", prefix)
+			}
 			if s.HTTP.Port < 1 || s.HTTP.Port > 65535 {
 				add("%s.http.port must be between 1 and 65535", prefix)
 			}
@@ -96,7 +99,7 @@ func (a App) Validate() error {
 			}
 			for _, domain := range s.HTTP.Domains {
 				normalized := strings.ToLower(domain)
-				if !validDomain(normalized) {
+				if !ValidDomain(normalized) {
 					add("%s.http.domains: %q must be a DNS hostname, without a scheme, port, or wildcard", prefix, domain)
 				}
 				if owner, exists := domains[normalized]; exists {
@@ -118,6 +121,9 @@ func (a App) Validate() error {
 			volumes[volume.Name] = prefix
 		}
 	}
+	if len(domains) > 32 {
+		add("at most 32 custom domains per app are supported")
+	}
 	return errors.Join(issues...)
 }
 
@@ -125,7 +131,8 @@ func validLabel(value string) bool {
 	return len(value) >= 1 && len(value) <= 63 && labelPattern.MatchString(value)
 }
 
-func validDomain(value string) bool {
+// ValidDomain accepts a lowercase DNS hostname, not a URL, wildcard or IP address.
+func ValidDomain(value string) bool {
 	if len(value) > 253 || !strings.Contains(value, ".") || net.ParseIP(value) != nil {
 		return false
 	}
