@@ -36,6 +36,23 @@ func deploymentApproval(flags *flag.FlagSet, manifest, server, service string) s
 	return suggestedCommand(args...)
 }
 
+// Captured-state operations do not read new deployment inputs. Pin both
+// identities instead of allowing a later manifest edit to retarget approval.
+func capturedApproval(flags *flag.FlagSet, action, server, app string) string {
+	args := []string{"soar", action}
+	switch action {
+	case "cleanup", "destroy", "rollback":
+		args = appendSuppliedFlags(args, flags, "service")
+	case "service-remove":
+		args = []string{"soar", "service", "remove", flags.Lookup("service").Value.String()}
+	default:
+		return ""
+	}
+	args = append(args, "--server", server, "--app", app, "--yes")
+	args = appendSuppliedFlags(args, flags, "executor", "timeout", "allow-protected", "allow-downtime")
+	return suggestedCommand(args...)
+}
+
 func appendSuppliedFlags(args []string, flags *flag.FlagSet, names ...string) []string {
 	flags.Visit(func(f *flag.Flag) {
 		if !slices.Contains(names, f.Name) {

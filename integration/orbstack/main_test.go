@@ -214,7 +214,7 @@ func TestControlEnvironmentDoesNotForwardAmbientVariables(t *testing.T) {
 
 func TestArchive(t *testing.T) {
 	root := fixture(t)
-	for _, p := range []string{".env", "bin/secret", ".pi/secret", "examples/.env.secret", "internal/__pycache__/secret", "internal/.git/secret"} {
+	for _, p := range []string{".env", "bin/secret", ".pi/secret", "examples/.env.secret", "internal/__pycache__/secret", "internal/.git/secret", "integration/visual/node_modules/dependency/secret"} {
 		p = filepath.Join(root, p)
 		os.MkdirAll(filepath.Dir(p), 0700)
 		os.WriteFile(p, []byte("secret"), 0600)

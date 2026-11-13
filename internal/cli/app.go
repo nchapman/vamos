@@ -272,6 +272,16 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		defer cancel()
 	}
 	var binary []byte
+	view := presentationFor(stdout)
+	if *asJSON {
+		view = nil
+	}
+	reportView := appReport{action: action, app: name, service: *service, server: server, mutation: mutation, apply: request.Apply, extraFlags: appendSuppliedFlags(nil, flags, "executor", "timeout"), approval: capturedApproval(flags, action, server.Name, name)}
+	if view != nil && mutation {
+		if err := view.write(stdout, view.header(action, name, server.Name, server.Target)+view.field("Requested operation", request.Operation)+"\n"); err != nil {
+			return lifecycleError(stderr, err)
+		}
+	}
 	if action == "deploy" && *service == "" {
 		if _, err := fmt.Fprintln(stdout, "Declared-service deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
 			return lifecycleError(stderr, err)
@@ -294,7 +304,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if err := printVolumeWarnings(stdout, action, *supersede, warningApp); err != nil {
 		return lifecycleError(stderr, err)
 	}
-	if mutation && !*asJSON {
+	if mutation && !*asJSON && view == nil {
 		if _, err := fmt.Fprintf(stdout, "%s / %s: %s (operation %s)\n", server.Name, name, action, request.Operation); err != nil {
 			return lifecycleError(stderr, err)
 		}
@@ -315,7 +325,13 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	if action == "deploy" {
-		fmt.Fprintf(stdout, "Target %s (%s) / %s; selected services: %v\n", server.Name, server.Target, name, selectedNames)
+		if view != nil {
+			if err := view.write(stdout, view.field("Selected services", fmt.Sprint(selectedNames))); err != nil {
+				return lifecycleError(stderr, err)
+			}
+		} else {
+			fmt.Fprintf(stdout, "Target %s (%s) / %s; selected services: %v\n", server.Name, server.Target, name, selectedNames)
+		}
 	}
 	if (action == "service-bind" || action == "service-remove") && !*asJSON {
 		fmt.Fprintf(stdout, "Target %s (%s) / %s; selected service: %s\n", server.Name, server.Target, name, *service)
@@ -335,6 +351,19 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	if err != nil {
+		if errorView := presentationFor(stderr); errorView != nil {
+			bindingCommand := ""
+			if action == "deploy" && response.Version == 1 && response.Error != "" && response.ErrorCode == deploy.CodeBindingRequired {
+				selected := "NAME"
+				if len(selectedNames) == 1 {
+					selected = selectedNames[0]
+				}
+				bindingArgs := []string{"soar", "service", "bind", selected, "-f", manifestPath, "--server", server.Name}
+				bindingCommand = suggestedCommand(appendSuppliedFlags(bindingArgs, flags, "executor", "timeout")...)
+			}
+			_ = errorView.write(stderr, errorView.appFailure(reportView, request, response, err, bindingCommand))
+			return 1
+		}
 		if action == "deploy" && response.Version == 1 && response.Error != "" && response.ErrorCode == deploy.CodeBindingRequired {
 			selected := "NAME"
 			if len(selectedNames) == 1 {
@@ -363,14 +392,23 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return 0
 	}
 	if p := response.DeployPreview; p != nil {
-		if _, err := fmt.Fprintf(stdout, "Deploy service=%q current-image=%q desired-image=%q downtime=%t\n", p.Service, p.CurrentImage, p.DesiredImage, p.Downtime); err != nil {
-			return lifecycleError(stderr, err)
-		}
-		if p.NeedsConfirmation && !request.Apply {
-			if _, err := fmt.Fprintf(stdout, "Approve: %s\n", deploymentApproval(flags, manifestPath, server.Name, p.Service)); err != nil {
+		if view != nil {
+			if err := view.write(stdout, view.deploymentPreview(p, deploymentApproval(flags, manifestPath, server.Name, p.Service), request.Apply)); err != nil {
 				return lifecycleError(stderr, err)
 			}
-			return 0
+			if p.NeedsConfirmation && !request.Apply {
+				return 0
+			}
+		} else {
+			if _, err := fmt.Fprintf(stdout, "Deploy service=%q current-image=%q desired-image=%q downtime=%t\n", p.Service, p.CurrentImage, p.DesiredImage, p.Downtime); err != nil {
+				return lifecycleError(stderr, err)
+			}
+			if p.NeedsConfirmation && !request.Apply {
+				if _, err := fmt.Fprintf(stdout, "Approve: %s\n", deploymentApproval(flags, manifestPath, server.Name, p.Service)); err != nil {
+					return lifecycleError(stderr, err)
+				}
+				return 0
+			}
 		}
 	}
 	if p := response.RollbackPreview; p != nil {
@@ -378,6 +416,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 		if !request.Apply {
+			if view != nil && reportView.approval != "" {
+				if err := view.write(stdout, view.section("To apply")+view.command(reportView.approval)); err != nil {
+					return lifecycleError(stderr, err)
+				}
+			}
 			return 0
 		}
 	}
@@ -424,6 +467,21 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, errors.New("remote response has no app status"))
 		}
 		if err := json.NewEncoder(stdout).Encode(response.Status); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		return 0
+	}
+	if view != nil {
+		var rendered string
+		if maintenance || response.Plan != nil || (response.Status != nil && response.Status.Phase == "destroyed") {
+			rendered = view.maintenanceReport(response, reportView)
+		} else {
+			if response.Status == nil {
+				return lifecycleError(stderr, errors.New("remote response has no app status"))
+			}
+			rendered = view.statusReport(response.Status, reportView)
+		}
+		if err := view.write(stdout, rendered); err != nil {
 			return lifecycleError(stderr, err)
 		}
 		return 0

@@ -12,6 +12,48 @@ archive-selection and failure-path tests, using a fake external command boundary
 They never start a machine. Python driver tests also run without root, Docker,
 SSH, or a VM. CI runs both sets; real OrbStack tests are opt-in on macOS.
 
+## CLI visual harness
+
+With Node.js 20+, npm, the pinned Go toolchain, and locally installed Google Chrome:
+
+```sh
+mise run test:visual
+```
+
+This opt-in task runs `npm ci --ignore-scripts`, `npm test`, and `npm run capture`
+in `integration/visual`. Dependency installation may need registry access; capture
+uses only an ephemeral loopback HTTP server, which it closes afterward. It does
+not contact deployment servers. Set `SOAR_VISUAL_CHROME` to an installed Chrome
+executable if the default Playwright `chrome` channel is unavailable; no browser
+is downloaded by this harness. Fixture generation has a five-minute process
+limit (and a two-minute Go test limit); browser startup, capture, and cleanup
+steps have 30-second deadlines so stalled rendering can fail and clean up.
+
+Capture runs `TestPresentationVisualFixtures` in `internal/cli` with
+`SOAR_VISUAL_DIR` pointing to `.pi/visual`. That test supplies actual production
+renderer output in `fixtures.json`: an array of `{case, theme, width, ansi}`
+objects, not hand-written HTML replicas. Missing fixtures fail capture. The matrix
+covers 48/80/120 columns and light/dark/mono/terminal modes. Mono and inherited
+terminal foreground modes are rendered on both controlled light and dark
+backgrounds in xterm.js and installed Chrome.
+
+Generated bundles, fixtures, screenshots (`shots/`), and `evaluation.json` stay in
+Git-ignored `.pi/visual/`. Review the screenshots as well as the evaluation: this
+is not a pixel-baseline regression test. Evaluation checks logical text (SGR
+removed, soft wraps joined, ASCII tabs expanded at eight-column stops, right
+space padding ignored), visible-cell contrast of at least 4.5:1 on the controlled
+backgrounds, and browser errors. Eligible standalone, unindented `soar` command
+lines are selected through xterm into a non-executing textarea. This does not test
+the system clipboard, execute suggestions, or validate every help example.
+
+For just the dependency-free model tests, run `npm test` in `integration/visual`.
+They cover fixture validation, control rejection, logical-line normalization,
+selection eligibility, and contrast calculations. Native-terminal rendering,
+custom palettes/fonts, real clipboard behavior, and screen-reader usability need
+separate manual checks; browser screenshots do not establish those properties or
+guarantee contrast on arbitrary backgrounds. See [terminal presentation](cli.md#terminal-presentation)
+for environment controls and unchanged plain/stream output contracts.
+
 ## Disposable Linux integration tests
 
 Install and start [OrbStack](https://orbstack.dev/), then run from the repository:

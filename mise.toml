@@ -63,3 +63,12 @@ python3 -m unittest discover -s integration -p 'test_*.py' -v
 (cd examples/journal && python3 -m unittest discover -v)
 (cd examples/ledger && python3 -m unittest discover -s tests -v)
 '''
+
+[tasks."test:visual"]
+description = "Test the visual harness and capture production CLI fixtures in installed Chrome"
+dir = "integration/visual"
+run = '''
+npm ci --ignore-scripts
+npm test
+npm run capture
+'''

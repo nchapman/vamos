@@ -309,7 +309,7 @@ func archiveSource(root, dest string) (result error) {
 				return err
 			}
 			name := d.Name()
-			if name == ".git" || name == ".soar" || name == ".pi" || name == "__pycache__" || strings.HasPrefix(name, ".env") {
+			if name == ".git" || name == ".soar" || name == ".pi" || name == "__pycache__" || path == filepath.Join(root, "integration", "visual", "node_modules") || strings.HasPrefix(name, ".env") {
 				if d.IsDir() {
 					return filepath.SkipDir
 				}

@@ -9,6 +9,9 @@ import (
 )
 
 func printRollbackPreview(w io.Writer, p *deploy.RollbackPreview) error {
+	if view := presentationFor(w); view != nil {
+		return view.write(w, view.rollbackPreview(p))
+	}
 	if _, err := fmt.Fprintf(w, "Rollback target operation: %s\n", p.TargetOperation); err != nil {
 		return err
 	}

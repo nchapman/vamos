@@ -65,6 +65,23 @@ Snapshot service logs put workload records on stdout and target metadata on stde
 Streaming logs preserve Docker's stdout/stderr streams, with target diagnostics on
 stderr. `logs --run` is a bounded result/diagnostic view, not a raw workload stream.
 
+### Terminal presentation
+
+Human-facing styling is TTY-only. Redirected output, JSON, and raw streams retain
+their existing output contracts. A nonempty `CI` or `TERM=dumb` keeps the original
+plain format, even on a terminal. `NO_COLOR` or `CLICOLOR=0` disables ANSI while
+retaining the terminal layout and hierarchy.
+
+By default, presentation is neutral: it inherits the terminal foreground and uses
+bold for emphasis. `SOAR_THEME=light` or `SOAR_THEME=dark` explicitly selects colors
+for that background. Soar does not set the terminal background or query stdin to
+detect a theme. Choose the matching theme yourself; contrast is not guaranteed on
+arbitrary terminal backgrounds or customized palettes. Meaning is also conveyed
+through labels and layout, not color alone.
+
+See [visual testing](testing.md#cli-visual-harness) for the controlled screenshot
+matrix and its limits.
+
 ## List apps
 
 ```sh

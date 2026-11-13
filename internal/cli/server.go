@@ -30,7 +30,7 @@ TARGET is optional for registered names; provide it to recover an unregistered h
 
 func server(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help")) {
-		fmt.Fprint(stdout, serverHelp)
+		_ = writeHelpText(stdout, serverHelp)
 		return 0
 	}
 	switch args[0] {
@@ -66,13 +66,16 @@ func inspectServer(ctx context.Context, args []string, stdout, stderr io.Writer,
 	defer cancel()
 	report, err := inspect(ctx, target)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 1
+		return lifecycleError(stderr, err)
 	}
 	if *asJSON {
 		if err := json.NewEncoder(stdout).Encode(report); err != nil {
 			fmt.Fprintf(stderr, "error: write report: %v\n", err)
 			return 1
+		}
+	} else if p := presentationFor(stdout); p != nil {
+		if err := p.write(stdout, p.renderServerInspect(target, report)); err != nil {
+			return lifecycleError(stderr, fmt.Errorf("write report: %w", err))
 		}
 	} else {
 		var text bytes.Buffer

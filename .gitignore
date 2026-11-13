@@ -8,3 +8,6 @@
 coverage.out
 .DS_Store
 __pycache__/
+
+# Local visual harness dependencies
+/integration/visual/node_modules/

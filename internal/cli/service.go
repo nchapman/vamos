@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"strings"
 )
@@ -16,7 +15,7 @@ Run soar service bind --help or soar service remove --help for options.
 
 func serviceCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps appDeps) int {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help") {
-		fmt.Fprint(stdout, serviceHelp)
+		_ = writeHelpText(stdout, serviceHelp)
 		return 0
 	}
 	if len(args) < 2 || (args[0] != "bind" && args[0] != "remove") {

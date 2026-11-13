@@ -115,6 +115,10 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 			if err := json.NewEncoder(stdout).Encode(status); err != nil {
 				return lifecycleError(stderr, err)
 			}
+		} else if p := presentationFor(stdout); p != nil {
+			if err := p.write(stdout, p.renderServerStatus(name, server.Target, status)); err != nil {
+				return lifecycleError(stderr, err)
+			}
 		} else {
 			phase := "unmanaged"
 			step := ""
@@ -146,7 +150,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		}
 		server.Domain = status.State.Config.Domain
 	}
-	if _, err := fmt.Fprintf(stdout, "%s / %s / %s: %s (root host mutation authorized)\n", name, server.Target, server.Domain, operation); err != nil {
+	if err := writeServerMutationStart(stdout, operation, name, server.Target, server.Domain); err != nil {
 		return lifecycleError(stderr, err)
 	}
 	inspectCtx, cancelInspect := context.WithTimeout(ctx, 15*time.Second)
@@ -186,20 +190,21 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 			return lifecycleError(stderr, fmt.Errorf("host removed but local registration cleanup failed: %w", err))
 		}
 	}
-	if _, err := fmt.Fprintf(stdout, "%s: %s (installation %s)\n", name, state.Phase, state.ID); err != nil {
-		return lifecycleError(stderr, err)
-	}
 	message := "Owned installation removed. A small host receipt and the runtime lock are retained for safe retries."
 	if operation == "add" {
 		message = "Docker/Buildx and Caddy verified. No app routes or certificates configured; set DNS separately."
 	}
-	if _, err := fmt.Fprintln(stdout, message); err != nil {
+	if err := writeServerMutationResult(stdout, name, state, message); err != nil {
 		return lifecycleError(stderr, err)
 	}
 	return 0
 }
 
 func lifecycleError(stderr io.Writer, err error) int {
+	if view := presentationFor(stderr); view != nil {
+		_ = view.write(stderr, view.ink("error", "Error", true)+"\n"+view.prose(err.Error()))
+		return 1
+	}
 	fmt.Fprintf(stderr, "error: %v\n", err)
 	return 1
 }

@@ -1,0 +1,127 @@
+package cli
+
+import (
+	"io"
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+)
+
+// writeHelpText is for successful help only. Parse diagnostics must retain their
+// original stderr path and must not be reinterpreted as successful help.
+func writeHelpText(w io.Writer, text string) error {
+	if p := presentationFor(w); p != nil {
+		return p.write(w, p.renderHelp(text))
+	}
+	_, err := io.WriteString(w, text)
+	return err
+}
+
+// Keep the complete captured help, including indentation, blank lines, defaults,
+// and examples. Styling is deliberately line-based, not a second help parser.
+func (p *presentation) renderHelp(text string) string {
+	var rendered strings.Builder
+	for _, line := range strings.SplitAfter(text, "\n") {
+		body := strings.TrimSuffix(line, "\n")
+		trimmed := strings.TrimSpace(body)
+		role, bold := "", false
+		switch {
+		case strings.HasPrefix(trimmed, "Usage:"), strings.HasSuffix(trimmed, ":"):
+			bold = true
+		case strings.HasPrefix(trimmed, "soar "):
+			role = "accent"
+		}
+		// Tabs belong to flag.PrintDefaults' layout, not to a structured value.
+		parts := strings.Split(body, "\t")
+		for i, part := range parts {
+			if i > 0 {
+				rendered.WriteByte('\t')
+			}
+			rendered.WriteString(p.ink(role, part, bold))
+		}
+		if strings.HasSuffix(line, "\n") {
+			rendered.WriteByte('\n')
+		}
+	}
+	return rendered.String()
+}
+
+func writeMainHelp(w io.Writer) error {
+	if p := presentationFor(w); p != nil {
+		return p.write(w, p.renderMainHelp())
+	}
+	_, err := io.WriteString(w, help)
+	return err
+}
+
+func (p *presentation) renderMainHelp() string {
+	type command struct{ name, description string }
+	groups := []struct {
+		title    string
+		commands []command
+	}{
+		{"Work with an app", []command{
+			{"init", "Write a minimal app configuration"},
+			{"validate", "Validate local app configuration"},
+			{"deploy", "Build and deploy services"},
+			{"exec", "Run a command inside an existing service"},
+			{"console", "Open a shell in an existing service"},
+			{"run", "Run a noninteractive command"},
+			{"service bind|remove", "Bind locally or preview/remove a service"},
+			{"secrets stage|list", "Stage secrets or list retained metadata"},
+		}},
+		{"Inspect and recover", []command{
+			{"apps", "List recorded inventory, not live health"},
+			{"status", "Inspect app operation and runtime state"},
+			{"logs", "Read or follow container logs"},
+			{"rollback", "Preview or restore captured service images"},
+			{"resume", "Resume captured operation inputs"},
+			{"cleanup", "Preview or remove obsolete app resources"},
+			{"destroy", "Preview or remove an app"},
+		}},
+		{"Manage a server", []command{
+			{"server inspect", "Inspect a host over SSH without provisioning"},
+			{"server add", "Bootstrap a dedicated Ubuntu host"},
+			{"server status", "Read the host lifecycle journal"},
+			{"server teardown", "Remove an unused owned installation"},
+		}},
+		{"Reference", []command{
+			{"version", "Print the build version"},
+			{"help", "Show general or command-specific help"},
+		}},
+	}
+	text := p.header("soar", "", "", "")
+	text += p.prose("A small app platform for one server")
+	text += p.section("Usage") + p.command("soar COMMAND [OPTIONS]")
+	for _, group := range groups {
+		text += p.section(group.title)
+		commandWidth, descriptionWidth := 0, 0
+		for _, cmd := range group.commands {
+			commandWidth = max(commandWidth, ansi.StringWidth("soar "+cmd.name))
+			descriptionWidth = max(descriptionWidth, ansi.StringWidth(cmd.description))
+		}
+		for _, cmd := range group.commands {
+			name := "soar " + cmd.name
+			if commandWidth+2+descriptionWidth <= p.width {
+				text += p.ink("accent", name, false) + strings.Repeat(" ", commandWidth-ansi.StringWidth(name)+2)
+				text += p.ink("", cmd.description, false) + "\n"
+			} else {
+				text += p.ink("accent", name, false) + "\n" + p.prose(cmd.description)
+			}
+		}
+	}
+	text += p.section("Examples")
+	text += p.command("soar apps --server home")
+	text += p.command("soar status --server home --app notes")
+	text += p.command("soar help deploy")
+	// Keep the existing safety and scope qualifications alongside the new
+	// navigation; this is still help, not a deployment success claim.
+	text += p.section("Before you begin")
+	text += p.prose("Setup/teardown require explicit authorization.") + "\n"
+	text += p.prose("Deploy supports 1–8 built or prebuilt public/private services, with one optional named volume per service.") + "\n"
+	text += p.prose("Use deploy --service NAME for scoped updates.")
+	text += p.prose("Existing manual services require --yes.")
+	text += p.prose("Data-backed updates stop/start; data is retained.")
+	text += p.prose("Run a command with --help for options.")
+	return text
+}

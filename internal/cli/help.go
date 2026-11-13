@@ -18,6 +18,12 @@ func parseFlags(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) er
 	dest := stderr
 	if errors.Is(err, flag.ErrHelp) {
 		dest = stdout
+		if p := presentationFor(dest); p != nil {
+			if writeErr := p.write(dest, p.renderHelp(output.String())); writeErr != nil {
+				return writeErr
+			}
+			return err
+		}
 	}
 	if _, writeErr := io.Copy(dest, &output); writeErr != nil {
 		return writeErr

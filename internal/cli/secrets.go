@@ -38,7 +38,7 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		return usageError(stderr, secretsHelp)
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprint(stdout, secretsHelp)
+		_ = writeHelpText(stdout, secretsHelp)
 		return 0
 	}
 	action := args[0]
@@ -137,7 +137,7 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		if *asJSON {
 			targetOut = stderr
 		}
-		if _, err := fmt.Fprintf(targetOut, "%s / %s: stage %s (operation/version %s)\n", server.Name, name, r.SecretName, r.Operation); err != nil {
+		if err := writeSecretStageStart(targetOut, server.Name, server.Target, name, r.SecretName, r.Operation); err != nil {
 			return 1
 		}
 		value, err = read(ctx, input, stderr, *fromStdin)
@@ -165,15 +165,12 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 	if err != nil || response.Error != "" || response.ErrorCode != "" || response.Version != 1 || (action == "stage" && response.Secret == nil) {
 		if response.Version == 1 && response.Error != "" {
 			if message := deploy.RefusalMessage(r.Action, response.ErrorCode); message != "" {
-				fmt.Fprintln(stderr, message)
-				if action == "stage" {
-					fmt.Fprintf(stderr, "Staging refused (operation/version %s).\nInspect: soar secrets list --server %s --app %s\n", r.Operation, server.Name, name)
-				}
+				writeSecretFailure(stderr, action, server.Name, server.Target, name, r.Operation, message)
 				return 1
 			}
 		}
 		if action == "stage" {
-			fmt.Fprintf(stderr, "Secret staging outcome unknown (operation/version %s).\nInspect: soar secrets list --server %s --app %s\n", r.Operation, server.Name, name)
+			writeSecretFailure(stderr, action, server.Name, server.Target, name, r.Operation, "")
 			return 1
 		}
 		return lifecycleError(stderr, errors.New("secret metadata request failed"))
@@ -187,6 +184,14 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		return 0
 	}
 	if action == "stage" {
+		if p := presentationFor(stdout); p != nil {
+			text := p.ink("success", "Secret version staged; deploy to apply.", true) + "\n"
+			text += p.field("Secret", r.SecretName) + p.field("Version", r.Operation)
+			if err := p.write(stdout, text); err != nil {
+				return 1
+			}
+			return 0
+		}
 		fmt.Fprintf(stdout, "Staged %s version %s; deploy to apply.\n", r.SecretName, r.Operation)
 		return 0
 	}
@@ -197,6 +202,12 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		}
 		return a.Version < b.Version
 	})
+	if p := presentationFor(stdout); p != nil {
+		if err := p.write(stdout, p.renderSecretList(server.Name, server.Target, name, response.SecretVersions)); err != nil {
+			return 1
+		}
+		return 0
+	}
 	for _, e := range response.SecretVersions {
 		fmt.Fprintf(stdout, "%s %s latest=%t\n", e.Name, e.Version, e.Latest)
 	}

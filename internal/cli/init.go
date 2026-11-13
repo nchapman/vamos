@@ -191,7 +191,7 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 	if server.Name != "" {
 		bindingMessage = "bound to " + server.Name
 	}
-	if _, err := fmt.Fprintf(stdout, "Created %s; %s. Uses Dockerfile with context '.'; no Dockerfile created and no remote contacted.\n", *filename, bindingMessage); err != nil {
+	if err := writeInitSuccess(stdout, app.Name, *filename, bindingMessage); err != nil {
 		return partial(err)
 	}
 	return 0

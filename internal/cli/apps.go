@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/nchapman/soar/internal/deploy"
 	"github.com/nchapman/soar/internal/lifecycle"
 	"github.com/nchapman/soar/internal/ssh"
@@ -83,6 +84,12 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 		}
 		return 0
 	}
+	if p := presentationFor(stdout); p != nil {
+		if err := p.write(stdout, p.renderApps(server.Name, server.Target, response.Apps)); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		return 0
+	}
 	if _, err := fmt.Fprintf(stdout, "%s (%s): recorded inventory (not live health).\n", server.Name, server.Target); err != nil {
 		return lifecycleError(stderr, err)
 	}
@@ -101,4 +108,69 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 		return lifecycleError(stderr, err)
 	}
 	return 0
+}
+
+func (p *presentation) renderApps(server, target string, inventory *deploy.AppList) string {
+	text := p.header("apps", "", server, target)
+	text += p.prose("Recorded inventory (not live health).")
+	text += p.field("Apps", fmt.Sprint(len(inventory.Entries)))
+	if len(inventory.Entries) == 0 {
+		return text + p.section("No registered apps")
+	}
+
+	headings := []string{"APP", "PHASE", "SERVICES (COUNT)", "RETAINED SECRETS", "VOLUME RECORDS", "RETAINED VOLUMES"}
+	widths := make([]int, len(headings))
+	for i, heading := range headings {
+		widths[i] = ansi.StringWidth(heading)
+	}
+	rows := make([][]string, 0, len(inventory.Entries))
+	for _, entry := range inventory.Entries {
+		row := []string{
+			entry.App, entry.Phase, fmt.Sprintf("%s (%d)", strings.Join(entry.Services, ","), entry.ServiceCount),
+			yesNo(entry.RetainedSecrets), fmt.Sprint(entry.VolumeRecords), yesNo(entry.RetainedVolumes),
+		}
+		for i, value := range row {
+			widths[i] = max(widths[i], ansi.StringWidth(displayText(value)))
+		}
+		rows = append(rows, row)
+	}
+	tableWidth := 2 * (len(headings) - 1)
+	for _, width := range widths {
+		tableWidth += width
+	}
+	// Use the table only when every complete, escaped value fits. Terminal
+	// soft wrapping in records preserves long names instead of truncating them.
+	if tableWidth <= p.width {
+		text += "\n" + p.appsTableRow(headings, widths, true)
+		for _, row := range rows {
+			text += p.appsTableRow(row, widths, false)
+		}
+		return text
+	}
+	for _, entry := range inventory.Entries {
+		text += p.section(entry.App)
+		text += p.field("Phase", entry.Phase)
+		text += p.field("Services", strings.Join(entry.Services, ","))
+		text += p.field("Service count", fmt.Sprint(entry.ServiceCount))
+		text += p.field("Retained secrets", yesNo(entry.RetainedSecrets))
+		text += p.field("Volume records", fmt.Sprint(entry.VolumeRecords))
+		text += p.field("Retained volumes", yesNo(entry.RetainedVolumes))
+	}
+	return text
+}
+
+func (p *presentation) appsTableRow(values []string, widths []int, heading bool) string {
+	var row strings.Builder
+	for i, value := range values {
+		role := ""
+		if heading {
+			role = "secondary"
+		}
+		row.WriteString(p.ink(role, value, false))
+		if i < len(values)-1 {
+			row.WriteString(strings.Repeat(" ", widths[i]-ansi.StringWidth(displayText(value))+2))
+		}
+	}
+	row.WriteByte('\n')
+	return row.String()
 }

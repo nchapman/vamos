@@ -58,7 +58,7 @@ func Run(args []string, stdout, stderr io.Writer, version string) int {
 // documented exit semantics. Context cancellation is propagated to subprocesses.
 func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, version string) int {
 	if len(args) == 0 {
-		fmt.Fprint(stdout, help)
+		_ = writeMainHelp(stdout)
 		return 0
 	}
 	switch args[0] {
@@ -71,7 +71,7 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 			}
 			return usageError(stderr, "help accepts only a public command and optional subcommand, not flags or arguments")
 		}
-		fmt.Fprint(stdout, help)
+		_ = writeMainHelp(stdout)
 		return 0
 	case "version", "--version":
 		if args[0] == "version" && len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
@@ -135,8 +135,16 @@ func validate(args []string, stdout, stderr io.Writer) int {
 	}
 	app, err := config.Load(*filename)
 	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 1
+		return lifecycleError(stderr, err)
+	}
+	if view := presentationFor(stdout); view != nil {
+		text := view.header("validate", app.Name, "", "") + view.ink("success", "Local configuration valid", true) + "\n"
+		text += view.field("File", *filename) + view.field("Services", fmt.Sprint(len(app.Services)))
+		text += view.prose("Local validation only; build files, images, secrets, DNS, and server state were not checked.")
+		if err := view.write(stdout, text); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		return 0
 	}
 	fmt.Fprintf(stdout, "%s: valid configuration for %s (%d services)\n", *filename, app.Name, len(app.Services))
 	fmt.Fprintln(stdout, "Local validation only; build files, images, secrets, DNS, and server state were not checked.")
@@ -144,6 +152,10 @@ func validate(args []string, stdout, stderr io.Writer) int {
 }
 
 func usageError(stderr io.Writer, message string) int {
+	if view := presentationFor(stderr); view != nil {
+		_ = view.write(stderr, view.ink("error", "Usage error", true)+"\n"+view.prose(message)+"\n"+view.command("soar help"))
+		return 2
+	}
 	fmt.Fprintf(stderr, "error: %s\nRun 'soar help' for usage.\n", message)
 	return 2
 }
