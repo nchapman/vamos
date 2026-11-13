@@ -13,7 +13,8 @@ import (
 func TestVerboseBuildDiagnosticBoundary(t *testing.T) {
 	m, r := setup(t)
 	m.Run = func(context.Context, string, []string, []byte) (process.Result, error) {
-		return process.Result{Stderr: []byte(strings.Repeat("\x00", 64<<10) + "useful ending")}, errors.New("failed")
+		log := []byte(strings.Repeat("build step output\n", 5000) + "useful ending")
+		return process.Result{Stderr: log[len(log)-process.OutputLimit:]}, errors.New("failed")
 	}
 	resp, _ := m.Execute(context.Background(), r, []byte("archive"))
 	if len(resp.Error) > 4096 {

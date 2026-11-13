@@ -319,7 +319,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 		// host networking; runtime containers still get isolated app bridges.
 		out, e := m.Run(c, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", s.Build.Dockerfile, "-"}, tar)
 		if e != nil {
-			return fmt.Errorf("build: %w: %s", e, diagnostic(string(out.Stderr)))
+			return errors.New(m.buildDiagnostic(j, out, e, diagnosticLimit))
 		}
 		b, e := os.ReadFile(p)
 		if e != nil {

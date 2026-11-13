@@ -78,6 +78,8 @@ type runner struct {
 	exec           executor
 	out, stderr    io.Writer
 	cleanupTimeout time.Duration
+	restartTimeout time.Duration
+	verifyTimeout  time.Duration
 }
 
 func randomHex(n int) (string, error) {
@@ -225,7 +227,55 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	if err != nil {
 		return err
 	}
-	return call(nil, "python3", "/opt/soar-test/integration/linux_suite.py", "--owner", o.token)
+	fmt.Fprintln(r.out, "Guest prepare phase")
+	if err := call(nil, "python3", "/opt/soar-test/integration/linux_suite.py", "--owner", o.token); err != nil {
+		return fmt.Errorf("guest prepare: %w", err)
+	}
+	// Prepare exit zero certifies the private guest checkpoint is ready. Always
+	// restart: the verification phase itself rejects a missing checkpoint.
+	verifyOwned := func(phase context.Context, stage string) error {
+		fresh, err := r.info(phase, m.ID)
+		if err != nil {
+			return fmt.Errorf("%s machine verification: %w", stage, err)
+		}
+		if fresh.Record.ID != m.ID || fresh.Record.Name != m.Name {
+			return fmt.Errorf("%s machine identity mismatch", stage)
+		}
+		if !fresh.Record.Config.Isolated || fresh.Record.Config.Forward || !fresh.Record.Config.Network {
+			return fmt.Errorf("%s machine isolation/agent/network verification failed", stage)
+		}
+		return nil
+	}
+	restartTimeout := r.restartTimeout
+	if restartTimeout == 0 {
+		restartTimeout = 3 * time.Minute
+	}
+	restartCtx, cancelRestart := context.WithTimeout(ctx, restartTimeout)
+	defer cancelRestart()
+	if err := verifyOwned(restartCtx, "pre-restart"); err != nil {
+		return err
+	}
+	fmt.Fprintf(r.out, "Restarting owned VM %s\n", m.ID)
+	if err := r.exec.Run(restartCtx, []string{"restart", m.ID}, nil, r.out, r.stderr); err != nil {
+		return fmt.Errorf("restart owned machine: %w", err)
+	}
+	fmt.Fprintln(r.out, "Post-restart machine identity and isolation verification")
+	if err := verifyOwned(restartCtx, "post-restart"); err != nil {
+		return err
+	}
+	cancelRestart()
+	// orbctl restart blocks; the guest waits event-driven for systemd readiness.
+	verifyTimeout := r.verifyTimeout
+	if verifyTimeout == 0 {
+		verifyTimeout = 10 * time.Minute
+	}
+	verifyCtx, cancelVerify := context.WithTimeout(ctx, verifyTimeout)
+	defer cancelVerify()
+	fmt.Fprintln(r.out, "Guest verify-restart phase")
+	if err := r.exec.Run(verifyCtx, runArgs(m.ID, "python3", "/opt/soar-test/integration/linux_suite.py", "--owner", o.token, "--phase", "verify-restart"), nil, r.out, r.stderr); err != nil {
+		return fmt.Errorf("guest verify-restart: %w", err)
+	}
+	return nil
 }
 func containsName(v any, name string) bool {
 	switch x := v.(type) {

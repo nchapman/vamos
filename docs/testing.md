@@ -106,13 +106,46 @@ The real CLI scenarios exercise:
    failed initial private service without changing survivors.
 7. Cross-app private DNS and direct-IP isolation.
 8. App destruction retaining data/secrets and host teardown refusing those retained
-   resources. The runner then destroys the whole disposable machine; it does not
-   modify retention journals or bypass production safeguards to make teardown pass.
+   resources. Tests do not modify retention journals or bypass production safeguards
+   to make teardown pass.
+
+A second app exercises recovery and diagnostics:
+
+- Failing Docker builds preserve useful, bounded diagnostics for deploy and one-off
+  run status/logs. A staged test sentinel is absent from responses and journals;
+  a failed build never executes its requested command or replaces a serving app.
+- Disconnect the client and SSH process group while the independent worker is
+  paused at a build boundary. Release it and verify completion from captured
+  source/configuration, despite subsequent edits to the local directory.
+- Kill the worker after Caddy has reloaded the new route but before promotion is
+  committed. Resume must keep the same candidate and ignore unsubmitted edits.
+- Kill service removal after route withdrawal and before container removal. The
+  exact operation resumes, and ordinary deploy cannot resurrect the service.
+- Kill a private-service replacement after stopping its retired container. The Mac
+  coordinator restarts the **same owned machine**, then the guest verifies that
+  the old process stays stopped, app identities and PostgreSQL data survive,
+  staged database credentials remain pending, and explicit resume completes the
+  captured replacement.
+
+Checkpoints use guest-only Docker/Caddy wrappers, private Unix sockets and Linux
+pidfds. They do not modify the production executor, inject timing-dependent sleeps,
+change Soar journals, or disable machine isolation. Nonmatching commands execute
+the original binaries. A gate is one-shot and fails closed without its explicit
+release; both sides have bounded socket deadlines, and killing the worker also
+kills its blocked gate process. Restart is
+coordinated outside the guest, with ownership/isolation checked again before and
+after. Restart and its identity checks have a three-minute deadline; post-restart
+verification has a ten-minute deadline. Expiry still enters fresh-context cleanup.
+The guest verifies that PID 1's start identity actually changed; this is
+an OrbStack machine restart, not a claim of full shared-kernel reboot or power loss.
+The complete run deletes the machine after post-restart verification.
 
 Artifacts include `runner.log`, `manifest.json`, the exact `source.tar`, and
 `guest-artifacts.tar`. The guest archive contains numbered command/stdout/stderr
-files, `result.json`, scenario progress in `summary.json`, and bounded systemd/
-Docker/Caddy diagnostics. `coverage.out` and `coverage.html` report the Go test
+files, `result.json`, scenario progress in `summary.json` and
+`recovery-summary.json`, checkpoint-client output, and bounded systemd/Docker/Caddy
+diagnostics. Successful preparation is not overall success: `result.json` only
+sets `passed` after post-restart verification. `coverage.out` and `coverage.html` report the Go test
 suite's statement coverage; the separately built CLI/executor integration paths
 are not instrumented, so this is not an end-to-end coverage percentage. Secret staging input and process environments are not
 logged; SSH private keys and database files are not collected. Artifacts are kept
@@ -121,8 +154,8 @@ inspect them before sharing. Remove old run directories when no longer needed.
 
 ### Verified run
 
-The complete default flow passed on **OrbStack 2.2.5, Ubuntu 24.04.5, native
-arm64**, including all eight scenario groups and automatic machine deletion.
+The original eight-scenario flow passed on **OrbStack 2.2.5, Ubuntu 24.04.5, native
+arm64**, including automatic machine deletion.
 The run took approximately 7½ minutes. The generated Go test report measured
 **78.0% statement coverage**; this is a baseline, not a threshold or a claim of
 end-to-end instrumented coverage. Failure cleanup and explicit keep-on-failure
@@ -130,8 +163,15 @@ were also exercised while bringing up the suite; the retained debugging machine
 was subsequently deleted.
 
 Ubuntu 26.04 and emulated amd64 are selectable but were not run through this
-complete suite. Ordinary signal cleanup has deterministic runner test coverage;
-a live forced interruption was not used as an acceptance test.
+complete suite. Ordinary runner-signal cleanup has deterministic unit coverage.
+The expanded suite also passed all six recovery/diagnostics groups on the same
+platform, including real client disconnection, three worker-kill boundaries and
+machine restart. The complete base-plus-recovery run took about ten minutes,
+and its owned machine was automatically deleted. Restart preserved the exact
+PostgreSQL volume and row, left newer database credentials pending, and did not
+restart the retired worker. A review-driven gate timeout regression was then
+added and verified, followed by explicit coordinator restart/verification deadlines
+and timeout-cleanup regression tests.
 
 ### Limits
 
@@ -147,8 +187,9 @@ and the Mac Docker daemon are unchanged. This tests real builds and containers,
 but not the droplet's default BuildKit snapshotter; the extra builder resources
 are disposed of with the VM.
 
-Forced live worker interruption, APT interruption, reboot/power loss, registry
-credentials, backup/restore and SQL password rotation are not covered here.
-Recovery branches retain the existing deterministic Go coverage. CI still provides
+APT interruption, full kernel reboot/power loss, registry credentials,
+backup/restore and SQL password rotation are not covered here. The selected real
+worker interruptions supplement—not replace—the wider deterministic Go recovery
+coverage. CI still provides
 native macOS/Linux/Windows client checks; the OrbStack suite is a Linux client and
 host integration test, not a Windows execution test.

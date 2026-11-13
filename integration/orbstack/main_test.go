@@ -10,13 +10,16 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeExec struct {
-	t      *testing.T
-	mode   string
-	calls  [][]string
-	cancel context.CancelFunc
+	t         *testing.T
+	mode      string
+	calls     [][]string
+	cancel    context.CancelFunc
+	restarted bool
+	prepared  bool
 }
 
 func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stderr io.Writer) error {
@@ -42,6 +45,23 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 		if f.mode == "createfail" {
 			return errors.New("create failed")
 		}
+	case "restart":
+		if f.mode == "hang-restart" {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		if f.mode == "deadline-restart" {
+			if _, ok := ctx.Deadline(); !ok {
+				return errors.New("restart has no deadline")
+			}
+		}
+		if len(a) != 2 || a[1] != "owned-id" {
+			f.t.Fatalf("restart must use exact ID: %v", a)
+		}
+		f.restarted = true
+		if f.mode == "restartfail" {
+			return errors.New("restart failed")
+		}
 	case "info":
 		isolated := "true"
 		if f.mode == "isolation" {
@@ -51,9 +71,43 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 		if f.mode == "replacement" && len(f.calls) > 4 {
 			id = "replacement"
 		}
-		io.WriteString(out, `{"record":{"id":"`+id+`","name":"soar-test-0123456789ab","config":{"isolated":`+isolated+`,"isolate_network":true,"forward_ssh_agent":false}}}`)
+		name, network, forward := "soar-test-0123456789ab", "true", "false"
+		if (f.restarted && strings.HasPrefix(f.mode, "post-")) || (f.prepared && strings.HasPrefix(f.mode, "pre-")) {
+			switch strings.TrimPrefix(strings.TrimPrefix(f.mode, "post-"), "pre-") {
+			case "id":
+				id = "replacement"
+			case "name":
+				name = "replacement"
+			case "isolated":
+				isolated = "false"
+			case "network":
+				network = "false"
+			case "agent":
+				forward = "true"
+			}
+		}
+		io.WriteString(out, `{"record":{"id":"`+id+`","name":"`+name+`","config":{"isolated":`+isolated+`,"isolate_network":`+network+`,"forward_ssh_agent":`+forward+`}}}`)
 	case "run":
 		if a[5] == "python3" {
+			verify := len(a) == 11 && a[9] == "--phase" && a[10] == "verify-restart"
+			if !verify && len(a) != 9 {
+				f.t.Fatalf("unexpected suite API: %v", a)
+			}
+			if verify && f.mode == "hang-verify" {
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			if verify && f.mode == "deadline-verify" {
+				if _, ok := ctx.Deadline(); !ok {
+					return errors.New("verification has no deadline")
+				}
+			}
+			if verify && f.mode == "verifyfail" {
+				return errors.New("verify failed")
+			}
+			if !verify {
+				f.prepared = true
+			}
 			if f.mode == "cancel" {
 				f.cancel()
 				return ctx.Err()
@@ -118,6 +172,39 @@ func TestLifecycle(t *testing.T) {
 		})
 	}
 }
+func TestRestartPhasesHaveDeadlines(t *testing.T) {
+	for _, mode := range []string{"deadline-restart", "deadline-verify"} {
+		t.Run(mode, func(t *testing.T) {
+			f := &fakeExec{t: t, mode: mode}
+			r := runner{exec: f, out: io.Discard, stderr: io.Discard}
+			err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "soar-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04"})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestRestartTimeoutStillDeletesOwnedMachine(t *testing.T) {
+	for _, mode := range []string{"hang-restart", "hang-verify"} {
+		t.Run(mode, func(t *testing.T) {
+			f := &fakeExec{t: t, mode: mode}
+			r := runner{exec: f, out: io.Discard, stderr: io.Discard, restartTimeout: 5 * time.Millisecond, verifyTimeout: 5 * time.Millisecond}
+			err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "soar-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04"})
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("expected phase timeout, got %v", err)
+			}
+			deleted := false
+			for _, args := range f.calls {
+				deleted = deleted || args[0] == "delete"
+			}
+			if !deleted {
+				t.Fatal("phase timeout skipped owned-machine cleanup")
+			}
+		})
+	}
+}
+
 func TestControlEnvironmentDoesNotForwardAmbientVariables(t *testing.T) {
 	env := controlEnvironment([]string{"PATH=/bin", "ORBENV=AWS_SECRET_ACCESS_KEY:HOME", "HOME=/Users/test"})
 	if strings.Join(env, "\n") != "PATH=/bin\nHOME=/Users/test" {
@@ -173,5 +260,62 @@ func TestArchive(t *testing.T) {
 	}
 	if err := archiveSource(root, filepath.Join(t.TempDir(), "bad.tar")); err == nil {
 		t.Fatal("accepted symlink")
+	}
+}
+
+func TestRestartPhases(t *testing.T) {
+	for _, mode := range []string{"success", "suitefail", "restartfail", "verifyfail", "pre-id", "pre-name", "pre-isolated", "pre-network", "pre-agent", "post-id", "post-name", "post-isolated", "post-network", "post-agent"} {
+		for _, keep := range []bool{false, true} {
+			t.Run(mode+map[bool]string{true: "-keep"}[keep], func(t *testing.T) {
+				f := &fakeExec{t: t, mode: mode}
+				r := runner{exec: f, out: io.Discard, stderr: io.Discard}
+				err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "soar-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04", keep: keep})
+				if (err != nil) != (mode != "success") {
+					t.Fatalf("error=%v", err)
+				}
+				var phases []string
+				deleted, collected := false, false
+				for i, a := range f.calls {
+					if a[0] == "restart" {
+						phases = append(phases, "restart")
+						if i == 0 || f.calls[i-1][0] != "info" || f.calls[i-1][3] != "owned-id" {
+							t.Fatal("missing pre-restart identity check")
+						}
+					}
+					if a[0] == "run" && a[5] == "python3" {
+						phase := "prepare"
+						if len(a) == 11 {
+							phase = "verify"
+							if i < 2 || f.calls[i-1][0] != "info" || f.calls[i-1][3] != "owned-id" || f.calls[i-2][0] != "restart" {
+								t.Fatal("missing post-restart identity check")
+							}
+						}
+						phases = append(phases, phase)
+					}
+					if a[0] == "delete" {
+						deleted = true
+					}
+					if a[0] == "run" && strings.Contains(strings.Join(a, " "), "--files-from") {
+						collected = true
+					}
+				}
+				want := "prepare,restart,verify"
+				if mode == "suitefail" || strings.HasPrefix(mode, "pre-") {
+					want = "prepare"
+				} else if mode == "restartfail" || strings.HasPrefix(mode, "post-") {
+					want = "prepare,restart"
+				}
+				if strings.Join(phases, ",") != want {
+					t.Fatalf("phases=%v want %s", phases, want)
+				}
+				identityDrift := strings.HasSuffix(mode, "-id") || strings.HasSuffix(mode, "-name")
+				if deleted != (!identityDrift && (!keep || mode == "success")) {
+					t.Fatalf("deleted=%v", deleted)
+				}
+				if collected != !identityDrift {
+					t.Fatalf("collected=%v", collected)
+				}
+			})
+		}
 	}
 }

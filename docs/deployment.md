@@ -155,6 +155,32 @@ Host teardown deliberately refuses active/incomplete app state or Docker workloa
 
 `soar logs` reads a bounded snapshot from the current release, not an unbounded stream. Use `--service NAME` to select a service and `--candidate` to inspect a pending replacement. Without selection, logs choose `web`, or the only service; ambiguous apps require an explicit name. The output identifies the selected container. Line count defaults to 100 (maximum 1000); byte limits may truncate further. Output includes timestamps. Failed build diagnostics are bounded tails in the journal and error response. Logs can contain application-controlled data or secrets; Soar does not redact arbitrary application output.
 
+### Persisted build failures
+
+Deploy build failures retain a diagnostic tail of up to **4096 bytes** in the
+current operation's `last_error`. A failed one-off build retains up to **1024
+bytes** in its existing run record; these remain readable even when no container
+was ever created:
+
+```sh
+soar status --server local --app shop --json
+soar status --server local --app shop --run OP --json
+soar logs --server local --app shop --run OP
+```
+
+A failed one-off build reports `not-started`, not a fabricated command exit code.
+Reading its diagnostics never reruns it. These are bounded failure tails, not a
+successful-build log archive or an unlimited stream, and existing run cleanup
+retention applies.
+
+Exact known app-secret values (including retained versions) are removed before
+persistence and final truncation. If the required secret store is unavailable,
+output is withheld. A partial first line at the subprocess capture boundary is
+also discarded to avoid retaining a cut-through secret. Arbitrary, transformed,
+unknown or other-app secrets cannot be reliably identified; inspect logs before
+sharing them. Runtime container logs are unchanged. See the
+[secret exposure boundary](secrets.md#storage-and-exposure-boundary).
+
 ## Verification
 
 Historical evidence below predates storage lifecycle acceptance unless explicitly noted. See [persistent volumes](volumes.md) for the storage boundary; no new live/full-suite results are implied.

@@ -28,7 +28,7 @@ def identities(status):
 def run(h):
     """Bootstrap, exercise real SSH/Docker/HTTPS lifecycle, leave retained data."""
     summary = {"completed": [], "skipped": [
-        "live worker kill, reboot and power-loss recovery (offline tests only)",
+        "full kernel reboot/power loss and APT interruption (separate recovery suite covers selected worker kills and machine restart)",
         "registry/CI images, backup/restore, SQL password rotation",
         "deletion of retained data/secret provenance (no supported purge API)",
     ]}

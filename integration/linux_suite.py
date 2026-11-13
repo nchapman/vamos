@@ -44,7 +44,8 @@ class Harness:
         self.artifacts = ROOT / '.integration-artifacts'
         self.work.mkdir(mode=0o700, exist_ok=True)
         self.artifacts.mkdir(mode=0o700, exist_ok=True)
-        self.sequence = 0
+        self.sequence = max((int(p.name.split('.')[0]) for p in self.artifacts.glob('*.command.json')
+                             if p.name.split('.')[0].isdigit()), default=0)
         self.user = pwd.getpwnam('soartest')
         self.env = dict(os.environ, PATH='/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                         GOTOOLCHAIN='local', DEBIAN_FRONTEND='noninteractive',
@@ -177,6 +178,7 @@ def bootstrap(h):
         'ListenAddress 127.0.0.1\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n'
         'PermitRootLogin prohibit-password\n')
     h.command(['systemctl', 'disable', '--now', 'ssh.socket'], user='root')
+    h.command(['systemctl', 'enable', 'ssh'], user='root')
     h.command(['systemctl', 'restart', 'ssh'], user='root')
 
 
@@ -204,18 +206,32 @@ def checks(h):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--owner', required=True)
+    parser.add_argument('--phase', choices=('prepare', 'verify-restart'), default='prepare')
     args = parser.parse_args()
     require_guest(args.owner)
     h = Harness()
-    result = {'passed': False, 'started_at': time.time(), 'architecture': platform.machine(),
-              'os_release': Path('/etc/os-release').read_text()}
+    if args.phase == 'prepare':
+        result = {'passed': False, 'started_at': time.time(), 'architecture': platform.machine(),
+                  'os_release': Path('/etc/os-release').read_text()}
+    else:
+        result = json.loads(h.artifacts.joinpath('result.json').read_text())
+    result['phase'] = args.phase
     try:
-        bootstrap(h)
-        checks(h)
-        import scenarios
-        scenarios.run(h)
-        result['passed'] = True
-        h.log('All Linux checks and integration scenarios passed')
+        import recovery
+        if args.phase == 'prepare':
+            bootstrap(h)
+            checks(h)
+            import scenarios
+            scenarios.run(h)
+            recovery.prepare(h, args.owner)
+            result['prepare_passed'] = True
+            result['restart_required'] = True
+            h.log('Recovery checkpoints passed; prepared for coordinator-owned machine restart')
+        else:
+            recovery.verify_restart(h, args.owner)
+            result['restart_required'] = False
+            result['passed'] = True
+            h.log('All Linux checks, integration scenarios, and restart recovery passed')
     except Exception:
         result['error'] = traceback.format_exc()
         h.artifacts.joinpath('failure.txt').write_text(result['error'])

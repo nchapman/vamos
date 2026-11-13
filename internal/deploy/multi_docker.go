@@ -65,7 +65,7 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 			// Only build archives, never runtime environment or secrets, enter builds.
 			out, err := m.Run(ctx, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", cfg.Build.Dockerfile, "-"}, archives[key])
 			if err != nil {
-				return fmt.Errorf("image build: %w: %s", err, diagnostic(string(out.Stderr)))
+				return errors.New(m.buildDiagnostic(j, out, err, diagnosticLimit))
 			}
 			if safe(p) != nil {
 				return errors.New("unsafe build image file")

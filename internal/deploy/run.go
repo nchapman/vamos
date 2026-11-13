@@ -253,7 +253,9 @@ func (m *Manager) observeRun(ctx context.Context, j *journal, r *runRecord) *Run
 	}
 	if r.Phase == "building" || r.Phase == "create-intent" {
 		out.Phase = "not-started"
-		out.Error = "start was not requested; worker may still be preparing"
+		if out.Error == "" {
+			out.Error = "start was not requested; worker may still be preparing"
+		}
 		return &out
 	}
 	out.Phase = "unknown"
@@ -296,6 +298,9 @@ func (m *Manager) runLogs(ctx context.Context, j *journal, op string) (string, e
 	r, err := m.loadRun(j, op)
 	if err != nil {
 		return "", err
+	}
+	if r.Phase == "building" && r.Error != "" {
+		return r.Error, nil
 	}
 	v, err := m.inspect(ctx, "container", r.Container)
 	if err != nil && r.Phase == "complete" && m.runContainerAbsent(ctx, r.Container) {
@@ -475,7 +480,15 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 		if _, e := os.Lstat(p); !errors.Is(e, os.ErrNotExist) {
 			return resp, errors.New("run image identity already exists")
 		}
-		_, err = m.Run(ctx, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", cfg.Build.Dockerfile, "-"}, archives[key])
+		out, buildErr := m.Run(ctx, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", cfg.Build.Dockerfile, "-"}, archives[key])
+		if buildErr != nil {
+			rec.Error = m.buildDiagnostic(j, out, buildErr, 1024, len(rec.SecretRefs) > 0)
+			if saveErr := m.saveRun(j, rec); saveErr != nil {
+				return resp, errors.New("build failed; diagnostic persistence failed")
+			}
+			resp.Run = m.observeRun(ctx, j, rec)
+			return resp, errors.New(rec.Error)
+		}
 		if err == nil {
 			var b []byte
 			st, statErr := os.Lstat(p)
