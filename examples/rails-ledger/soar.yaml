@@ -1,0 +1,52 @@
+app: rails-ledger
+
+# Bootstrap database alone WITHOUT release first; see README.md.
+release:
+  service: web
+  command: [bin/release]
+
+services:
+  database:
+    image: postgres:17
+    update: manual
+    resources: {cpus: 0.5, memory_mb: 512}
+    env:
+      POSTGRES_DB: rails_ledger
+      POSTGRES_USER: rails_ledger
+    secrets:
+      POSTGRES_PASSWORD: database-password
+    volume:
+      name: data
+      mount: /var/lib/postgresql/data
+
+  web:
+    build: {context: ., dockerfile: Dockerfile}
+    command: [bundle, exec, puma, -C, config/puma.rb]
+    replicas: 2
+    resources: {cpus: 0.5, memory_mb: 512}
+    env:
+      RAILS_ENV: production
+      DB_HOST: database
+      DB_NAME: rails_ledger
+      DB_USER: rails_ledger
+      ALLOWED_HOSTS: rails-ledger-web.soar.localhost
+    secrets:
+      DB_PASSWORD: app-password
+      SECRET_KEY_BASE: secret-key-base
+    http:
+      port: 3000
+      health: /readyz
+
+  worker:
+    build: {context: ., dockerfile: Dockerfile}
+    command: [bin/jobs]
+    resources: {cpus: 0.5, memory_mb: 512}
+    env:
+      RAILS_ENV: production
+      DB_HOST: database
+      DB_NAME: rails_ledger
+      DB_USER: rails_ledger
+      ALLOWED_HOSTS: rails-ledger-web.soar.localhost
+    secrets:
+      DB_PASSWORD: app-password
+      SECRET_KEY_BASE: secret-key-base

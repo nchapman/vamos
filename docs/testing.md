@@ -35,7 +35,9 @@ renderer output in `fixtures.json`: an array of `{case, theme, width, ansi}`
 objects, not hand-written HTML replicas. Missing fixtures fail capture. The matrix
 covers 48/80/120 columns and light/dark/mono/terminal modes. Mono and inherited
 terminal foreground modes are rendered on both controlled light and dark
-backgrounds in xterm.js and installed Chrome.
+backgrounds in xterm.js and installed Chrome. The 144-fixture, 216-capture matrix
+includes successful replica groups and blocked release commands as well as the
+existing help, status, inventory, maintenance and recovery views.
 
 Generated bundles, fixtures, screenshots (`shots/`), and `evaluation.json` stay in
 Git-ignored `.pi/visual/`. Review the screenshots as well as the evaluation: this
@@ -151,6 +153,30 @@ The real CLI scenarios exercise:
    resources. Tests do not modify retention journals or bypass production safeguards
    to make teardown pass.
 
+The runtime scenarios additionally exercise a real Rails/PostgreSQL/Solid Queue
+app and the existing Python Ledger, writing a separate `runtime-summary.json`:
+
+- Inspect actual Docker limits and kernel cgroup-v2 CPU, memory and swap ceilings.
+- Bootstrap a protected database separately; run one captured release before any
+  selected runtime creation, then start two web replicas and a separate worker
+  from the same immutable Rails image.
+- Run the Rails database-backed test suite through a separate one-off test image
+  and disposable `DB_TEST_NAME`, never the application's live database. Restore
+  the production Docker ignore rules before further deployments.
+- Read shared data from every loopback replica and verified HTTPS upstream;
+  observe a distinct worker processing a durable Solid Queue job.
+- Require explicit replica selection for logs, exec and PTY console, and check
+  selected container identity and log-stream separation.
+- Preserve web/DB identities and manual secret pins across a scoped worker update.
+- Fail a release with a durable SQL attempt counter, prove all old runtimes and
+  routes unchanged, and prove resume does not run the command again. Explicitly
+  supersede with a new successful release, then verify retained-data cleanup.
+- Repeat the release/replica/resource contract with the Python Ledger rather
+  than relying on framework-specific platform behavior.
+
+These are single-host acceptance checks, not throughput, multi-host availability,
+production database-role hardening or full power-loss guarantees.
+
 A second app exercises recovery and diagnostics:
 
 - Failing Docker builds preserve useful, bounded diagnostics for deploy and one-off
@@ -205,7 +231,7 @@ is authorized by the preview check.
 Artifacts include `runner.log`, `manifest.json`, the exact `source.tar`, and
 `guest-artifacts.tar`. The guest archive contains numbered command/stdout/stderr
 files, `result.json`, scenario progress in `summary.json` and
-`recovery-summary.json`, `cli-summary.json`, CLI terminal/follow transcripts,
+`recovery-summary.json`, `cli-summary.json`, `runtime-summary.json`, CLI terminal/follow transcripts,
 checkpoint-client output, and bounded systemd/Docker/Caddy
 diagnostics. Successful preparation is not overall success: `result.json` only
 sets `passed` after post-restart verification. `coverage.out` and `coverage.html` report the Go test
@@ -245,6 +271,28 @@ The DX-extended flow also passed on Ubuntu 24.04.5 arm64: quoted-path binding an
 approval guidance, inventory attribution, snapshot stream separation, recovery/help
 output, and the real secret-store refusal followed by successful metadata listing.
 The full base/CLI/recovery flow and owned-machine deletion passed together.
+
+### Runtime feature acceptance
+
+The resource/release/replica-expanded suite passed on **Ubuntu 24.04.5 arm64**
+in owned run `soar-test-f5b6acb3fd56` (about 16 minutes). All seven runtime groups
+in `runtime-summary.json` passed alongside the existing base, CLI and recovery
+scenarios, including coordinator-owned restart and deletion of the guest.
+The run built the real Rails image, migrated PostgreSQL, processed a Solid Queue
+job, exercised both web upstreams and replica-selected sessions, checked Docker
+and kernel resource ceilings, and proved a failed release could not change old
+runtimes or be restarted by resume. The Python Ledger passed the same generic
+release/replica contract. The standalone Rails database-backed suite passed in
+an isolated test database: **12 tests, 86 assertions, zero failures/errors/skips**,
+with empty stderr. Database setup and tests run in separate processes so Rails
+can prepare its test schema without a setup connection blocking database purge;
+the harness also rejects aborted tasks even when Rails returns zero.
+
+The current visual matrix also passed: **216 captures from 144 production Go
+renderer fixtures**, including replica groups and failed release commands at
+48/80/120 columns. Mac race-enabled Go/Python checks and Windows compilation are
+separate from this Linux runtime evidence; Windows terminal behavior is not
+established by compilation.
 
 ### Limits
 

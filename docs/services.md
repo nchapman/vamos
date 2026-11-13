@@ -178,15 +178,18 @@ new mutation; `resume` uses captured inputs rather than current local files.
 
 Database/schema migrations require explicit coordination among every affected
 service and operator. Use backward-compatible changes and intentional sequencing;
-there is no dependency scheduler or automatic migration hook. Separate secret
-names/credentials do not automatically create separate database roles or enforce
+there is no dependency scheduler. An explicit, operation-scoped
+[release command](release-commands.md) can gate selected runtime changes on a
+migration's success; it is not inherited by other directories and never retries
+a started execution automatically. Separate secret names/credentials do not automatically create separate database roles or enforce
 SQL privileges. Configure roles and grants yourself; shared app networking is not
 a hostile-tenant security boundary.
 
 ## Limits and verification boundary
 
 The merged remote app, not each folder independently, is limited to **8 services,
-32 custom aliases (8 per public service), and 64 secret environment mappings**.
+32 desired instances (8 per service), 32 custom aliases (8 per public service),
+and 64 secret environment mappings**.
 `soar validate` checks configuration syntax/schema and alias bounds, but currently
 does not enforce the deployment service-count or aggregate secret-mapping bounds.
 A successful local validation is not deployment admission: deploy validation and

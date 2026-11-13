@@ -48,7 +48,7 @@ invocation rechecks current inputs and state; a preview is not an immutable tran
 | Command | Machine-readable output |
 | --- | --- |
 | `apps --json` | Inventory object containing `entries` |
-| `status --json` | Status object, including recorded run metadata when selected |
+| `status --json` | Status object, including instance observations, release-command metadata and recorded run metadata when selected |
 | `cleanup/destroy/service remove --json` | Full response envelope, including the plan |
 | `secrets stage/list --json` | Metadata response envelope; never secret values |
 | `server inspect --json` | Inspection report |
@@ -133,6 +133,23 @@ With a registered default, `init` creates a Git-ignored `.soar/` binding. An exp
 `--server` must be registered. With no registered server, it creates an unbound
 configuration; register a server before deployment. It does not adopt or bind an
 existing remote service incarnation: use `service bind` deliberately for that.
+
+## Select a replica
+
+For a service with multiple current or candidate instances, `logs`, `exec` and
+`console` require `--replica N`, using the 1-based ordinal shown by status:
+
+```sh
+soar logs --service web --replica 2 --follow
+soar exec --service web --replica 1 -- ruby --version
+soar console --service web --replica 2
+```
+
+Singleton services retain the default selection. `--candidate` selects the
+candidate group for logs; replica ordinals are not accepted with `--run`.
+Snapshot logs and attached sessions pin the inspected Docker ID rather than
+following a reused name or replacement. Status JSON includes per-instance
+observations and group counts; no member is silently chosen for an ambiguous group.
 
 ## Follow service logs
 

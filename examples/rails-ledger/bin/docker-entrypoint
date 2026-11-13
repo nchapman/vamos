@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+# No migration, database wait, or worker sidecar at boot. Release is explicit.
+exec "$@"

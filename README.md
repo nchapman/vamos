@@ -68,7 +68,19 @@ It does **not** verify Dockerfile existence, image references against a registry
 
 Services may set [runtime CPU and memory limits](docs/resources.md) with
 `resources: {cpus: 0.5, memory_mb: 512}`. Limits apply per container, including
-one-off commands; they are not reservations or build limits.
+one-off and release commands; they are not reservations or build limits.
+
+Stateless services can set [`replicas: 2`](docs/multi-service.md#replica-groups)
+for readiness-gated, single-host groups (up to 8 per service, 32 per app).
+Public groups use Caddy load balancing; private groups stop all old instances
+before starting replacements. Volume-backed services remain single-instance.
+Use `--replica N` to select logs, exec or console when a service has multiple instances.
+
+A top-level [`release: {service: web, command: [bin/release]}`](docs/release-commands.md)
+runs once from the captured new image before any selected runtime changes.
+Failures block rollout; uncertain executions are never automatically restarted.
+Bootstrap dependencies separately. The [Rails/PostgreSQL/Solid Queue example](examples/rails-ledger/README.md)
+shows a shared image, separate worker and release-time migrations without web-local storage.
 
 A service can declare one named volume with `volume: {name: data, mount: /data}`. The singular field takes an object, not a list; `volumes` is not accepted. Volume-backed deployment is implemented with single-writer stop/start and retained data. See the [storage lifecycle](docs/volumes.md); the original proposal is superseded.
 

@@ -251,6 +251,30 @@ func TestPresentationVisualFixtures(t *testing.T) {
 				"rollback": p.header("rollback", r.app, r.server.Name, r.server.Target) + p.rollbackPreview(&deploy.RollbackPreview{TargetOperation: visualOperation, NeedsConfirmation: true, Services: []deploy.RollbackService{{Name: "web", CurrentImage: "registry.example.net/ledger:v7", TargetImage: "registry.example.net/ledger:v6", Downtime: true, SecretVersions: map[string]string{"database-password": "secret-version-old"}}, {Name: "database", ExcludedReason: "manual service excluded"}}}),
 				"staged":   p.statusReport(&deploy.Status{App: r.app, Phase: "staged", Secrets: status.Secrets}, r),
 			}
+			replicated := presentationStatusFixture()
+			replicated.Phase = "ready"
+			database := replicated.Services["database"]
+			database.Phase, database.Candidate = "ready", ""
+			database.Running, database.Available, database.Unavailable = true, true, false
+			replicated.Services["database"] = database
+			group := replicated.Services["web"]
+			group.Container = ""
+			group.DesiredInstances, group.CurrentInstances, group.RunningInstances, group.AvailableInstances = 2, 2, 2, 2
+			group.Instances = []deploy.InstanceStatus{
+				{Ordinal: 1, Container: "soar-ledger-web-" + visualOperation + "-1", Port: "24001", Running: true, Available: true},
+				{Ordinal: 2, Container: "soar-ledger-web-" + visualOperation + "-2", Port: "24002", Running: true, Available: true},
+			}
+			replicated.Services["web"] = group
+			zero := 0
+			replicated.Release = &deploy.RunResult{Operation: strings.Repeat("a", 32), ParentOperation: visualOperation, Service: "web", Phase: "complete", ExitCode: &zero}
+			cases["replicas-release"] = p.statusReport(replicated, r)
+			failed := 23
+			replicated.Phase = "releasing"
+			group.Phase = "pending"
+			replicated.Services["web"] = group
+			replicated.LastError = "Release command failed with exit code 23; existing runtimes are unchanged."
+			replicated.Release.ExitCode = &failed
+			cases["release-blocked"] = p.statusReport(replicated, r)
 			r.app = "customer-notification-service"
 			r.server.Target = "root@deployment-host-with-a-long-name.example.net"
 			status.App = r.app
@@ -259,7 +283,7 @@ func TestPresentationVisualFixtures(t *testing.T) {
 			web.Image = "sha256:" + strings.Repeat("e", 64)
 			status.Services["web"] = web
 			cases["long-status"] = p.statusReport(status, r)
-			for _, name := range []string{"status", "long-status", "preview", "unknown", "help", "apps", "rollback", "staged", "server", "secrets"} {
+			for _, name := range []string{"status", "long-status", "preview", "unknown", "help", "apps", "rollback", "staged", "server", "secrets", "replicas-release", "release-blocked"} {
 				var out bytes.Buffer
 				if err := p.write(&out, cases[name]); err != nil {
 					t.Fatal(err)

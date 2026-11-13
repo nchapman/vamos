@@ -36,7 +36,7 @@ soar deploy --supersede OPERATION_ID
 
 Flags precede positional arguments. Deploy defaults to the local manifest selection, merged into the remote app; `deploy --service NAME` selects one service without applying other local changes. Existing `update: manual` services require scoped deployment with `--yes` to update; ordinary deploy creates missing manual services but leaves unchanged existing ones pinned. Changed protected configuration or staged secrets cause preflight refusal. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
 
-See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. [Independent service directories](services.md) support partial manifests, explicit bindings and preview-first service removal in the v7 implementation being integrated. Omitted services remain untouched, never implicitly deleted. Public/private kind changes and interactive command attachment remain unsupported.
+See the [PostgreSQL workflow](postgres.md) for image services, protected updates, scoped bootstrap, and noninteractive `run` commands before a web service exists. [Preview-first rollback](rollback.md) restores eligible captured service releases, preserving actual excluded/unselected services even after partial deployment. Manual services are never rolled back, including with explicit scope; excluded services with incomplete runtime recovery block rollback. [Independent service directories](services.md) support partial manifests, explicit bindings and preview-first service removal with stable service identities. Omitted services remain untouched, never implicitly deleted. Public/private kind changes remain unsupported; [exec and console](cli.md) attach to verified existing instances.
 
 ## Replica groups
 
@@ -64,8 +64,9 @@ Status includes desired/current/running/available counts and per-instance
 observations. A partially running group is not reported as fully available.
 These observations are not continuous application-health monitoring; Docker's
 restart policy remains responsible for restarting containers. Same-host replicas
-do not provide host availability. Service DNS admission remains non-atomic and
-can temporarily expose both generations.
+do not provide host availability. Same-app DNS admission for public services
+remains non-atomic and can temporarily expose both generations; private worker
+replacement still proves the old group stopped first.
 
 Logs, exec and console default to the sole instance for singleton services.
 For a multi-instance current or candidate group, select an explicit 1-based
@@ -82,9 +83,10 @@ Replica operations use journal v8 and preserve v7 service incarnations and
 per-service history. Existing v1–v7 state remains readable and recoverable;
 legacy scalar container names and ports are preserved, and unchanged singleton
 route rendering is byte-compatible. Removing replicas does not downgrade a v8
-journal. The new group recovery paths have offline regression coverage; the
-historical live results below do **not** verify replica behavior on real Docker
-or Caddy.
+journal. Group recovery paths have offline regression coverage, and the
+[expanded runtime acceptance](testing.md#runtime-feature-acceptance) verifies
+real Docker/Caddy replicas with Rails and Python apps. The historical live
+results below describe the earlier singleton milestone.
 
 ## Deployment and partial success
 
