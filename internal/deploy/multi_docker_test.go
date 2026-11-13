@@ -37,6 +37,7 @@ type fakeDocker struct {
 	j           *journal
 	images      map[string]*inspection
 	containers  map[string]*inspection
+	nextID      uint64
 	net         *inspection
 	calls       []string
 	events      []string
@@ -275,7 +276,10 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 		if im == nil {
 			f.t.Fatal("create image absent")
 		}
-		v := &inspection{ID: fmt.Sprintf("%064x", len(f.containers)+1), Name: "/" + n}
+		// Docker identities never repeat after removal. Using the live count
+		// aliases surviving containers and makes ID-based inspection map-order dependent.
+		f.nextID++
+		v := &inspection{ID: fmt.Sprintf("%064x", f.nextID), Name: "/" + n}
 		v.Config = im.Config
 		v.Config.Image = id
 		v.Config.Labels = map[string]string{}
