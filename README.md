@@ -231,15 +231,22 @@ mise tasks          # List available commands
 mise run fmt        # Format Go source
 mise run fmt-check  # Check formatting without modifying files
 mise run vet        # Static analysis
-mise run test       # Full test suite with race detection
-mise run check      # Formatting, vet, tests, and build
+mise run test       # Full Go test suite with race detection
+mise run check      # Formatting, vet, Go tests, and build
+mise run test:python       # Python example and integration-driver unit tests
+mise run test:integration  # macOS: disposable OrbStack Linux checks + real lifecycle tests
 ```
 
 Tasks run from the project root, including when invoked from a subdirectory. `check` runs its independent tasks in parallel. CI uses the same `mise.toml` and `mise run check`; there is no separate Makefile or Go version pin in the workflow.
 
 Mise manages development tool versions; Go libraries remain in `go.mod`/`go.sum`. Use `mise exec -- go get <module>@<version>` to change a library dependency and `mise exec -- go mod tidy` to reconcile modules. `GOTOOLCHAIN=local` prevents Go from silently selecting a different toolchain than the mise pin. Shell activation is optional when using `mise run` or `mise exec`.
 
-Tests are offline apart from initial Go module downloads; no Docker daemon, SSH server, or credentials are needed. Native Unix tests run the read-only collector locally. If OpenSSH is installed, a test runs `ssh -G` with an empty SSH configuration to validate options without connecting. Subprocess tests exercise real child processes, cancellation, output limits, and inherited pipes. SSH boundary tests supply recorded probe results; they do not claim to test remote authentication or network behavior.
+The default Go tests are offline apart from initial Go module downloads; no Docker daemon, SSH server, or credentials are needed. Native Unix tests run the read-only collector locally. If OpenSSH is installed, a test runs `ssh -G` with an empty SSH configuration to validate options without connecting. Subprocess tests exercise real child processes, cancellation, output limits, and inherited pipes. SSH boundary tests supply recorded probe results; they do not claim to test remote authentication or network behavior.
+
+For real SSH, Docker, Caddy, HTTPS, and database lifecycle testing without a remote
+droplet, use the [disposable OrbStack integration suite](docs/testing.md). It runs
+in an isolated Linux machine, preserves diagnostics, and tears the machine down.
+CI also runs the Python example and integration-driver unit tests.
 
 To build a versioned binary:
 

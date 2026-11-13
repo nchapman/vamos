@@ -88,4 +88,9 @@ The macOS client exercised a disposable **Ubuntu 26.04 / amd64 / systemd** dropl
 
 Local `mise run check` (format, vet, full race-enabled tests, native client build, and Linux amd64/arm64 executor builds) passed. Windows test binaries cross-compiled successfully. Review findings about failed systemd queries and output-write errors have failing-before/fixed-after regression coverage.
 
-Still unverified: Ubuntu 24.04 specifically, arm64 execution, native Windows/Linux client test suites, reboot/power-loss recovery, and killing the worker during an APT transaction. Client disconnection was tested; destructive interruption of dpkg was not.
+That smoke test did not verify Ubuntu 24.04, arm64 execution, native Windows/Linux client test suites, reboot/power-loss recovery, or killing the worker during an APT transaction. Client disconnection was tested; destructive interruption of dpkg was not.
+
+The subsequent [OrbStack integration suite](testing.md) verified Ubuntu 24.04.5
+on native arm64, the Linux client checks, and real host bootstrap/teardown inside
+a disposable isolated machine. This does not establish cloud-kernel equivalence,
+native Windows execution, or reboot/APT-interruption recovery.

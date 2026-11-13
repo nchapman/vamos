@@ -30,14 +30,14 @@ run = "go mod download"
 
 [tasks.fmt]
 description = "Format Go source"
-run = "gofmt -w cmd internal"
+run = "gofmt -w cmd internal integration/orbstack"
 
 [tasks.fmt-check]
 description = "Check Go formatting without changing files"
 shell = "bash -c"
 run = '''
 set -eu
-files=$(gofmt -l cmd internal)
+files=$(gofmt -l cmd internal integration/orbstack)
 if [ -n "$files" ]; then
   printf 'Run mise run fmt for:\n%s\n' "$files"
   exit 1
@@ -51,3 +51,15 @@ run = "go vet ./..."
 [tasks.test]
 description = "Run all tests with race detection"
 run = "go test -race ./..."
+
+[tasks."test:integration"]
+description = "Create an isolated OrbStack Linux machine, run checks and integration tests, then destroy it (macOS)"
+run = "go run ./integration/orbstack"
+
+[tasks."test:python"]
+description = "Run fast integration-driver and example Python tests (requires Python 3)"
+run = '''
+python3 -m unittest discover -s integration -p 'test_*.py' -v
+(cd examples/journal && python3 -m unittest discover -v)
+(cd examples/ledger && python3 -m unittest discover -s tests -v)
+'''
