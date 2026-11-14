@@ -36,7 +36,8 @@ func TestOfficialCommandSignatures(t *testing.T) {
 }
 
 // Opt-in Linux/root execution of the actual pinned download. The path must be
-// pre-created root-owned 0700, with safe ancestors, on the tool-store filesystem.
+// pre-created root-owned 0700, with safe ancestors. Runtime scratch need not
+// share the tool-store filesystem.
 // This does NOT test S3 or initialize a repository.
 func TestActualPinnedTool(t *testing.T) {
 	root := os.Getenv("SOAR_TEST_RESTIC_ROOT")

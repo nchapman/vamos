@@ -166,6 +166,14 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err := m.rejectRetainedVolumes(); err != nil {
 			return nil, err
 		}
+		// Retained repository keys/configuration remain bound to the old host.
+		backupPath := m.path("/var/lib/soar/backups")
+		if err := rejectSymlink(backupPath); err != nil {
+			return nil, err
+		}
+		if _, err := os.Lstat(backupPath); !errors.Is(err, os.ErrNotExist) {
+			return nil, errors.New("retained backup repository state prevents creating a new host identity; archive and reconcile its recovery material first")
+		}
 		// Retained secrets bind to the old host identity independently of app journals.
 		secretPath := m.path("/var/lib/soar/secrets")
 		if err := rejectSymlink(secretPath); err != nil {

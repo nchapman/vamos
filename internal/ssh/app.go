@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nchapman/soar/internal/backup"
 	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/deploy"
 	"github.com/nchapman/soar/internal/process"
@@ -35,6 +36,15 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 	if err := deploy.ValidateRequest(request); err != nil {
 		return response, err
 	}
+	if request.Action == "backup-repository" {
+		if request.Backup.NeedsCredentials() {
+			if _, err := backup.DecodeCredentials(archive); err != nil {
+				return response, errors.New("invalid private repository credentials")
+			}
+		} else if len(archive) != 0 {
+			return response, errors.New("repository action does not accept credentials")
+		}
+	}
 	encoded, err := json.Marshal(request)
 	if err != nil {
 		return response, err
@@ -54,6 +64,19 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 	command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
 	result, runErr := run(ctx, "ssh", arguments(target, command), payload)
 	decodeErr := decodeJSON(result.Stdout, &response)
+	if request.Action == "backup-repository" {
+		if decodeErr == nil && response.Version == 1 && response.Error != "" {
+			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {
+				return deploy.Response{Version: 1, Error: message, ErrorCode: response.ErrorCode}, errors.New(message)
+			}
+		}
+		if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.ErrorCode != "" || response.Backup == nil {
+			return deploy.Response{}, errors.New("repository request outcome unknown; inspect its recorded state before retrying")
+		}
+		// Raw remote logs and unrelated response fields cannot escape through the
+		// repository command, including on malformed/failed SSH responses.
+		return deploy.Response{Version: 1, Backup: response.Backup}, nil
+	}
 	if request.Action == "secrets-stage" || request.Action == "secrets-list" {
 		if decodeErr == nil && response.Version == 1 && response.Error != "" {
 			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {
@@ -119,6 +142,14 @@ func actionArchive(request, binary, input []byte, action string) ([]byte, error)
 	switch action {
 	case "deploy", "run":
 		return appArchive(request, binary, input, true)
+	case "backup-repository":
+		if len(input) == 0 {
+			return payloadArchive(request, binary, nil, "")
+		}
+		if _, err := backup.DecodeCredentials(input); err != nil {
+			return nil, errors.New("invalid private repository credentials")
+		}
+		return payloadArchive(request, binary, input, "repository.credentials")
 	case "secrets-stage":
 		if err := secrets.ValidateValue(input); err != nil {
 			return nil, errors.New("invalid secret input")

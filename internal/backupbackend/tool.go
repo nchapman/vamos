@@ -91,6 +91,24 @@ func (b *Backend) ensure(ctx context.Context, scratch string) (string, error) {
 	} else if !os.IsNotExist(e) {
 		return "", errTool
 	}
+	installed, e := installArtifact(ctx, dir, scratch, a)
+	if e != nil || !verifyFile(installed, a.SHA256) {
+		return "", errTool
+	}
+	return installed, nil
+}
+
+// installArtifact requires a verified version directory from ensure. Runtime
+// scratch is deliberately unused: installation must not depend on its filesystem.
+func installArtifact(ctx context.Context, dir, _ string, a Artifact) (string, error) {
+	// Only public release payloads belong here. Credentials remain in runtime
+	// scratch, which may reside on a different filesystem (for example /run).
+	scratch, e := os.MkdirTemp(dir, ".install-")
+	if e != nil {
+		return "", errTool
+	}
+	defer os.RemoveAll(scratch)
+	dest := filepath.Join(dir, "restic")
 	req, e := http.NewRequestWithContext(ctx, http.MethodGet, a.URL, nil)
 	if e != nil {
 		return "", errTool
@@ -135,12 +153,9 @@ func (b *Backend) ensure(ctx context.Context, scratch string) (string, error) {
 	if f.Chmod(0755) != nil || f.Sync() != nil {
 		return "", errTool
 	}
-	// Link is atomic and never overwrites an existing destination. Runtime storage
-	// must share a filesystem with the tool store; otherwise installation refuses.
+	// Staging within the version directory keeps this atomic, no-overwrite
+	// hard link on the destination filesystem, independent of runtime storage.
 	if os.Link(f.Name(), dest) != nil {
-		return "", errTool
-	}
-	if !verifyFile(dest, a.SHA256) {
 		return "", errTool
 	}
 	directory, e := os.Open(dir)

@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 const Version = "0.19.1"
@@ -89,7 +91,7 @@ func ValidateConfig(c Config) error {
 	return nil
 }
 func ValidateCredentials(c Credentials) error {
-	for i, v := range []string{c.AccessKeyID, c.SecretAccessKey, c.SessionToken, c.Password} {
+	for i, v := range []string{c.AccessKeyID, c.SecretAccessKey, c.SessionToken} {
 		if (i != 2 && v == "") || len(v) > 4096 {
 			return errCredentials
 		}
@@ -97,6 +99,16 @@ func ValidateCredentials(c Credentials) error {
 			if r < 33 || r > 126 {
 				return errCredentials
 			}
+		}
+	}
+	// Existing restic repositories may use Unicode passphrases with spaces.
+	// Passwords use a private file, never shell syntax or AWS environment values.
+	if len(c.Password) == 0 || len(c.Password) > 4096 || !utf8.ValidString(c.Password) {
+		return errCredentials
+	}
+	for _, r := range c.Password {
+		if unicode.IsControl(r) {
+			return errCredentials
 		}
 	}
 	if len(c.CACertificate) > 16384 {

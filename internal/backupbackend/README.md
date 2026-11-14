@@ -22,12 +22,13 @@ restores, a host registry, an initialization journal, or cross-host locking.
   must be real root-owned directories without group/other write permission.
   The tool root has the same ancestor requirements. Root tampering and races
   performed by root are outside this boundary; there is no ownership repair.
-- **First installation requires runtimeDir and the tool store to share a
-  filesystem.** Atomic no-replace publication uses a hard link from the private
-  verified staging file. Separate tmpfs `/run` fails closed; use a private worker
-  directory on the tool-store filesystem for installation. No fallback stages
-  sensitive or temporary files outside runtimeDir. Already-installed tools do
-  not have this filesystem restriction.
+- Installation stages only public release payloads in a fresh private 0700
+  directory within the verified tool version directory. The verified executable
+  is chmodded and fsynced before atomic no-overwrite hard-link publication;
+  the version directory is then fsynced. Staging is removed on ordinary returns,
+  including failures. Runtime storage may be a separate filesystem such as
+  tmpfs `/run`; credentials remain exclusively in private runtime scratch,
+  never in the tool store.
 - Cleanup after worker death remains the coordinator's job. Ordinary returns
   remove the private per-call directory; secure erasure is not promised.
 

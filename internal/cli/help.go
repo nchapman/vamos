@@ -46,7 +46,19 @@ func printFlagDefaults(w io.Writer, parsed *flag.FlagSet, names ...string) {
 // Only command names are accepted here: forwarding arbitrary flags/positionals
 // could consume --help as a value or accidentally invoke an operation.
 func commandHelpArgs(path []string) ([]string, bool) {
-	if len(path) == 0 || len(path) > 2 {
+	if len(path) == 0 || len(path) > 3 {
+		return nil, false
+	}
+	if path[0] == "backup" {
+		if len(path) >= 2 && path[1] != "repository" {
+			return nil, false
+		}
+		if len(path) == 3 && !slices.Contains([]string{"add", "list", "show", "verify", "resume"}, path[2]) {
+			return nil, false
+		}
+		return append(append([]string{}, path...), "--help"), true
+	}
+	if len(path) > 2 {
 		return nil, false
 	}
 	var children []string

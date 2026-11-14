@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"errors"
+	"github.com/nchapman/soar/internal/backup"
 	"github.com/nchapman/soar/internal/secrets"
 )
 
@@ -17,6 +18,9 @@ var (
 
 // ErrorCode classifies identities, never diagnostic strings.
 func ErrorCode(err error) string {
+	if code := backup.ErrorCode(err); code != "" {
+		return code
+	}
 	for _, c := range refusalClasses {
 		if errors.Is(err, c.err) {
 			return c.code
@@ -44,6 +48,19 @@ var refusalClasses = []struct {
 
 // RefusalMessage returns only local, action-appropriate explanatory text.
 func RefusalMessage(action, code string) string {
+	if action == "backup-repository" {
+		if message := backup.RefusalMessage(code); message != "" {
+			return message
+		}
+		if code == "host_busy" || code == "host_identity_mismatch" {
+			for _, c := range refusalClasses {
+				if c.code == code {
+					return c.message
+				}
+			}
+		}
+		return ""
+	}
 	if action != "secrets-stage" && action != "secrets-list" {
 		return ""
 	}

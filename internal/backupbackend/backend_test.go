@@ -55,6 +55,20 @@ func TestValidation(t *testing.T) {
 		}
 	}
 }
+func TestExistingRepositoryPassphrase(t *testing.T) {
+	k := creds()
+	k.Password = "correct horse batería staple"
+	if err := ValidateCredentials(k); err != nil {
+		t.Fatalf("existing passphrase rejected: %v", err)
+	}
+	for _, invalid := range []string{"", "two\nlines", "secret\x00value", string([]byte{0xff})} {
+		k.Password = invalid
+		if ValidateCredentials(k) == nil {
+			t.Fatal("invalid password accepted")
+		}
+	}
+}
+
 func TestIdentityOutput(t *testing.T) {
 	id := strings.Repeat("a", 64)
 	for _, init := range []bool{false, true} {

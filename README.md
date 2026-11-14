@@ -86,11 +86,15 @@ A service can declare one named volume with `volume: {name: data, mount: /data}`
 
 Build contexts are relative to the configuration directory; Dockerfile paths are relative to their context and cannot escape it lexically. Container mount paths use POSIX syntax, must be clean absolute paths other than `/`, and are never host-directory mounts. Domains are ASCII DNS hostnames without a scheme, port, wildcard, or trailing dot (use punycode for international names). Environment values are passed literally; there is no interpolation.
 
-## Backup and recovery design
+## Backup and recovery
 
-Backup/restore commands are not implemented yet. The [backup proposal](docs/backups.md)
-designs PostgreSQL, SQLite and files together: explicit named sources, consistency
-and downtime policies, encrypted off-host recovery points, and fresh-target restore.
+[Encrypted S3-compatible repository setup](docs/backup-repositories.md) is implemented:
+create/connect, independent private recovery kits, pinned identity verification and
+read-only reconciliation of uncertain initialization. **Application capture, restore,
+scheduling and pruning are not implemented yet.** An empty repository is not a backup.
+The [backup design](docs/backups.md) covers PostgreSQL, SQLite and files together:
+explicit named sources, consistency and downtime policies, encrypted off-host recovery
+points, and fresh-target restore.
 Its configuration and CLI examples are proposals, not accepted syntax.
 
 ## Inspect a host
@@ -159,7 +163,7 @@ bindings are immutable. Updates stop/start with public durable HTTP 503 downtime
 Data survives failed startup, supersede, reboot, cleanup and destroy; after
 destroy, reuse requires explicit `deploy --reuse-data`. Status shows storage
 identities, missing/retained state and possible mutation. There is no data deletion,
-backup or restore command. See [the storage boundary](docs/volumes.md), including
+application capture or restore command. See [the storage boundary](docs/volumes.md), including
 legacy journal recovery and the limits of missing-storage checks.
 
 ## Add a private backend
@@ -292,7 +296,7 @@ To build a versioned binary:
 mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
 ```
 
-Staged secrets, multi-service apps and [persistent local volumes](docs/volumes.md) are implemented. The original volume proposal is superseded; backup/restore/preparation remain deferred, and new storage full-suite/live acceptance results are not claimed here; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).
+Staged secrets, multi-service apps and [persistent local volumes](docs/volumes.md) are implemented. The original volume proposal is superseded; application capture/restore/preparation remain deferred (repository setup is available), and new storage full-suite/live acceptance results are not claimed here; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).
 
 ## Custom domains
 

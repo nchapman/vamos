@@ -9,9 +9,11 @@ tar -xf - -C "$stage"
 for file in request.json checksum; do
   [ -f "$stage/$file" ] && [ ! -L "$stage/$file" ] && [ "$(stat -c %a "$stage/$file")" = 600 ] || exit 1
 done
-if [ -e "$stage/secret.value" ] || [ -L "$stage/secret.value" ]; then
-  [ -f "$stage/secret.value" ] && [ ! -L "$stage/secret.value" ] && [ "$(stat -c %a "$stage/secret.value")" = 600 ] || exit 1
-fi
+for private in secret.value repository.credentials; do
+  if [ -e "$stage/$private" ] || [ -L "$stage/$private" ]; then
+    [ -f "$stage/$private" ] && [ ! -L "$stage/$private" ] && [ "$(stat -c %a "$stage/$private")" = 600 ] || exit 1
+  fi
+done
 [ -f "$stage/executor" ] && [ ! -L "$stage/executor" ] || exit 1
 (cd "$stage" && sha256sum --status -c checksum)
 chmod 700 "$stage/executor"

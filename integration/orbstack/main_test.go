@@ -88,6 +88,18 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 		}
 		io.WriteString(out, `{"record":{"id":"`+id+`","name":"`+name+`","config":{"isolated":`+isolated+`,"isolate_network":`+network+`,"forward_ssh_agent":`+forward+`}}}`)
 	case "run":
+		if a[5] == "python3" && strings.HasSuffix(a[6], "/repository/acceptance.py") {
+			if !f.restarted || len(a) != 9 {
+				f.t.Fatal("repository acceptance must follow restart verification")
+			}
+			if _, ok := ctx.Deadline(); !ok {
+				f.t.Fatal("repository acceptance lacks deadline")
+			}
+			if f.mode == "repositoryfail" {
+				return errors.New("repository acceptance failed")
+			}
+			return nil
+		}
 		if a[5] == "python3" {
 			verify := len(a) == 11 && a[9] == "--phase" && a[10] == "verify-restart"
 			if !verify && len(a) != 9 {
@@ -147,7 +159,7 @@ func TestLifecycle(t *testing.T) {
 	for _, tc := range []struct {
 		mode                   string
 		keep, deleted, wantErr bool
-	}{{"success", false, true, false}, {"suitefail", false, true, true}, {"suitefail", true, false, true}, {"cancel", false, true, true}, {"createfail", false, false, true}, {"existing", false, false, true}, {"isolation", false, true, true}, {"replacement", false, false, true}, {"deletefail", false, true, true}} {
+	}{{"success", false, true, false}, {"repositoryfail", false, true, true}, {"repositoryfail", true, false, true}, {"suitefail", false, true, true}, {"suitefail", true, false, true}, {"cancel", false, true, true}, {"createfail", false, false, true}, {"existing", false, false, true}, {"isolation", false, true, true}, {"replacement", false, false, true}, {"deletefail", false, true, true}} {
 		t.Run(tc.mode+map[bool]string{true: "keep"}[tc.keep], func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -274,15 +286,21 @@ func TestRestartPhases(t *testing.T) {
 					t.Fatalf("error=%v", err)
 				}
 				var phases []string
-				deleted, collected := false, false
+				deleted, collected, repository := false, false, false
 				for i, a := range f.calls {
+					if a[0] == "run" && strings.HasSuffix(a[6], "/repository/acceptance.py") {
+						repository = true
+						if strings.Join(phases, ",") != "prepare,restart,verify" || i == 0 || f.calls[i-1][0] != "info" {
+							t.Fatal("repository phase ran before recovery or without fresh ownership check")
+						}
+					}
 					if a[0] == "restart" {
 						phases = append(phases, "restart")
 						if i == 0 || f.calls[i-1][0] != "info" || f.calls[i-1][3] != "owned-id" {
 							t.Fatal("missing pre-restart identity check")
 						}
 					}
-					if a[0] == "run" && a[5] == "python3" {
+					if a[0] == "run" && a[5] == "python3" && !strings.HasSuffix(a[6], "/repository/acceptance.py") {
 						phase := "prepare"
 						if len(a) == 11 {
 							phase = "verify"
@@ -307,6 +325,9 @@ func TestRestartPhases(t *testing.T) {
 				}
 				if strings.Join(phases, ",") != want {
 					t.Fatalf("phases=%v want %s", phases, want)
+				}
+				if repository != (mode == "success") {
+					t.Fatalf("repository phase=%v for %s", repository, mode)
 				}
 				identityDrift := strings.HasSuffix(mode, "-id") || strings.HasSuffix(mode, "-name")
 				if deleted != (!identityDrift && (!keep || mode == "success")) {

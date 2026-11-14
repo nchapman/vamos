@@ -4,6 +4,10 @@ These commands complement deployment and recovery. They use the existing
 registered servers and project bindings; they do not introduce another daemon,
 registry requirement, or deployment state model.
 
+For encrypted off-host repository create/connect, private recovery kits, identity
+verification and initialization reconciliation, see [repository setup](backup-repositories.md).
+Application backup capture, restore, scheduling and pruning are not implemented yet.
+
 ## CLI conventions
 
 Use `soar help COMMAND` (or `soar COMMAND --help`) for options, for example
@@ -21,8 +25,9 @@ on Windows; they are not `cmd.exe` command strings.
 Project commands select the saved server binding, or bind to the registered default
 on first contact. An explicit `--server` overrides only this invocation. Commands
 that support `--server NAME --app APP` can operate without loading a local manifest.
-`apps` is deliberately different: it ignores project bindings and uses the registered
-default unless `--server` is supplied.
+`apps` and `backup repository` are deliberately different: they ignore project
+bindings and use the registered default unless `--server` is supplied. Repository
+setup is host-level; it does not load an application manifest.
 
 If missing or invalid YAML blocks observation or recovery, use an explicit target:
 
@@ -51,6 +56,7 @@ invocation rechecks current inputs and state; a preview is not an immutable tran
 | `status --json` | Status object, including instance observations, release-command metadata and recorded run metadata when selected |
 | `cleanup/destroy/service remove --json` | Full response envelope, including the plan |
 | `secrets stage/list --json` | Metadata response envelope; never secret values |
+| `backup repository ... --json` | Recorded/verified repository metadata; never credentials or recovery-kit contents |
 | `server inspect --json` | Inspection report |
 | `server status --json` | Host status response |
 

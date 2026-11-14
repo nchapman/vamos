@@ -59,8 +59,14 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 			return appFailure(stdout, errors.New("invalid secret input file"), 1)
 		}
 	}
+	if request.Action == "backup-repository" && request.Backup.NeedsCredentials() {
+		archive, err = readRepositoryFile("repository.credentials")
+		if err != nil {
+			return appFailure(stdout, errors.New("invalid private repository input file"), 1)
+		}
+	}
 	deadline := 20 * time.Minute
-	if request.Action == "apps" || request.Action == "status" || request.Action == "logs" || request.Action == "secrets-list" {
+	if request.Action == "apps" || request.Action == "status" || request.Action == "logs" || request.Action == "secrets-list" || (request.Action == "backup-repository" && !request.Mutating()) {
 		deadline = 15 * time.Second
 	}
 	ctx, stop := context.WithTimeout(ctx, deadline)

@@ -20,6 +20,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/nchapman/soar/internal/appstate"
+	"github.com/nchapman/soar/internal/backup"
 	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/lifecycle"
@@ -28,6 +29,7 @@ import (
 )
 
 type Request struct {
+	Backup         *backup.Request   `json:"backup,omitempty"`
 	Partial        bool              `json:"partial,omitempty"`
 	Bindings       map[string]string `json:"bindings,omitempty"`
 	HostIdentity   string            `json:"host_identity,omitempty"`
@@ -53,6 +55,7 @@ type Request struct {
 	Tail           int               `json:"tail,omitempty"`
 }
 type Response struct {
+	Backup          *backup.Response   `json:"backup,omitempty"`
 	ErrorCode       string             `json:"error_code,omitempty"`
 	Apps            *AppList           `json:"apps,omitempty"`
 	RollbackPreview *RollbackPreview   `json:"rollback_preview,omitempty"`
@@ -159,7 +162,8 @@ type journal struct {
 }
 type Runner func(context.Context, string, []string, []byte) (process.Result, error)
 type Manager struct {
-	DomainProbe func(context.Context, string) DomainStatus
+	RepositoryBackend backup.Backend
+	DomainProbe       func(context.Context, string) DomainStatus
 	// RuntimeDir is the private worker staging directory for transient env files.
 	RuntimeDir string
 	// AllocatePort selects an advisory loopback reservation. Docker's bind is authoritative.
@@ -251,10 +255,19 @@ func validateLegacyApp(a *config.App) error {
 	return nil
 }
 func (r Request) Mutating() bool {
+	if r.Action == "backup-repository" {
+		return r.Backup != nil && r.Backup.Mutating()
+	}
 	return r.Action == "service-remove" || r.Action == "rollback" || r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
 }
 
 func ValidateRequest(r Request) error {
+	if r.Action == "backup-repository" {
+		return validateBackupRequest(r)
+	}
+	if r.Backup != nil {
+		return errors.New("backup fields require a repository request")
+	}
 	if r.Config != nil && r.Config.Release != nil && r.Action == "deploy" {
 		if !r.Partial || r.ContextFormat != BundleFormat {
 			return errors.New("release commands require a current partial-manifest client")
@@ -574,7 +587,12 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		return
 	}
 	mut := r.Mutating()
-	if r.Action == "secrets-stage" {
+	if r.Action == "backup-repository" {
+		if len(tar) > backup.MaxPrivateBytes || (!r.Backup.NeedsCredentials() && len(tar) != 0) {
+			err = errors.New("invalid private repository input")
+			return
+		}
+	} else if r.Action == "secrets-stage" {
 		if err = secrets.ValidateValue(tar); err != nil {
 			return
 		}
@@ -611,6 +629,15 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	if h == nil || h.Phase != "ready" || h.Config != r.Host || (r.HostIdentity != "" && r.HostIdentity != h.ID) {
 		err = errHostIdentity
 		return
+	}
+	if r.Action == "backup-repository" {
+		manager := backup.NewManager(m.Root, m.RuntimeDir)
+		if m.RepositoryBackend != nil {
+			manager.Backend = m.RepositoryBackend
+		}
+		result, executeErr := manager.Execute(ctx, h.ID, *r.Backup, tar)
+		resp.Backup = &result
+		return resp, executeErr
 	}
 	if r.Action == "apps" {
 		resp.Apps, err = m.listApps(ctx, h.ID, h.Config)

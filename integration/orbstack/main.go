@@ -275,6 +275,17 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	if err := r.exec.Run(verifyCtx, runArgs(m.ID, "python3", "/opt/soar-test/integration/linux_suite.py", "--owner", o.token, "--phase", "verify-restart"), nil, r.out, r.stderr); err != nil {
 		return fmt.Errorf("guest verify-restart: %w", err)
 	}
+	// Run after all Docker ownership/teardown and reboot checks. Repository
+	// records intentionally remain until deletion of this exact owned VM.
+	if err := verifyOwned(ctx, "pre-repository"); err != nil {
+		return err
+	}
+	repositoryCtx, cancelRepository := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancelRepository()
+	fmt.Fprintln(r.out, "Guest live S3 repository acceptance phase")
+	if err := r.exec.Run(repositoryCtx, runArgs(m.ID, "python3", "/opt/soar-test/integration/repository/acceptance.py", "--owner", o.token), nil, r.out, r.stderr); err != nil {
+		return fmt.Errorf("guest repository acceptance: %w", err)
+	}
 	return nil
 }
 func containsName(v any, name string) bool {

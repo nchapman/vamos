@@ -38,8 +38,9 @@ Usage:
   soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
   soar server status NAME [TARGET]     Read the host lifecycle journal
   soar server teardown [flags] NAME    Remove an unused owned installation
+  soar backup repository [COMMAND]      Register and inspect backup repositories
   soar version                          Print the build version
-  soar help [COMMAND [SUBCOMMAND]]      Show general or command-specific help
+  soar help [COMMAND [SUBCOMMAND [ACTION]]]      Show general or command-specific help
 
 Setup/teardown require explicit authorization. Deploy supports 1–8 built or prebuilt public/private
 services, with one optional named volume per service. Use deploy --service NAME for scoped updates;
@@ -83,6 +84,8 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		}
 		fmt.Fprintf(stdout, "soar %s\n", version)
 		return 0
+	case "backup":
+		return backupCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "apps":
 		return appsCommand(ctx, args[1:], stdout, stderr, defaultAppDeps())
 	case "init":

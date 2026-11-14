@@ -1,9 +1,11 @@
 # Proposal: application backup and recovery
 
-**Status: design proposal, not implemented.** All YAML and `soar backup` /
-`soar restore` commands below are proposed interfaces; current binaries reject
-them. This document designs **PostgreSQL, SQLite, and files together**. It does
-not claim backup or restore verification. Existing [volume](volumes.md),
+**Status: application capture/restore design; repository setup is implemented.**
+Use the [repository setup guide](backup-repositories.md) for the currently supported
+`soar backup repository` commands. All app-level YAML, capture, scheduling and
+`soar restore` commands below remain proposed interfaces, not implemented features.
+This document designs **PostgreSQL, SQLite, and files together**. Repository setup
+alone does not provide application backups or claim restore verification. Existing [volume](volumes.md),
 [secret](secrets.md), and [runtime](runtime-evolution.md) contracts remain in force.
 
 ## Goal and first boundary
@@ -366,10 +368,11 @@ schedules stay disabled after restore.
 ## Repository, security, scheduling and retention
 
 Use a mature encrypted backup/storage engine rather than invent encryption,
-deduplication or a remote repository format. Restic is a candidate, not a selected
-or integrated dependency. Backend selection must demonstrate the commit,
-verification, locking, streaming, credentials and retention contract for all
-three methods. Begin with one off-host backend, not an arbitrary plugin API.
+deduplication or a remote repository format. Repository setup now integrates pinned
+restic 0.19.1, format 2, with one S3-compatible backend. Snapshot publication,
+readback verification, backup/restore locking, streaming and retention semantics
+still need implementation evidence for all three methods; setup verification alone
+does not establish those contracts. Do not introduce an arbitrary plugin API.
 
 The existing bounded metadata protocol stays metadata-only: do not embed dump,
 image or secret bytes in status JSON or a build-context bundle. Backup data needs
@@ -521,7 +524,9 @@ universal backup command while only one method has actually been verified.
 
 ## Decisions still requiring implementation evidence
 
-- Storage engine/backend and exact key, repository lock, commit and prune model.
+- Restic snapshot publication/readback, backup/restore repository locking and
+  commit/reconciliation semantics; a separately approved pruning model. Repository
+  setup/key handling is implemented, but this does not prove snapshot recovery.
 - PostgreSQL single-owner inventory/role-attribute rules, privilege-approval UX,
   supported extensions, tool versions, and trusted isolated bootstrap profile.
   Reject unsupported layouts explicitly.
