@@ -244,10 +244,7 @@ ensures nothing blocks it later:
 
 ## 7. Phased implementation sequence
 
-1. **Phase 1 — Shared engine boundary & protocol spec:** Separate the container/app
-   execution engine from SSH transport, define the `soar-agent` socket RPC and
-   version handshake, and add deterministic build stamping across client and Linux
-   artifacts.
+1. **Phase 1 — Shared engine boundary & protocol spec (implemented):** Separate the container/app execution primitives (`internal/engine`) and transport interface (`internal/transport`) from SSH uploads, add `MutationLock`/`IngressLock` seams on `deploy.Manager`, define the `soar-agent` socket RPC and version handshake (`internal/agentproto`, `docs/agent-protocol.md`), and add deterministic build stamping (`internal/buildmeta`, `internal/buildbundle`, `cmd/build`, `docs/versioning.md`).
 2. **Phase 2 — Installed `soar-agent`, durable serial queue, non-root SSH deploy,
    and `soar server upgrade`:** Provision `soar-agent` + restricted `soar` SSH
    bridge during `server add`, persist and queue concurrent submissions (`max_concurrent_deploys=1`

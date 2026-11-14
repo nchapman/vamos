@@ -39,6 +39,11 @@ func (m *Manager) live(c context.Context) ([]byte, error) {
 	return b, e
 }
 func (m *Manager) promote(c context.Context, j *journal) error {
+	unlock, err := m.lockIngress(c)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if e := validateRouteCandidate(j); e != nil {
 		return e
 	}
@@ -139,6 +144,11 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 // equivalent old/new routes, drift, and unavailable inspection are not proof that
 // the candidate was never routed publicly.
 func (m *Manager) verifyUnservedPromotion(c context.Context, j *journal) error {
+	unlock, err := m.lockIngress(c)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if j.NewCaddy == "" {
 		return errors.New("no pending promotion to cancel")
 	}
@@ -217,6 +227,11 @@ func (m *Manager) reconcilePending(c context.Context, j *journal) error {
 	if j.NewCaddy == "" {
 		return nil
 	}
+	unlock, err := m.lockIngress(c)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if e := validateRouteCandidate(j); e != nil {
 		return e
 	}

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,6 +22,7 @@ import (
 	"github.com/nchapman/soar/internal/backup"
 	"github.com/nchapman/soar/internal/buildcontext"
 	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/soar/internal/engine"
 	"github.com/nchapman/soar/internal/lifecycle"
 	"github.com/nchapman/soar/internal/process"
 	"github.com/nchapman/soar/internal/secrets"
@@ -173,7 +173,13 @@ type Manager struct {
 	// RuntimeDir is the private worker staging directory for transient env files.
 	RuntimeDir string
 	// AllocatePort selects an advisory loopback reservation. Docker's bind is authoritative.
-	AllocatePort   func() (string, error)
+	AllocatePort func() (string, error)
+	// MutationLock overrides the default host-wide flock when a coordinator
+	// manages per-app locks and concurrency governance.
+	MutationLock func(ctx context.Context, app string, mut bool) (active bool, unlock func(), err error)
+	// IngressLock serializes short Caddyfile and live-route transactions when
+	// multiple apps deploy concurrently.
+	IngressLock    func(ctx context.Context) (func(), error)
 	Root           string
 	Run            Runner
 	HTTP           *http.Client
@@ -182,16 +188,35 @@ type Manager struct {
 	Drain          time.Duration
 }
 
-func allocatePort() (string, error) {
-	l, err := net.Listen("tcp4", "127.0.0.1:0")
+func (m *Manager) engine() *engine.Client {
+	dir := m.RuntimeDir
+	if dir == "" {
+		dir = m.path("/run")
+	}
+	return &engine.Client{
+		Run:          m.cmd,
+		HTTP:         m.HTTP,
+		AllocatePort: m.AllocatePort,
+		RuntimeDir:   dir,
+	}
+}
+
+func (m *Manager) lockIngress(ctx context.Context) (func(), error) {
+	if m.IngressLock == nil {
+		return func() {}, nil
+	}
+	unlock, err := m.IngressLock(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
-	if err := l.Close(); err != nil {
-		return "", err
+	if unlock == nil {
+		return func() {}, nil
 	}
-	return port, nil
+	return unlock, nil
+}
+
+func allocatePort() (string, error) {
+	return engine.AllocateLoopbackPort()
 }
 
 func NewManager() *Manager {
@@ -637,26 +662,44 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		err = errors.New("invalid context archive size or action")
 		return
 	}
-	p := m.path(lifecycle.LockPath)
-	if err = safe(p); err != nil {
-		return
-	}
-	if err = os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-		return
-	}
-	l := flock.New(p, flock.SetPermissions(0600))
-	defer l.Close()
-	ok, e := l.TryLock()
-	if e != nil {
-		err = e
-		return
-	}
-	if mut && !ok {
-		err = errHostBusy
-		return
-	}
-	if !mut && ok {
-		_ = l.Unlock()
+	var ok bool
+	if m.MutationLock != nil {
+		active, unlock, lockErr := m.MutationLock(ctx, r.App, mut)
+		if lockErr != nil {
+			err = lockErr
+			return
+		}
+		if unlock != nil {
+			defer unlock()
+		}
+		ok = !active
+		if mut && !ok {
+			err = errHostBusy
+			return
+		}
+	} else {
+		p := m.path(lifecycle.LockPath)
+		if err = safe(p); err != nil {
+			return
+		}
+		if err = os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			return
+		}
+		l := flock.New(p, flock.SetPermissions(0600))
+		defer l.Close()
+		var e error
+		ok, e = l.TryLock()
+		if e != nil {
+			err = e
+			return
+		}
+		if mut && !ok {
+			err = errHostBusy
+			return
+		}
+		if !mut && ok {
+			_ = l.Unlock()
+		}
 	}
 	h, e := lifecycle.ReadState(m.path(lifecycle.StatePath))
 	if e != nil {

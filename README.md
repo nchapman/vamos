@@ -270,7 +270,13 @@ App status/logs now stage a matching trusted executor temporarily, without repla
 
 ```text
 cmd/soar/           Process entry point and build version
+cmd/build/          Deterministic bundle builder for client and Linux executors
 internal/cli/       Commands, output, and exit codes
+internal/transport/ Client-to-host transport interface seam
+internal/agentproto/ Versioned soar-agent RPC, handshake, queue, and ACL contracts
+internal/buildmeta/ Deterministic bundle build identity and pairing checks
+internal/buildbundle/ Snapshot-based cross-target bundle builder
+internal/engine/    Shared Docker container, network, resource, env-file, and probe primitives
 internal/config/    Typed configuration, strict loading, validation
 internal/host/      Shared read-only collector, parser, and Ubuntu policy
 internal/ssh/       System OpenSSH bootstrap transport
@@ -329,11 +335,15 @@ droplet, use the [disposable OrbStack integration suite](docs/testing.md). It ru
 in an isolated Linux machine, preserves diagnostics, and tears the machine down.
 CI also runs the Python example and integration-driver unit tests.
 
-To build a versioned binary:
+To build a versioned bundle (client plus both Linux executors):
 
 ```sh
-mise exec -- go build -trimpath -ldflags '-X main.version=0.1.0-dev' -o bin/soar ./cmd/soar
+mise run build
+# Or with a custom version label:
+mise exec -- go run ./cmd/build -version 0.1.0-dev
 ```
+
+See [versioning](docs/versioning.md) for bundle pairing rules and [the agent protocol](docs/agent-protocol.md) / [architecture proposal](docs/agent-proposal.md) for the multi-phase `soar-agent` roadmap.
 
 Staged secrets, multi-service apps and [persistent local volumes](docs/volumes.md) are implemented. The original volume proposal is superseded; application capture/restore/preparation remain deferred (repository setup is available), and new storage full-suite/live acceptance results are not claimed here; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).
 

@@ -282,6 +282,11 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 // verifyRoutes checks the stable effective routes, not an uncommitted intent.
 // It never repairs disk/runtime drift or clears a promotion intent.
 func (m *Manager) verifyRoutes(c context.Context, j *journal) error {
+	unlock, err := m.lockIngress(c)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	expected, e := m.routes(j, false)
 	if e != nil {
 		return e

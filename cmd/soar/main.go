@@ -6,11 +6,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/nchapman/soar/internal/buildmeta"
 	"github.com/nchapman/soar/internal/cli"
 )
-
-// Overridden for release builds with -ldflags "-X main.version=<version>".
-var version = "dev"
 
 func main() {
 	os.Exit(run())
@@ -19,7 +17,7 @@ func main() {
 func run() int {
 	ctx, stop := shutdownContext()
 	defer stop()
-	return cli.RunContext(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, version)
+	return cli.RunContext(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, buildmeta.Version())
 }
 
 func shutdownContext() (context.Context, context.CancelFunc) {

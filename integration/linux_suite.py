@@ -192,10 +192,10 @@ def checks(h):
     h.command(['go', 'test', '-race', '-coverprofile=' + str(coverage), './...'])
     h.command(['go', 'tool', 'cover', '-func=' + str(coverage)])
     h.command(['go', 'tool', 'cover', '-html=' + str(coverage), '-o', str(h.artifacts / 'coverage.html')])
-    for arch in ('amd64', 'arm64'):
-        h.command(['env', 'GOOS=linux', f'GOARCH={arch}', 'CGO_ENABLED=0', 'go', 'build',
-                   '-trimpath', '-o', f'bin/soar-linux-{arch}', './cmd/soar'])
-    h.command(['go', 'build', '-trimpath', '-o', 'bin/soar', './cmd/soar'])
+    h.command(['go', 'run', './cmd/build'])
+    import versioning
+    executor = ROOT / 'bin' / ('soar-linux-' + ('arm64' if platform.machine() == 'aarch64' else 'amd64'))
+    versioning.run(h, executor)
     for example, tests in (('journal', '.'), ('ledger', 'tests')):
         h.command(['python3', '-m', 'unittest', 'discover', '-s', tests, '-v'], cwd=ROOT / 'examples' / example)
     h.command(['python3', '-m', 'unittest', 'discover', '-s', 'integration', '-p', 'test_*.py', '-v'])

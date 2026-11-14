@@ -2,13 +2,7 @@ package deploy
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
-	"strings"
 
 	"github.com/nchapman/soar/internal/secrets"
 )
@@ -101,59 +95,5 @@ func (m *Manager) runContainer(ctx context.Context, j *journal, r *release, args
 	if err != nil {
 		return err
 	}
-	if len(values) == 0 {
-		_, err = m.cmd(ctx, "docker", args...)
-		return err
-	}
-	dir := m.RuntimeDir
-	if dir == "" {
-		dir = m.path("/run")
-	}
-	if err := safe(dir); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, ".soar-env-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	keys := make([]string, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var content strings.Builder
-	for _, key := range keys {
-		if !secretEnvKey.MatchString(key) || secrets.ValidateValue([]byte(values[key])) != nil {
-			return errors.New("invalid runtime secret")
-		}
-		fmt.Fprintf(&content, "%s=%s\n", key, values[key])
-	}
-	if _, err = f.WriteString(content.String()); err != nil {
-		return errors.New("write runtime secret file failed")
-	}
-	if err = f.Close(); err != nil {
-		return errors.New("close runtime secret file failed")
-	}
-	// Insert before the image/command, without interpreting their arguments.
-	imageIndex := -1
-	for i, arg := range args {
-		if arg == r.Image {
-			imageIndex = i
-			break
-		}
-	}
-	if imageIndex < 0 {
-		return errors.New("missing container image argument")
-	}
-	path, err := filepath.Abs(f.Name())
-	if err != nil {
-		return err
-	}
-	command := append([]string{}, args[:imageIndex]...)
-	command = append(command, "--env-file", path)
-	command = append(command, args[imageIndex:]...)
-	_, err = m.cmd(ctx, "docker", command...)
-	return err
+	return m.engine().RunWithEnvFile(ctx, r.Image, args, values)
 }

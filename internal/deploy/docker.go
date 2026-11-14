@@ -2,7 +2,6 @@ package deploy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,87 +13,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nchapman/soar/internal/engine"
 )
 
-type inspection struct {
-	ID           string `json:"Id"`
-	Name         string
-	RestartCount int
-	Driver       string
-	Scope        string
-	EnableIPv6   bool
-	EnableIPv4   *bool
-	Ingress      bool
-	Options      map[string]string
-	Internal     bool
-	Labels       map[string]string
-	Containers   map[string]json.RawMessage
-	Config       struct {
-		Env        []string
-		Cmd        []string
-		Entrypoint []string
-		User       string
-		WorkingDir string
-		Image      string
-		Labels     map[string]string
-		Volumes    map[string]json.RawMessage
-	}
-	HostConfig struct {
-		NanoCPUs               int64 `json:"NanoCpus"`
-		Memory                 int64
-		MemorySwap             int64
-		MemoryReservation      int64
-		CPUPeriod              int64 `json:"CpuPeriod"`
-		CPUQuota               int64 `json:"CpuQuota"`
-		CPUShares              int64 `json:"CpuShares"`
-		CpusetCpus, CpusetMems string
-		OomKillDisable         *bool
-
-		NetworkMode                    string
-		Privileged                     bool
-		PublishAllPorts                bool
-		ReadonlyRootfs                 bool
-		CapAdd, CapDrop                []string
-		Devices                        []json.RawMessage
-		DeviceRequests                 []json.RawMessage
-		VolumesFrom, Links, ExtraHosts []string
-		DNS                            []string `json:"Dns"`
-		DNSOptions                     []string `json:"DnsOptions"`
-		DNSSearch                      []string `json:"DnsSearch"`
-		SecurityOpt                    []string
-		PidMode, IpcMode, UTSMode      string
-		Mounts                         []json.RawMessage
-		Binds                          []string
-		RestartPolicy                  struct{ Name string }
-		PortBindings                   map[string][]struct{ HostIP, HostPort string }
-	}
-	State struct {
-		Running    bool
-		Restarting bool
-		Paused     bool
-		Dead       bool
-		StartedAt  string
-	}
-	Mounts          []json.RawMessage
-	NetworkSettings struct {
-		Networks map[string]json.RawMessage
-		Ports    map[string][]struct{ HostIP, HostPort string }
-	}
-}
+type inspection = engine.Inspection
 
 func (m *Manager) inspect(c context.Context, kind, name string) (*inspection, error) {
-	b, e := m.cmd(c, "docker", kind, "inspect", name)
-	if e != nil {
-		return nil, e
-	}
-	var v []inspection
-	if e = json.Unmarshal(b, &v); e != nil {
-		return nil, errors.New("invalid Docker inspection response")
-	}
-	if len(v) != 1 {
-		return nil, errors.New("expected one inspected object")
-	}
-	return &v[0], nil
+	return m.engine().Inspect(c, kind, name)
 }
 func owned(labels map[string]string, j *journal, op string) bool {
 	return labels["soar.host"] == j.HostID && labels["soar.app"] == j.App && (op == "" || labels["soar.operation"] == op)
@@ -129,32 +55,7 @@ func (m *Manager) container(c context.Context, j *journal, r *release) (*inspect
 
 // List before inspect: an inspection failure is never interpreted as absence.
 func (m *Manager) exists(c context.Context, kind, name string) (bool, error) {
-	args := []string{kind, "ls", "--format", "{{json .}}"}
-	if kind == "container" {
-		args = append(args, "--all")
-	}
-	b, e := m.cmd(c, "docker", args...)
-	if e != nil {
-		return false, e
-	}
-	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
-		if line == "" {
-			continue
-		}
-		// Formatting metadata can contain objects (e.g. Docker 29 Platform).
-		// Decode only identity fields rather than assuming every value is text.
-		var row struct{ Name, Names string }
-		if e = json.Unmarshal([]byte(line), &row); e != nil {
-			return false, e
-		}
-		if row.Name == "" && row.Names == "" {
-			return false, errors.New("Docker inventory row has no resource name")
-		}
-		if row.Name == name || row.Names == name {
-			return true, nil
-		}
-	}
-	return false, nil
+	return m.engine().Exists(c, kind, name)
 }
 func (m *Manager) ensureNetwork(c context.Context, j *journal) (err error) {
 	defer func() {
@@ -182,22 +83,8 @@ func (m *Manager) ensureNetwork(c context.Context, j *journal) (err error) {
 // Empty optional fields are accepted for older daemons and legacy test fixtures.
 // Non-default bridge policy must not silently weaken app isolation.
 func (m *Manager) validateAppNetwork(c context.Context, j *journal, v *inspection) error {
-	if !owned(v.Labels, j, "") || v.Driver != "bridge" || v.Internal || v.EnableIPv6 || v.Ingress || (v.EnableIPv4 != nil && !*v.EnableIPv4) || (v.Scope != "" && v.Scope != "local") {
-		return errors.New("foreign or unsafe app network")
-	}
-	defaults := map[string]string{
-		"com.docker.network.bridge.enable_icc":           "true",
-		"com.docker.network.bridge.enable_ip_masquerade": "true",
-		"com.docker.network.bridge.gateway_mode_ipv4":    "nat",
-		"com.docker.network.bridge.gateway_mode_ipv6":    "nat",
-		"com.docker.network.bridge.host_binding_ipv4":    "0.0.0.0",
-		"com.docker.network.bridge.inhibit_ipv4":         "false",
-		"com.docker.network.bridge.enable_ip_forwarding": "true",
-	}
-	for key, value := range v.Options {
-		if expected, ok := defaults[key]; !ok || value != expected {
-			return errors.New("unsupported app network options")
-		}
+	if err := engine.ValidateBridgeNetwork(v, j.HostID, j.App); err != nil {
+		return err
 	}
 	for id := range v.Containers {
 		v, e := m.inspect(c, "container", id)
@@ -222,14 +109,7 @@ func (m *Manager) validateAppNetwork(c context.Context, j *journal, v *inspectio
 	return nil
 }
 func wait(c context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-c.Done():
-		return c.Err()
-	case <-t.C:
-		return nil
-	}
+	return engine.Wait(c, d)
 }
 func (m *Manager) healthy(c context.Context, j *journal, r *release) error {
 	c, cancel := context.WithTimeout(c, m.HealthTimeout)

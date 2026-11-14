@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nchapman/soar/internal/buildmeta"
 	"github.com/nchapman/soar/internal/executor"
 	"github.com/nchapman/soar/internal/lifecycle"
 	"github.com/nchapman/soar/internal/process"
@@ -76,6 +77,10 @@ func HostStatus(ctx context.Context, target string) (*Status, error) {
 // Artifact selects a sibling Linux artifact from the development/release bundle.
 // An explicit path is useful when recovering an installation with an older build.
 func Artifact(override, arch string) ([]byte, error) {
+	return artifactForBuild(override, arch, buildmeta.Stamp)
+}
+
+func artifactForBuild(override, arch, stamp string) ([]byte, error) {
 	filename := override
 	if filename == "" {
 		self, err := os.Executable()
@@ -84,14 +89,25 @@ func Artifact(override, arch string) ([]byte, error) {
 		}
 		filename = filepath.Join(filepath.Dir(self), "soar-linux-"+arch)
 	}
-	info, err := os.Stat(filename)
+	input, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("Linux executor artifact missing: %w; run mise run build or supply --executor", err)
+	}
+	defer input.Close()
+	info, err := input.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("Linux executor artifact missing: %w; run mise run build or supply --executor", err)
 	}
 	if !info.Mode().IsRegular() || info.Size() > 64*1024*1024 {
 		return nil, errors.New("executor artifact must be a regular file at most 64 MiB")
 	}
-	file, err := elf.Open(filename)
+	// Validate the same bounded bytes that will be uploaded, not a second
+	// pathname read that could race with publication of a new bundle.
+	data, err := io.ReadAll(io.LimitReader(input, 64*1024*1024+1))
+	if err != nil || len(data) > 64*1024*1024 {
+		return nil, errors.New("cannot read executor artifact within 64 MiB limit")
+	}
+	file, err := elf.NewFile(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("executor must be a Linux ELF binary: %w", err)
 	}
@@ -99,7 +115,10 @@ func Artifact(override, arch string) ([]byte, error) {
 	if (arch == "amd64" && file.Machine != elf.EM_X86_64) || (arch == "arm64" && file.Machine != elf.EM_AARCH64) || (arch != "amd64" && arch != "arm64") {
 		return nil, errors.New("executor architecture does not match inspected host")
 	}
-	return os.ReadFile(filename)
+	if err := buildmeta.Check(stamp, data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func RunLifecycle(ctx context.Context, target string, request executor.Request, binary []byte) (*lifecycle.State, error) {
