@@ -16,7 +16,7 @@ import (
 // pretending the original failed slot was ready or had a healthy Current.
 func validateServiceAbandonment(j *journal, name string) error {
 	refuse := errors.New("cannot safely abandon this service; resume the captured deployment operation first")
-	if !supportsServiceIdentity(j) || j.Config == nil || len(j.ServiceStates) < 2 || len(j.Selected) != 1 || j.Selected[0] != name || j.Rollback != nil || j.OldCaddy != "" || j.NewCaddy != "" || j.Completed == nil {
+	if !supportsServiceIdentity(j) || j.Config == nil || len(j.ServiceStates) < 2 || len(j.Selected) != 1 || j.Selected[0] != name || j.Rollback != nil || j.SecretUpdate != nil || j.OldCaddy != "" || j.NewCaddy != "" || j.Completed == nil {
 		return refuse
 	}
 	switch j.Phase {
@@ -258,6 +258,9 @@ func commitServiceRemoval(j *journal) {
 	}
 	if j.Rollback != nil {
 		delete(j.Rollback.Targets, name)
+	}
+	if j.SecretUpdate != nil {
+		delete(j.SecretUpdate.Images, name)
 	}
 	if abandoning {
 		j.Completed = &completedRelease{Operation: j.Operation, Services: map[string]*release{}}

@@ -52,6 +52,9 @@ def run(h):
     configure_native(h)
     build_network(h)
     done("isolated build service blocks host/app access and insecure entitlements")
+    from secrets_set import run as secrets_set
+    secrets_set(h)
+    done("atomic multi-secret stage and runtime-only set for deployed consumers")
 
     app = "ledger-" + secrets.token_hex(4)
     base = h.work / app

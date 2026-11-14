@@ -135,7 +135,11 @@ func validateMultiJournal(j *journal, app string) error {
 	}
 	settled := j.Phase == "ready" || j.Phase == "cleaning" || j.Phase == "destroying" || j.Phase == "removing"
 	abandoning := j.Phase == "removing" && j.Maintenance != nil && validateServiceAbandonment(j, j.Maintenance.Service) == nil
-	if j.Version == 5 || (j.Version >= 6 && j.Rollback != nil) {
+	if j.SecretUpdate != nil {
+		if err := validateSecretUpdate(j, settled); err != nil {
+			return err
+		}
+	} else if j.Version == 5 || (j.Version >= 6 && j.Rollback != nil) {
 		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || (len(j.Rollback.Targets) == 0 && !(supportsServiceIdentity(j) && settled && len(j.Selected) == 0)) || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
 			return bad
 		}
@@ -180,7 +184,7 @@ func validateMultiJournal(j *journal, app string) error {
 			return bad
 		}
 	case "releasing", "updating", "ready", "cleaning", "destroying", "removing":
-		if j.Rollback == nil && !abandoning && len(j.BuildImages) != len(builds) {
+		if j.Rollback == nil && j.SecretUpdate == nil && !abandoning && len(j.BuildImages) != len(builds) {
 			return bad
 		}
 	default:

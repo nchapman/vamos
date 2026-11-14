@@ -72,7 +72,11 @@ type diskValue struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
+
+// diskState keeps singleton-only stores at v1. Durable batch membership requires
+// v2; subsequent singleton writes preserve v2. Both formats remain readable.
 type diskState struct {
+	Batches    map[string][]string  `json:"batches,omitempty"`
 	Version    int                  `json:"version"`
 	App        string               `json:"app"`
 	RootHostID string               `json:"root_host_id"`
@@ -215,7 +219,12 @@ func (s Store) Load(app, hostID string) (*State, error) {
 	if dec.Decode(&extra) != io.EOF {
 		return nil, invalid
 	}
-	if d.Version != 1 || d.App != app || d.RootHostID != hostID || d.Latest == nil || d.Versions == nil || len(d.Latest) > MaxNames || len(d.Versions) > MaxVersions {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil {
+		return nil, invalid
+	}
+	_, hasBatches := fields["batches"]
+	if (d.Version != 1 && d.Version != 2) || (d.Version == 1 && hasBatches) || (d.Version == 2 && len(d.Batches) == 0) || len(d.Batches) > MaxVersions/2 || d.App != app || d.RootHostID != hostID || d.Latest == nil || d.Versions == nil || len(d.Latest) > MaxNames || len(d.Versions) > MaxVersions {
 		return nil, invalid
 	}
 	for id, v := range d.Versions {
@@ -229,7 +238,27 @@ func (s Store) Load(app, hostID string) (*State, error) {
 			return nil, invalid
 		}
 	}
-	return &State{d}, nil
+	members := make(map[string]bool)
+	for op, names := range d.Batches {
+		if !ValidVersion(op) || len(names) < 2 || len(names) > MaxNames {
+			return nil, invalid
+		}
+		if _, ok := d.Versions[op]; ok {
+			return nil, invalid
+		}
+		for i, name := range names {
+			if !ValidName(name) || (i > 0 && names[i-1] >= name) {
+				return nil, invalid
+			}
+			version := VersionFor(op, name)
+			v, ok := d.Versions[version]
+			if !ok || v.Name != name || members[version] {
+				return nil, invalid
+			}
+			members[version] = true
+		}
+	}
+	return &State{data: d}, nil
 }
 func uniqueJSON(data []byte) bool {
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -283,63 +312,120 @@ func uniqueJSON(data []byte) bool {
 	return err == io.EOF
 }
 func (s Store) Stage(app, hostID, name, operation string, value []byte) (Entry, error) {
-	if !ValidName(app) || !ValidVersion(hostID) || !ValidName(name) || !ValidVersion(operation) {
-		return Entry{}, invalid
-	}
-	if err := ValidateValue(value); err != nil {
+	entries, err := s.StageBatch(app, hostID, operation, map[string][]byte{name: value})
+	if err != nil {
 		return Entry{}, err
+	}
+	return entries[0], nil
+}
+
+// StageBatch stages all values with a single atomic store replacement.
+func (s Store) StageBatch(app, hostID, operation string, values map[string][]byte) ([]Entry, error) {
+	if !ValidName(app) || !ValidVersion(hostID) || !ValidVersion(operation) {
+		return nil, invalid
+	}
+	names, err := batchNames(values)
+	if err != nil {
+		return nil, err
 	}
 	state, err := s.Load(app, hostID)
 	if err != nil {
-		return Entry{}, err
+		return nil, err
 	}
 	if state == nil {
-		state = &State{diskState{1, app, hostID, map[string]string{}, map[string]diskValue{}}}
+		state = &State{data: diskState{Version: 1, App: app, RootHostID: hostID, Latest: map[string]string{}, Versions: map[string]diskValue{}}}
 	}
 	d := &state.data
-	if old, ok := d.Versions[operation]; ok {
-		if old.Name != name || old.Value != string(value) {
-			return Entry{}, ErrOperationConflict
+	if prior, ok := d.Batches[operation]; ok {
+		if len(prior) != len(names) {
+			return nil, ErrOperationConflict
 		}
-		return Entry{name, operation, d.Latest[name] == operation}, nil
+		for i := range names {
+			if prior[i] != names[i] {
+				return nil, ErrOperationConflict
+			}
+		}
 	}
-	if len(d.Versions) >= MaxVersions {
-		return Entry{}, ErrVersionLimit
+	if len(names) > 1 {
+		if _, ok := d.Versions[operation]; ok {
+			return nil, ErrOperationConflict
+		}
 	}
-	if _, ok := d.Latest[name]; !ok && len(d.Latest) >= MaxNames {
-		return Entry{}, ErrNameLimit
+	entries := make([]Entry, 0, len(names))
+	existing, newNames := 0, 0
+	for _, name := range names {
+		version := operation
+		if len(names) > 1 {
+			version = VersionFor(operation, name)
+		}
+		if _, ok := d.Batches[version]; ok {
+			return nil, ErrOperationConflict
+		}
+		if old, ok := d.Versions[version]; ok {
+			if old.Name != name || old.Value != string(values[name]) {
+				return nil, ErrOperationConflict
+			}
+			existing++
+		}
+		if _, ok := d.Latest[name]; !ok {
+			newNames++
+		}
+		entries = append(entries, Entry{name, version, d.Latest[name] == version})
 	}
-	d.Versions[operation] = diskValue{name, string(value)}
-	d.Latest[name] = operation
+	if existing == len(names) {
+		return entries, nil
+	}
+	if existing != 0 {
+		return nil, ErrOperationConflict
+	}
+	if len(d.Versions)+len(names) > MaxVersions {
+		return nil, ErrVersionLimit
+	}
+	if len(d.Latest)+newNames > MaxNames {
+		return nil, ErrNameLimit
+	}
+	if len(names) > 1 {
+		if d.Batches == nil {
+			d.Batches = make(map[string][]string)
+		}
+		d.Batches[operation] = names
+		d.Version = 2
+	}
+	for i := range entries {
+		e := &entries[i]
+		d.Versions[e.Version] = diskValue{e.Name, string(values[e.Name])}
+		d.Latest[e.Name] = e.Version
+		e.Latest = true
+	}
 	data, err := json.Marshal(d)
 	if err != nil {
-		return Entry{}, invalid
+		return nil, invalid
 	}
 	if len(data) > MaxStoreBytes {
-		return Entry{}, ErrSizeLimit
+		return nil, ErrSizeLimit
 	}
 	dir := s.directory()
 	if err := ancestors(dir); err != nil {
-		return Entry{}, err
+		return nil, err
 	}
 	if !productionOwner(dir) || !privateParent(dir) {
-		return Entry{}, unsafe
+		return nil, unsafe
 	}
 	if err := os.Mkdir(dir, 0700); err != nil && !errors.Is(err, os.ErrExist) {
-		return Entry{}, errors.New("cannot create secret directory")
+		return nil, errors.New("cannot create secret directory")
 	}
 	info, err := os.Lstat(dir)
 	if err != nil || !private(info, true) {
-		return Entry{}, unsafe
+		return nil, unsafe
 	}
 	// The first store directory must be durably linked before acknowledging data.
 	if err := syncDirectory(filepath.Dir(dir)); err != nil {
-		return Entry{}, errors.New("cannot persist secret directory")
+		return nil, errors.New("cannot persist secret directory")
 	}
 	if err := replace(dir, filepath.Join(dir, app+".json"), data); err != nil {
-		return Entry{}, errors.New("cannot persist secret store")
+		return nil, errors.New("cannot persist secret store")
 	}
-	return Entry{name, operation, true}, nil
+	return entries, nil
 }
 func replace(dir, path string, data []byte) error {
 	f, err := os.CreateTemp(dir, ".secret-")

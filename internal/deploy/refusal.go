@@ -44,6 +44,10 @@ var refusalClasses = []struct {
 	stageOnly     bool
 }{
 	{ErrBindingRequired, CodeBindingRequired, "", false},
+	{errSecretSetIncomplete, "secret_set_incomplete", "Secret application requires a completed deployment. Inspect status and finish recovery before setting secrets; no new values were staged.", true},
+	{errSecretSetProtected, "secret_set_protected", "A consumer is protected by update: manual. No new values were staged. Stage the secrets instead, then explicitly deploy the protected service with --service NAME --yes.", true},
+	{errSecretSetLegacy, "secret_set_legacy", "Secret application requires captured multi-service configuration. No new values were staged; deploy with a current client first.", true},
+	{errSecretSetUnavailable, "secret_set_unavailable", "A consumer or captured image is unavailable or has drifted. Inspect status before recovery.", true},
 	{secrets.ErrVersionLimit, "secret_version_limit", "Secret store has reached its 256 retained-version limit; no versions are automatically deleted. Inspect retained versions before planning recovery.", true},
 	{secrets.ErrNameLimit, "secret_name_limit", "Secret store has reached its 64-name limit. Inspect existing names before staging another name.", true},
 	{secrets.ErrSizeLimit, "secret_size_limit", "Secret store has reached its 1 MiB size limit; no versions are automatically deleted. Inspect retained versions before planning recovery.", true},
@@ -79,11 +83,11 @@ func RefusalMessage(action, code string) string {
 		}
 		return ""
 	}
-	if action != "secrets-stage" && action != "secrets-list" {
+	if action != "secrets-stage" && action != "secrets-set" && action != "secrets-list" {
 		return ""
 	}
 	for _, c := range refusalClasses {
-		if c.code == code && (!c.stageOnly || action == "secrets-stage") {
+		if c.code == code && (!c.stageOnly || action == "secrets-stage" || action == "secrets-set") {
 			return c.message
 		}
 	}

@@ -38,6 +38,9 @@ type rollbackCapture struct {
 }
 
 func selectedImage(j *journal, name string) string {
+	if j.SecretUpdate != nil {
+		return j.SecretUpdate.Images[name]
+	}
 	if j.Rollback != nil {
 		if r := j.Rollback.Targets[name]; r != nil {
 			return r.Image

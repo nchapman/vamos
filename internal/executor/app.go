@@ -53,8 +53,8 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 			return appFailure(stdout, err, 1)
 		}
 	}
-	if request.Action == "secrets-stage" {
-		archive, err = readSecretFile("secret.value")
+	if request.Action == "secrets-stage" || request.Action == "secrets-set" {
+		archive, err = readSecretsFile("secret.value", request)
 		if err != nil {
 			return appFailure(stdout, errors.New("invalid secret input file"), 1)
 		}
@@ -78,6 +78,13 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 	}
 	response, err := manager.Execute(ctx, request, archive)
 	if err != nil {
+		if request.Action == "secrets-stage" || request.Action == "secrets-set" || request.Action == "secrets-list" {
+			message := deploy.RefusalMessage(request.Action, deploy.ErrorCode(err))
+			if message == "" {
+				message = "secret request outcome unknown"
+			}
+			return writeAppSecretFailure(stdout, message, deploy.ErrorCode(err))
+		}
 		return appFailure(stdout, err, 1)
 	}
 	return writeAppResponse(stdout, response)
@@ -115,12 +122,12 @@ func writeAppResponse(stdout io.Writer, response deploy.Response) int {
 	return 0
 }
 
-func readSecretFile(path string) ([]byte, error) {
+func readPrivateSecretFile(path string, max int64) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > secrets.MaxValueBytes {
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > max {
 		return nil, errors.New("invalid secret file")
 	}
 	f, err := os.Open(path)
@@ -128,11 +135,11 @@ func readSecretFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, secrets.MaxValueBytes+1))
+	data, err := io.ReadAll(io.LimitReader(f, max+1))
 	if err != nil {
 		return nil, errors.New("cannot read secret file")
 	}
-	if err := secrets.ValidateValue(data); err != nil {
+	if int64(len(data)) > max {
 		return nil, errors.New("invalid secret value")
 	}
 	return data, nil
@@ -197,4 +204,33 @@ func readAppRequest(input io.Reader) (deploy.Request, error) {
 		return request, errors.New("expected exactly one app request")
 	}
 	return request, nil
+}
+
+func readSecretFile(path string) ([]byte, error) {
+	data, err := readPrivateSecretFile(path, secrets.MaxValueBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := secrets.ValidateValue(data); err != nil {
+		return nil, errors.New("invalid secret value")
+	}
+	return data, nil
+}
+func readSecretsFile(path string, r deploy.Request) ([]byte, error) {
+	max := int64(secrets.MaxValueBytes)
+	if len(r.SecretNames) > 0 {
+		max = secrets.MaxBatchBytes
+	}
+	data, err := readPrivateSecretFile(path, max)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := deploy.SecretsInput(r, data); err != nil {
+		return nil, errors.New("invalid secret input")
+	}
+	return data, nil
+}
+func writeAppSecretFailure(w io.Writer, message, code string) int {
+	_ = json.NewEncoder(w).Encode(deploy.Response{Version: 1, Error: message, ErrorCode: code})
+	return 1
 }

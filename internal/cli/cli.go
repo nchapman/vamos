@@ -32,7 +32,7 @@ Usage:
   soar cleanup [--yes]                  Preview or remove obsolete app resources
   soar destroy [--yes]                  Preview or remove an app
   soar service bind|remove NAME [flags]  Bind locally or preview/remove a service
-  soar secrets stage|list [flags]        Stage a secret or list retained version metadata
+  soar secrets stage|set|list [flags]        Stage/set secrets or list retained version metadata
   soar validate [-f soar.yaml]           Validate local app configuration
   soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host

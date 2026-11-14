@@ -55,7 +55,7 @@ invocation rechecks current inputs and state; a preview is not an immutable tran
 | `apps --json` | Inventory object containing `entries` |
 | `status --json` | Status object, including instance observations, release-command metadata and recorded run metadata when selected |
 | `cleanup/destroy/service remove --json` | Full response envelope, including the plan |
-| `secrets stage/list --json` | Metadata response envelope; never secret values |
+| `secrets stage/set/list --json` | Metadata response envelope; never secret values |
 | `backup repository ... --json` | Recorded/verified repository metadata; never credentials or recovery-kit contents |
 | `server inspect --json` | Inspection report |
 | `server status --json` | Host status response |

@@ -302,7 +302,7 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 	}
 	var err error
 	var archives map[string][]byte
-	if j.Rollback == nil {
+	if j.Rollback == nil && j.SecretUpdate == nil {
 		data, e := readContextArchive(filepath.Join(m.dir(j.App), j.Archive))
 		if e != nil {
 			return e
@@ -328,7 +328,9 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 			return fmt.Errorf("service %s: %w", name, err)
 		}
 	}
-	if j.Rollback != nil {
+	if j.SecretUpdate != nil {
+		err = m.secretUpdateInputs(ctx, j)
+	} else if j.Rollback != nil {
 		err = m.rollbackInputs(ctx, j)
 	} else {
 		err = m.multiBuild(ctx, j, archives)

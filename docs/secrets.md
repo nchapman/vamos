@@ -1,6 +1,6 @@
-# Staged runtime secrets
+# Runtime secrets: stage or set
 
-Supported across Dockerfile-built and prebuilt-image public and private services, including volume-backed services. Staging never builds an image, changes a route, or restarts a container. Running services receive values through deployment; one-off runs independently capture latest selected staged versions without changing running services.
+Supported across Dockerfile-built and prebuilt-image public and private services, including volume-backed services. `stage` stores values without changing running services. `set` uses that same staging path, then replaces the deployed consumers using their existing images and configuration—without a source upload, build, image pull, or release command. Ordinary deployment also applies staged values; one-off runs independently capture latest selected staged versions without changing running services.
 
 ## Stage, inspect, deploy
 
@@ -28,11 +28,59 @@ soar secrets stage --server home --app notes session-secret
 soar secrets list --server home --app notes --json
 ```
 
-For automation, pipe a value from a trusted secret producer into `soar secrets stage --stdin NAME`. Do not put literal credentials in shell commands, command arguments, environment assignments, or shell history. `--stdin` reads a bounded stream and removes exactly one final LF or CRLF as input framing; it preserves other spaces and tabs. Additional line endings are rejected. Without `--stdin`, a terminal is required. Input is not echoed or added to terminal-editor history; ordinary cancellation restores terminal settings. A forced process kill cannot guarantee restoration.
+For automation, prefer piping a value from a trusted secret producer into `soar secrets stage --stdin NAME`, rather than putting credentials in shell commands or command arguments. Inline arguments are supported below, but expose values to shell history and local process inspection. Single-name `--stdin` reads a bounded stream and removes exactly one final LF or CRLF as input framing; it preserves other spaces and tabs. Additional line endings are rejected. Without `--stdin`, a terminal is required. Input is not echoed or added to terminal-editor history; ordinary cancellation restores terminal settings. A forced process kill cannot guarantee restoration.
 
-Values must be nonempty, single-line UTF-8 without CR, LF, or NUL, at most **8192 bytes**. The interactive editor conservatively limits total typed/pasted input to fewer than 4096 value bytes; use `--stdin` for larger values. Multiline PEM material and binary values are not supported. Quotes, backslashes, dollar signs, equals signs, and whitespace are literal, not shell syntax.
+Values must be nonempty, single-line UTF-8 without CR, LF, or NUL, at most **8192 bytes**. The interactive editor conservatively limits total typed/pasted input to fewer than 4096 value bytes; use `--stdin` for larger values. Multiline PEM material and binary values are not supported. In prompt and stdin input, quotes, backslashes, dollar signs, equals signs, and whitespace are literal, not shell syntax.
 
 `secrets list --json` emits a metadata response including all retained versions, not just the latest. Version IDs are random operation IDs, not hashes of values; list order is by name/version, not creation time. `status --json` includes `secrets` entries with staged/applied version IDs, `pending`, and affected `services`. A staged but unused secret has no affected services. Secret-management output does not display values.
+
+## Set and apply immediately
+
+```sh
+soar secrets set llm-api-key
+# Hidden prompt, then replacement of the deployed services using this secret.
+soar status
+```
+
+`set` discovers consumers from their **deployed** secret mappings, not the local manifest. It changes only the named secret pins, preserving deployed configuration, per-service image identities, and all other secret pins—even if other secrets have newer staged values. It updates all replicas of each consumer through the normal public-readiness/private-stop-start machinery. This replaces containers; a Docker restart alone cannot change their environment.
+
+The app must have a completed multi-service deployment, and affected consumers and their captured local images must be available and ownership-valid. Incomplete deployments must be recovered first. A legacy single-service v1 app must first be deployed with a current client. A manual-service consumer causes the entire request to refuse before staging: use `stage`, then the existing explicit `deploy --service NAME --yes` workflow. `set` never starts dependencies or silently approves a protected database update. Unused secrets, including those staged before the first deployment, are stored without starting any services.
+
+**Setting a database initialization secret does not rotate a SQL role password.** PostgreSQL initialization environment variables only affect an empty data directory. Coordinate SQL-side credential changes separately. For provider API keys, keep the old key valid until all consumers have transitioned and their availability and applied versions have been checked.
+
+## Multiple secrets in one operation
+
+Both commands accept several names:
+
+```sh
+soar secrets stage llm-api-key webhook-secret
+soar secrets set llm-api-key webhook-secret
+```
+
+Each value gets its own hidden prompt. Both commands also accept inline pairs:
+
+```sh
+soar secrets set llm-api-key=EXAMPLE_ONLY webhook-secret=EXAMPLE_ONLY
+soar secrets stage llm-api-key=EXAMPLE_ONLY webhook-secret=EXAMPLE_ONLY
+```
+
+Use either bare names (prompts) or `NAME=VALUE` pairs, not a mixture; inline pairs cannot be combined with `--stdin`. Split occurs only at the first `=`, and the remaining value is passed literally after normal shell parsing. Quote the whole argument when needed for spaces or shell metacharacters. Inline values have the same nonempty, single-line UTF-8 and 8192-byte limits as stdin.
+
+**Inline values can appear in shell history, local process listings, and external command logging.** Soar warns without echoing values and keeps them out of request metadata and remote command arguments, but cannot erase that local exposure. Prefer hidden prompts or stdin for real credentials.
+
+All inputs are validated before sending, and all versions are staged in **one atomic secret-store write**. An invalid value or exhausted store budget does not stage a partial batch. `set` then replaces each affected service once, even when it consumes several changed secrets.
+
+For automation, use a trusted producer piped into:
+
+```sh
+soar secrets set --stdin llm-api-key webhook-secret
+```
+
+With multiple names, stdin contains literal `NAME=value` records, one per line, exactly once for each requested name. Record order does not matter; the first `=` separates the name from the value. Values are not shell-expanded, unquoted, or whitespace-trimmed. CRLF record endings are accepted; blank records, extra names, duplicates, missing names, and invalid values are refused. The existing **single-name** `--stdin` behavior remains raw value input, not `NAME=value` parsing. Stdin input cannot be combined with inline pairs.
+
+The CLI prints the operation ID and every version ID before dispatch. A singleton retains its operation ID as the version; batch members have distinct, deterministic version IDs bound to the operation and secret name. Replaying an internal batch requires the same complete name set and values, never moves latest pointers backward, and cannot reuse that operation for a different batch. Ordinary CLI invocations still create new operations, even for identical values.
+
+Staging is atomic; application across containers is **not**. If `set` loses its response or fails after staging, inspect `secrets list` and `status` before retrying. If status records the printed operation as incomplete, use `soar resume OP`: it reuses the captured images and secret versions, including after newer values are staged. A failure before publishing the deployment journal can leave the values staged but no resumable deployment. Do not assume every failure left the store untouched, or rerun `set` blindly.
 
 ## Selection and recovery
 
@@ -59,9 +107,9 @@ list failures remain generic. No refusal authorizes automatic pruning or repair.
 
 ## Storage and exposure boundary
 
-Values are stored in `/var/lib/soar/secrets/<app>.json`, separate from release history. The store is executor-owned (root in production), with a private `0700` directory and regular `0600` files. Unsafe ownership/permissions, symlinks, malformed records, and mismatched app/host identities are refused. Each staging commit atomically replaces a synced file containing immutable versions and the latest pointers together; the directory is synced as well. Interrupted-write temporary files remain private and are not authoritative state.
+Values are stored in `/var/lib/soar/secrets/<app>.json`, separate from release history. The store is executor-owned (root in production), with a private `0700` directory and regular `0600` files. Unsafe ownership/permissions, symlinks, malformed records, and mismatched app/host identities are refused. Each staging commit atomically replaces a synced file containing immutable versions and the latest pointers together; the directory is synced as well. Batch commits also retain operation membership in secret-store format v2. Existing v1 stores remain readable; their first batch write upgrades them, and older executors that do not understand v2 refuse rather than modify them. Interrupted-write temporary files remain private and are not authoritative state.
 
-The SSH payload contains a separate private `secret.value` input, never a value in request JSON or a source context. During container creation Docker receives a private `--env-file` in the worker's `/run` staging directory. Values are not passed in process argv or injected into the Docker client's own environment, so keys such as `DOCKER_HOST` affect only the application. The env file is removed after the invocation; the worker wrapper removes its private directory on ordinary exit. A hard kill or an interruption during worker handoff can leave private `/run` material until explicit operator cleanup or reboot.
+The SSH payload contains a separate private `secret.value` input (raw singleton value or bounded batch JSON), never a value in request JSON or a source context. During container creation Docker receives a private `--env-file` in the worker's `/run` staging directory. On the executor, values are not passed in Docker process argv or injected into the Docker client's own environment, so keys such as `DOCKER_HOST` affect only the application. The env file is removed after the invocation; the worker wrapper removes its private directory on ordinary exit. A hard kill or an interruption during worker handoff can leave private `/run` material until explicit operator cleanup or reboot.
 
 Runtime Docker command and inspection failures use value-free diagnostics before reaching responses or release journals. Local Docker inspection has an **8 MiB per-stream limit** to accommodate escaped secret environments; oversized responses still fail closed. The metadata-only SSH protocol retains its **64 KiB per-stream limit**. Build diagnostics remain available because runtime secrets are not supplied to builds. Persisted build-failure tails additionally redact exact known app-secret values across all retained versions before bounding the output. An unreadable required secret store withholds the diagnostic rather than exposing raw output. This does **not** detect arbitrary, encoded/transformed, unknown, or other-app credentials already present in source files: explicitly exclude `.env` and other sensitive files with the selected Docker ignore file. Dockerfile-specific ignore files take precedence over `.dockerignore`.
 

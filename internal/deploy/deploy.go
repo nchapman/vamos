@@ -45,6 +45,7 @@ type Request struct {
 	Candidate      bool                `json:"candidate,omitempty"`
 	Replica        int                 `json:"replica,omitempty"`
 	SecretName     string              `json:"secret_name,omitempty"`
+	SecretNames    []string            `json:"secret_names,omitempty"`
 	Apply          bool                `json:"apply,omitempty"`
 	Supersede      string              `json:"supersede,omitempty"`
 	Version        int                 `json:"version"`
@@ -56,6 +57,7 @@ type Request struct {
 	Tail           int                 `json:"tail,omitempty"`
 }
 type Response struct {
+	SetApplied      bool                 `json:"secret_applied,omitempty"`
 	BackupPlan      *backup.PlanResponse `json:"backup_plan,omitempty"`
 	Backup          *backup.Response     `json:"backup,omitempty"`
 	ErrorCode       string               `json:"error_code,omitempty"`
@@ -138,6 +140,7 @@ type DeploymentPreview struct {
 }
 
 type journal struct {
+	SecretUpdate                 *secretUpdateCapture     `json:",omitempty"`
 	Hook                         *releaseCapture          `json:",omitempty"`
 	Selected                     []string                 `json:",omitempty"`
 	Removed                      map[string]string        `json:",omitempty"`
@@ -265,7 +268,7 @@ func (r Request) Mutating() bool {
 	if r.Action == "backup-repository" {
 		return r.Backup != nil && r.Backup.Mutating()
 	}
-	return r.Action == "service-remove" || r.Action == "rollback" || r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage"
+	return r.Action == "service-remove" || r.Action == "rollback" || r.Action == "run" || r.Action == "deploy" || r.Action == "resume" || r.Action == "cleanup" || r.Action == "destroy" || r.Action == "secrets-stage" || r.Action == "secrets-set"
 }
 
 func ValidateRequest(r Request) error {
@@ -368,8 +371,8 @@ func ValidateRequest(r Request) error {
 	if r.Candidate && r.Action != "logs" {
 		return errors.New("candidate selection requires logs")
 	}
-	if r.SecretName != "" && r.Action != "secrets-stage" {
-		return errors.New("secret name requires secrets-stage")
+	if (r.SecretName != "" || len(r.SecretNames) != 0) && r.Action != "secrets-stage" && r.Action != "secrets-set" {
+		return errors.New("secret names require secrets-stage or secrets-set")
 	}
 	if r.Supersede != "" && (r.Action != "deploy" || !operation.MatchString(r.Supersede)) {
 		return errors.New("supersede requires deploy and valid operation ID")
@@ -430,9 +433,9 @@ func ValidateRequest(r Request) error {
 		if !operation.MatchString(r.Operation) || r.Config != nil {
 			return errors.New("resume requires operation ID and captured config")
 		}
-	case "secrets-stage":
-		if !operation.MatchString(r.Operation) || !secrets.ValidName(r.SecretName) || r.Config != nil {
-			return errors.New("secret staging requires operation ID, valid name, and no config")
+	case "secrets-stage", "secrets-set":
+		if !operation.MatchString(r.Operation) || !validSecretNames(r) || r.Config != nil {
+			return errors.New("secret staging requires operation ID, unique valid names, and no config")
 		}
 	case "apps", "status", "logs", "secrets-list":
 		if r.Operation != "" || r.Config != nil {
@@ -626,8 +629,8 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			err = errors.New("invalid private repository input")
 			return
 		}
-	} else if r.Action == "secrets-stage" {
-		if err = secrets.ValidateValue(tar); err != nil {
+	} else if r.Action == "secrets-stage" || r.Action == "secrets-set" {
+		if _, err = SecretsInput(r, tar); err != nil {
 			return
 		}
 	} else if len(tar) > 32<<20 || (r.Action != "deploy" && r.Action != "run" && len(tar) > 0) {
@@ -820,13 +823,8 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			return
 		}
 	}
-	if r.Action == "secrets-stage" {
-		var entry secrets.Entry
-		entry, err = m.secretStore().Stage(r.App, h.ID, r.SecretName, r.Operation, tar)
-		if err == nil {
-			resp.Secret = &entry
-		}
-		return
+	if r.Action == "secrets-stage" || r.Action == "secrets-set" {
+		return m.executeSecrets(ctx, r, tar, j, h.ID)
 	}
 	if j == nil && (secretState != nil || volumeState != nil) && (r.Action == "cleanup" || r.Action == "destroy") {
 		s := secretOnlyStatus(r.App, r.Host.Domain)
@@ -1018,7 +1016,7 @@ func validateJournal(j *journal, app string) error {
 	if isMulti(j) {
 		return validateMultiJournal(j, app)
 	}
-	if j.Hook != nil || j.Status.Release != nil || len(j.Selected) != 0 || len(j.Removed) != 0 || j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+	if j.SecretUpdate != nil || j.Hook != nil || j.Status.Release != nil || len(j.Selected) != 0 || len(j.Removed) != 0 || j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
 		return errors.New("invalid legacy app journal")
 	}
 	bad := errors.New("invalid app journal")

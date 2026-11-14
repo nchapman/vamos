@@ -68,7 +68,7 @@ func (p *presentation) renderMainHelp() string {
 			{"console", "Open a shell in an existing service"},
 			{"run", "Run a noninteractive command"},
 			{"service bind|remove", "Bind locally or preview/remove a service"},
-			{"secrets stage|list", "Stage secrets or list retained metadata"},
+			{"secrets stage|set|list", "Stage/set secrets or list retained metadata"},
 		}},
 		{"Inspect and recover", []command{
 			{"apps", "List recorded inventory, not live health"},

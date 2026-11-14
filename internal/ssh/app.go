@@ -88,7 +88,7 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 		// repository command, including on malformed/failed SSH responses.
 		return deploy.Response{Version: 1, Backup: response.Backup}, nil
 	}
-	if request.Action == "secrets-stage" || request.Action == "secrets-list" {
+	if request.Action == "secrets-stage" || request.Action == "secrets-set" || request.Action == "secrets-list" {
 		if decodeErr == nil && response.Version == 1 && response.Error != "" {
 			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {
 				return deploy.Response{Version: 1, ErrorCode: response.ErrorCode, Error: message}, errors.New(message)
@@ -103,8 +103,8 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 			return response, nil
 		}
 	}
-	if request.Action == "secrets-stage" {
-		if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.ErrorCode != "" || response.Secret == nil {
+	if request.Action == "secrets-stage" || request.Action == "secrets-set" {
+		if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.ErrorCode != "" || !validSecretResponse(request, response) {
 			return deploy.Response{}, errors.New("secret staging outcome unknown; inspect retained versions with soar secrets list")
 		}
 		return response, nil
@@ -161,8 +161,16 @@ func actionArchive(request, binary, input []byte, action string) ([]byte, error)
 			return nil, errors.New("invalid private repository credentials")
 		}
 		return payloadArchive(request, binary, input, "repository.credentials")
-	case "secrets-stage":
-		if err := secrets.ValidateValue(input); err != nil {
+	case "secrets-stage", "secrets-set":
+		var r deploy.Request
+		if err := json.Unmarshal(request, &r); err != nil {
+			return nil, errors.New("invalid secret request")
+		}
+		err := secrets.ValidateValue(input)
+		if len(r.SecretNames) != 0 {
+			_, err = secrets.DecodeBatch(input, r.SecretNames)
+		}
+		if err != nil {
 			return nil, errors.New("invalid secret input")
 		}
 		return payloadArchive(request, binary, input, "secret.value")
@@ -197,4 +205,29 @@ func payloadArchive(request, binary, input []byte, inputName string) ([]byte, er
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+// validSecretResponse requires an exact acknowledgement of every requested version.
+func validSecretResponse(r deploy.Request, response deploy.Response) bool {
+	if r.Action == "secrets-set" && !response.SetApplied {
+		return false
+	}
+	if len(r.SecretNames) == 0 {
+		return response.Secret != nil && len(response.SecretVersions) == 0 && response.Secret.Name == r.SecretName && response.Secret.Version == r.Operation
+	}
+	if response.Secret != nil || len(response.SecretVersions) != len(r.SecretNames) {
+		return false
+	}
+	expected := make(map[string]string, len(r.SecretNames))
+	for _, name := range r.SecretNames {
+		expected[name] = secrets.VersionFor(r.Operation, name)
+	}
+	for _, entry := range response.SecretVersions {
+		version, ok := expected[entry.Name]
+		if !ok || entry.Version != version {
+			return false
+		}
+		delete(expected, entry.Name)
+	}
+	return len(expected) == 0
 }
