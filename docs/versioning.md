@@ -74,10 +74,10 @@ does not guarantee an older bundle can read state written by a newer one. Do not
 downgrade clients against newer state. Coordinate operator/automation upgrades
 and retain the original bundle when diagnosing incomplete operations.
 
-This build identity also supplies the deterministic `agent_build` /
-`agent_version` metadata used by the planned `soar-agent` API handshake and
-`soar server upgrade` workflow. Until `soar-agent` is installed in Phase 2, app
-commands continue staging the bundled executor without replacing the
-bootstrap-owned `/usr/local/lib/soar/executor`, and host inspect/status/connect
-still require no executor artifact. See [host lifecycle](host-lifecycle.md) for
-the separate, currently unsupported host-upgrade/ownership-reconciliation boundary.
+This build identity supplies the deterministic `agent_build` / `agent_version`
+metadata used by the installed `soar-agent` API handshake. `soar server add`
+installs the paired executor and coordinator under `/usr/local/lib/soar/`;
+`soar server upgrade --yes NAME` replaces that pair only after strict ownership
+and health checks. Host inspect/status/connect still require no executor artifact.
+See [the agent protocol](agent-protocol.md) for compatibility and reattachment
+semantics.

@@ -140,7 +140,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		}
 		return 0
 	}
-	if operation == "teardown" {
+	if operation == "teardown" || operation == "upgrade" {
 		status, err := deps.Status(ctx, server.Target)
 		if err != nil {
 			return lifecycleError(stderr, err)
@@ -149,7 +149,10 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 			return lifecycleError(stderr, errors.New("a host operation is active; inspect status and wait for it to finish"))
 		}
 		if status.State == nil || status.State.Config.Name != name {
-			return lifecycleError(stderr, errors.New("host has no matching ownership manifest; refusing teardown"))
+			return lifecycleError(stderr, fmt.Errorf("host has no matching ownership manifest; refusing %s", operation))
+		}
+		if operation == "upgrade" && status.State.Phase != "ready" {
+			return lifecycleError(stderr, errors.New("host must be ready before coordinator upgrade"))
 		}
 		server.Domain = status.State.Config.Domain
 	}
@@ -163,7 +166,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		return lifecycleError(stderr, err)
 	}
 	if !report.Supported || !report.Root {
-		return lifecycleError(stderr, errors.New("setup/teardown requires root on a supported Ubuntu host"))
+		return lifecycleError(stderr, errors.New("server lifecycle changes require root on a supported Ubuntu host"))
 	}
 	binary, err := deps.Artifact(*artifact, report.Architecture)
 	if err != nil {
@@ -172,6 +175,8 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	remoteOp := "bootstrap"
 	if operation == "teardown" {
 		remoteOp = "teardown"
+	} else if operation == "upgrade" {
+		remoteOp = "upgrade"
 	}
 	request := executor.Request{Version: executor.Version, Operation: remoteOp, Config: &lifecycle.Config{Name: name, Domain: server.Domain}, Confirm: true, Purge: *purge}
 	state, err := deps.Run(ctx, server.Target, request, binary)
@@ -185,7 +190,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		if err := store.Put(server); err != nil {
 			return lifecycleError(stderr, fmt.Errorf("host is ready but local registration failed: %w; rerun server connect with the same identity", err))
 		}
-	} else {
+	} else if operation == "teardown" {
 		if state.Phase != "removed" {
 			return lifecycleError(stderr, errors.New("teardown did not return removed; inspect server status"))
 		}
@@ -193,8 +198,10 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 			return lifecycleError(stderr, fmt.Errorf("host removed but local registration cleanup failed: %w", err))
 		}
 	}
-	message := "Owned installation removed. A small host receipt and the runtime lock are retained for safe retries."
-	if operation == "add" {
+	message := "Installed coordinator and executor were replaced after ownership and health checks."
+	if operation == "teardown" {
+		message = "Owned installation removed. A small host receipt and the runtime lock are retained for safe retries."
+	} else if operation == "add" {
 		message = "Docker/Buildx and Caddy verified. No app routes or certificates configured; set DNS separately."
 	}
 	if err := writeServerMutationResult(stdout, name, state, message); err != nil {

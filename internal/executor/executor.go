@@ -58,12 +58,12 @@ func serve(ctx context.Context, stdin io.Reader, stdout io.Writer, collect host.
 	if request.Version != Version {
 		return failure(stdout, "unsupported_version", "supported protocol version is 1", 2)
 	}
-	if request.Operation == "bootstrap" || request.Operation == "teardown" {
+	if request.Operation == "bootstrap" || request.Operation == "upgrade" || request.Operation == "teardown" {
 		cancelRead()
 		return runLifecycle(ctx, request, stdout, collect)
 	}
 	if request.Operation != "inspect" {
-		return failure(stdout, "unsupported_operation", "supported operations are inspect, bootstrap, and teardown", 2)
+		return failure(stdout, "unsupported_operation", "supported operations are inspect, bootstrap, upgrade, and teardown", 2)
 	}
 	if request.Config != nil || request.Confirm || request.Purge {
 		return failure(stdout, "invalid_request", "inspect does not accept mutation options", 2)
@@ -88,8 +88,8 @@ func runLifecycle(ctx context.Context, request Request, stdout io.Writer, collec
 	if request.Operation == "teardown" && !request.Purge {
 		return failure(stdout, "invalid_request", "teardown requires explicit data-purge authorization", 2)
 	}
-	if request.Operation == "bootstrap" && request.Purge {
-		return failure(stdout, "invalid_request", "bootstrap does not accept purge", 2)
+	if (request.Operation == "bootstrap" || request.Operation == "upgrade") && request.Purge {
+		return failure(stdout, "invalid_request", "bootstrap and upgrade do not accept purge", 2)
 	}
 	if runtime.GOOS != "linux" {
 		return failure(stdout, "lifecycle_failed", "host lifecycle requires Linux", 1)
@@ -99,14 +99,18 @@ func runLifecycle(ctx context.Context, request Request, stdout io.Writer, collec
 	manager := &lifecycle.Manager{Root: "/", Run: lifecycle.RunCommand, Inspect: func(ctx context.Context) (*host.Report, error) { return host.Inspect(ctx, collect) }}
 	var state *lifecycle.State
 	var err error
-	if request.Operation == "bootstrap" {
+	if request.Operation == "bootstrap" || request.Operation == "upgrade" {
 		filename, pathErr := os.Executable()
 		if pathErr != nil {
 			return failure(stdout, "lifecycle_failed", pathErr.Error(), 1)
 		}
 		manager.Executor, err = os.ReadFile(filename)
 		if err == nil {
-			state, err = manager.Bootstrap(ctx, *request.Config)
+			if request.Operation == "bootstrap" {
+				state, err = manager.Bootstrap(ctx, *request.Config)
+			} else {
+				state, err = manager.Upgrade(ctx, *request.Config)
+			}
 		}
 	} else {
 		state, err = manager.Teardown(ctx, request.Config.Name, request.Purge)

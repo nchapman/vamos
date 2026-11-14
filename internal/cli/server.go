@@ -17,6 +17,7 @@ import (
 const serverHelp = `Usage:
   soar server inspect [--json] [--timeout 15s] TARGET
   soar server add --yes --domain DOMAIN [--executor FILE] NAME TARGET
+  soar server upgrade --yes [--executor FILE] NAME [TARGET]
   soar server connect --domain DOMAIN NAME TARGET
   soar server status [--json] NAME [TARGET]
   soar server teardown --yes --purge [--executor FILE] NAME [TARGET]
@@ -26,6 +27,7 @@ Use SSH config for ports, identities, and jump hosts. Flags precede TARGET.
 Requires an already trusted host key and noninteractive key/agent authentication.
 Inspect is read-only. Connect verifies an existing ready host and registers it locally;
 it requires root but makes no remote changes. Add and teardown require root and explicit --yes.
+Upgrade replaces only the matching installed coordinator/executor bundle after ownership checks.
 Teardown refuses workloads and changed managed resources; --purge deletes owned data.
 TARGET is optional for registered names; provide it to recover an unregistered host.
 `
@@ -38,7 +40,7 @@ func server(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "inspect":
 		return inspectServer(ctx, args[1:], stdout, stderr, ssh.Inspect)
-	case "add", "connect", "status", "teardown":
+	case "add", "upgrade", "connect", "status", "teardown":
 		return serverLifecycle(ctx, args[0], args[1:], stdout, stderr, defaultLifecycleDeps())
 	default:
 		return usageError(stderr, "unknown server command")

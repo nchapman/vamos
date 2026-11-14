@@ -91,6 +91,10 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			return process.Result{}, fakeExit(2)
 		}
 		return out(value + "\n")
+	case "useradd":
+		f.accounts["passwd:soar"] = "soar:x:997:997::/nonexistent:/bin/sh"
+		f.accounts["group:soar"] = "soar:x:997:"
+		return out("")
 	case "systemctl":
 		switch args[0] {
 		case "show":
@@ -110,6 +114,9 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			return out("")
 		case "stop":
 			f.active = false
+			return out("")
+		case "restart":
+			f.active = true
 			return out("")
 		case "is-active":
 			if f.active {
@@ -173,6 +180,8 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			}
 			return out("")
 		}
+	case "sshd":
+		return out("")
 	case "ctr":
 		if f.foreignContainerd {
 			return out("unowned-namespace\n")

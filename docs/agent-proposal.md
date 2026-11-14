@@ -116,9 +116,10 @@ Key invariants:
   inputs.
 - **SSH-first non-root transport (no new public listener required):** Bootstrap
   provisions a dedicated unprivileged account (for example `soar`) that is **not**
-  in the `docker` group, has no interactive login shell, disables port/X11/agent
-  forwarding, and uses an SSH `ForceCommand` / socket bridge to speak only to
-  `/run/soar/agent.sock`.
+  in the `docker` group. Its SSH `Match User` policy has a fixed `ForceCommand`,
+  disables TTY and port/X11/agent forwarding, and uses the shell only to launch
+  that fixed bridge—there is no interactive SSH command path. The bridge speaks
+  only to `/run/soar/agent.sock`.
 - **Scoped CI credentials:** SSH `authorized_keys` entries (or agent tokens) bind
   each credential to a named principal ID; `soar-agent` enforces server-side ACLs
   (for example allowing a GitHub repository credential to deploy and inspect only

@@ -22,16 +22,58 @@ const caddyConfig = "{\n\tadmin 127.0.0.1:2019\n}\n"
 const dockerConfig = "{\n  \"bridge\": \"none\",\n  \"log-driver\": \"local\"\n}\n"
 
 var units = []string{"caddy.service", "docker.service", "docker.socket", "containerd.service"}
+
+const agentUnit = "soar-agent.service"
+
+const agentServiceConfig = `[Unit]
+Description=Soar coordinator agent
+After=docker.service caddy.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/soar/soar-agent internal-agent
+Restart=on-failure
+RestartSec=2s
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+`
+
+const agentSSHConfig = `Match User soar
+    AuthorizedKeysFile /etc/soar/authorized_keys
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    PermitTTY no
+    X11Forwarding no
+    AllowTcpForwarding no
+    AllowAgentForwarding no
+    PermitTunnel no
+    GatewayPorts no
+    ForceCommand /usr/local/lib/soar/soar-agent internal-agent bridge --principal default-deployer
+`
+
+const defaultPrincipals = `[
+  {"id":"default-deployer","role":"deployer"}
+]
+`
+
 var dataPaths = []string{"/etc/caddy", "/etc/docker", "/etc/containerd", "/var/lib/caddy", "/var/lib/docker", "/var/lib/containerd", "/var/log/caddy", "/usr/local/lib/soar"}
 
 type Runner func(context.Context, string, []string) (process.Result, error)
 
 type Manager struct {
 	// Root is only for isolated filesystem tests. Production always uses /.
-	Root        string
-	Run         Runner
-	Inspect     func(context.Context) (*host.Report, error)
-	Executor    []byte
+	Root     string
+	Run      Runner
+	Inspect  func(context.Context) (*host.Report, error)
+	Executor []byte
+	// Agent is the installed coordinator. During bootstrap it may deliberately
+	// match Executor: the bundle's internal-agent entry point dispatches it.
+	Agent       []byte
 	CaddyConfig func(context.Context) ([]byte, error)
 	MountInfo   func() ([]byte, error)
 }
@@ -124,6 +166,9 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 	}
 	if len(m.Executor) == 0 {
 		return nil, errors.New("executor artifact is empty")
+	}
+	if len(m.Agent) == 0 {
+		m.Agent = m.Executor
 	}
 	unlock, err := m.lock(ctx)
 	if err != nil {
@@ -239,10 +284,33 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err := atomicWrite(m.path(ExecutorPath), m.Executor, 0755); err != nil {
 			return nil, err
 		}
+		if err := atomicWrite(m.path(AgentPath), m.Agent, 0755); err != nil {
+			return nil, err
+		}
+		if err := atomicWrite(m.path("/etc/soar/principals.json"), []byte(defaultPrincipals), 0600); err != nil {
+			return nil, err
+		}
+		if err := atomicWrite(m.path("/etc/soar/authorized_keys"), nil, 0600); err != nil {
+			return nil, err
+		}
+		if err := atomicWrite(m.path("/etc/ssh/sshd_config.d/soar.conf"), []byte(agentSSHConfig), 0600); err != nil {
+			return nil, err
+		}
+		if err := atomicWrite(m.path("/etc/systemd/system/"+agentUnit), []byte(agentServiceConfig), 0644); err != nil {
+			return nil, err
+		}
+		if _, err := m.command(ctx, "useradd", "--system", "--user-group", "--home-dir", "/nonexistent", "--shell", "/bin/sh", "soar"); err != nil {
+			return nil, err
+		}
+		if _, err := m.command(ctx, "sshd", "-t"); err != nil {
+			return nil, fmt.Errorf("validate restricted soar SSH configuration: %w", err)
+		}
 		hash := sha256.Sum256(m.Executor)
 		s.ExecutorSHA = hex.EncodeToString(hash[:])
+		hash = sha256.Sum256(m.Agent)
+		s.AgentSHA = hex.EncodeToString(hash[:])
 		s.Accounts = map[string]string{}
-		for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker"} {
+		for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker", "passwd:soar", "group:soar"} {
 			parts := strings.Split(key, ":")
 			value, err := m.account(ctx, parts[0], parts[1])
 			if err != nil {
@@ -270,7 +338,10 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 	if err := m.unmask(ctx); err != nil {
 		return nil, err
 	}
-	if _, err := m.command(ctx, "systemctl", "enable", "--now", "containerd.service", "docker.socket", "docker.service", "caddy.service"); err != nil {
+	if _, err := m.command(ctx, "systemctl", "daemon-reload"); err != nil {
+		return nil, err
+	}
+	if _, err := m.command(ctx, "systemctl", "enable", "--now", "containerd.service", "docker.socket", "docker.service", "caddy.service", agentUnit); err != nil {
 		return nil, err
 	}
 	if err := m.health(ctx); err != nil {
@@ -283,8 +354,62 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 	return s, nil
 }
 
+// Upgrade replaces only the paired installed executor and coordinator after
+// proving every managed resource still matches the ownership receipt. It never
+// adopts drift or retries an uncertain previous replacement silently.
+func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err error) {
+	if err := ValidateConfig(config); err != nil {
+		return nil, err
+	}
+	if len(m.Executor) == 0 {
+		return nil, errors.New("executor artifact is empty")
+	}
+	if len(m.Agent) == 0 {
+		m.Agent = m.Executor
+	}
+	unlock, err := m.lock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	s, err := ReadState(m.path(StatePath))
+	if err != nil {
+		return nil, err
+	}
+	if s == nil || s.Phase != "ready" || s.Config != config {
+		return nil, errors.New("server is not a ready installation with the requested identity")
+	}
+	if err := m.verifyFiles(s); err != nil {
+		return nil, err
+	}
+	defer func() { m.recordError(s, err) }()
+	if err := atomicWrite(m.path(ExecutorPath), m.Executor, 0755); err != nil {
+		return nil, err
+	}
+	if err := atomicWrite(m.path(AgentPath), m.Agent, 0755); err != nil {
+		return nil, err
+	}
+	executorHash := sha256.Sum256(m.Executor)
+	agentHash := sha256.Sum256(m.Agent)
+	s.ExecutorSHA = hex.EncodeToString(executorHash[:])
+	s.AgentSHA = hex.EncodeToString(agentHash[:])
+	if _, err := m.command(ctx, "systemctl", "daemon-reload"); err != nil {
+		return nil, err
+	}
+	if _, err := m.command(ctx, "systemctl", "restart", agentUnit); err != nil {
+		return nil, err
+	}
+	if err := m.health(ctx); err != nil {
+		return nil, err
+	}
+	if err := m.step(s, "complete"); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 func (m *Manager) health(ctx context.Context) error {
-	if _, err := m.command(ctx, "systemctl", "is-active", "docker.service", "caddy.service"); err != nil {
+	if _, err := m.command(ctx, "systemctl", "is-active", "docker.service", "caddy.service", agentUnit); err != nil {
 		return err
 	}
 	if _, err := m.command(ctx, "docker", "info", "--format", "{{.ServerVersion}}"); err != nil {
@@ -341,7 +466,7 @@ func (m *Manager) unmask(ctx context.Context) error {
 }
 
 func (m *Manager) verifyFiles(s *State) error {
-	for path, expected := range map[string]string{"/etc/caddy/Caddyfile": caddyConfig, "/etc/docker/daemon.json": dockerConfig} {
+	for path, expected := range map[string]string{"/etc/caddy/Caddyfile": caddyConfig, "/etc/docker/daemon.json": dockerConfig, "/etc/ssh/sshd_config.d/soar.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
 		if err := rejectSymlink(m.path(path)); err != nil {
 			return err
 		}
@@ -350,21 +475,32 @@ func (m *Manager) verifyFiles(s *State) error {
 			return fmt.Errorf("managed file %s is missing or changed; refusing to overwrite or remove it", path)
 		}
 	}
-	if err := rejectSymlink(m.path(ExecutorPath)); err != nil {
-		return err
+	// Principals and authorized keys are deliberately administrator-managed
+	// dynamic ACL inputs. They must remain private regular files, but their
+	// contents are not frozen into the lifecycle receipt.
+	for _, path := range []string{"/etc/soar/principals.json", "/etc/soar/authorized_keys"} {
+		info, err := os.Lstat(m.path(path))
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0600 {
+			return fmt.Errorf("managed ACL file %s is missing or unsafe", path)
+		}
 	}
-	data, err := os.ReadFile(m.path(ExecutorPath))
-	if err != nil {
-		return err
-	}
-	hash := sha256.Sum256(data)
-	if hex.EncodeToString(hash[:]) != s.ExecutorSHA {
-		return errors.New("installed executor digest changed; refusing removal or overwrite")
+	for path, digest := range map[string]string{ExecutorPath: s.ExecutorSHA, AgentPath: s.AgentSHA} {
+		if err := rejectSymlink(m.path(path)); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(m.path(path))
+		if err != nil {
+			return err
+		}
+		hash := sha256.Sum256(data)
+		if hex.EncodeToString(hash[:]) != digest {
+			return fmt.Errorf("installed %s digest changed; refusing removal or overwrite", filepath.Base(path))
+		}
 	}
 	if err := rejectSymlink(m.path("/etc/containerd/config.toml")); err != nil {
 		return err
 	}
-	data, err = os.ReadFile(m.path("/etc/containerd/config.toml"))
+	data, err := os.ReadFile(m.path("/etc/containerd/config.toml"))
 	if s.ContainerdConfigSHA == "" {
 		if !errors.Is(err, os.ErrNotExist) {
 			return errors.New("unexpected containerd configuration")
@@ -373,7 +509,7 @@ func (m *Manager) verifyFiles(s *State) error {
 		if err != nil {
 			return err
 		}
-		hash = sha256.Sum256(data)
+		hash := sha256.Sum256(data)
 		if hex.EncodeToString(hash[:]) != s.ContainerdConfigSHA {
 			return errors.New("containerd configuration changed; refusing teardown")
 		}
@@ -383,7 +519,7 @@ func (m *Manager) verifyFiles(s *State) error {
 			return err
 		}
 	}
-	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/containerd": "config.toml"} {
+	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/containerd": "config.toml", "/etc/soar": "authorized_keys principals.json"} {
 		entries, err := os.ReadDir(m.path(dir))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -392,7 +528,7 @@ func (m *Manager) verifyFiles(s *State) error {
 			return err
 		}
 		for _, e := range entries {
-			if e.Name() != allowed {
+			if !contains(strings.Fields(allowed), e.Name()) {
 				return fmt.Errorf("unmanaged file in %s: %s", dir, e.Name())
 			}
 		}

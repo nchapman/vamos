@@ -19,6 +19,7 @@ import (
 const (
 	StatePath    = "/var/lib/soar/host.json"
 	ExecutorPath = "/usr/local/lib/soar/executor"
+	AgentPath    = "/usr/local/lib/soar/soar-agent"
 	LockPath     = "/run/lock/soar-host.lock"
 )
 
@@ -43,6 +44,7 @@ type State struct {
 	Packages            []Package         `json:"packages"`
 	Configured          bool              `json:"configured"`
 	ExecutorSHA         string            `json:"executor_sha256,omitempty"`
+	AgentSHA            string            `json:"agent_sha256,omitempty"`
 	PurgeApproved       bool              `json:"purge_approved"`
 	Accounts            map[string]string `json:"accounts,omitempty"`
 	ContainerdConfigSHA string            `json:"containerd_config_sha256,omitempty"`
@@ -140,16 +142,26 @@ func ValidateState(s *State) error {
 		return errors.New("invalid host lifecycle step")
 	}
 	for key := range s.Accounts {
-		if key != "passwd:caddy" && key != "group:caddy" && key != "group:docker" {
+		if key != "passwd:caddy" && key != "group:caddy" && key != "group:docker" && key != "passwd:soar" && key != "group:soar" {
 			return errors.New("invalid service account record")
 		}
 	}
 	if s.Configured {
-		if len(s.Accounts) != 3 || len(s.ExecutorSHA) != 64 {
+		// Version-1 receipts created before the coordinator have three service
+		// account records and no AgentSHA. They remain readable for recovery and
+		// connection, but bootstrap/upgrade refuse to overwrite that legacy host.
+		legacy := len(s.Accounts) == 3 && s.AgentSHA == ""
+		current := len(s.Accounts) == 5 && len(s.AgentSHA) == 64
+		if (!legacy && !current) || len(s.ExecutorSHA) != 64 {
 			return errors.New("missing configured resource ownership")
 		}
 		if _, err := hex.DecodeString(s.ExecutorSHA); err != nil {
 			return errors.New("invalid executor digest")
+		}
+		if current {
+			if _, err := hex.DecodeString(s.AgentSHA); err != nil {
+				return errors.New("invalid agent digest")
+			}
 		}
 	}
 	if s.ContainerdConfigSHA != "" {

@@ -38,12 +38,12 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 			return fmt.Errorf("pre-existing unit %s (load state: %q)", unit, strings.TrimSpace(string(out.Stdout)))
 		}
 	}
-	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/bin/caddy", "/usr/local/bin/caddy", "/usr/local/bin/soar"} {
+	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/bin/caddy", "/usr/local/bin/caddy", "/usr/local/bin/soar", "/etc/soar", "/etc/ssh/sshd_config.d/soar.conf", "/etc/systemd/system/" + agentUnit} {
 		if _, err := os.Lstat(m.path(path)); !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("pre-existing executable %s", path)
 		}
 	}
-	for _, account := range [][2]string{{"passwd", "caddy"}, {"group", "caddy"}, {"group", "docker"}} {
+	for _, account := range [][2]string{{"passwd", "caddy"}, {"group", "caddy"}, {"group", "docker"}, {"passwd", "soar"}, {"group", "soar"}} {
 		value, err := m.account(ctx, account[0], account[1])
 		if err != nil {
 			return err
@@ -171,6 +171,20 @@ func (m *Manager) checkStateDirectory(ctx context.Context) error {
 		case "apps":
 			if _, err := m.appReceipts(s); err != nil {
 				return err
+			}
+		case "queue":
+			queueRoot := m.path("/var/lib/soar/queue")
+			queueEntries, err := os.ReadDir(queueRoot)
+			if err != nil || len(queueEntries) != 1 || queueEntries[0].Name() != "operations" || !queueEntries[0].IsDir() {
+				return errors.New("agent queue is nonempty; inspect or resolve recorded operations before teardown")
+			}
+			operations := filepath.Join(queueRoot, "operations")
+			if err := rejectSymlink(operations); err != nil {
+				return err
+			}
+			operationEntries, err := os.ReadDir(operations)
+			if err != nil || len(operationEntries) != 0 {
+				return errors.New("agent queue is nonempty; inspect or resolve recorded operations before teardown")
 			}
 		case "buildkit":
 			if s.PurgeApproved {

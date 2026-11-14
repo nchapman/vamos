@@ -310,11 +310,22 @@ func CanTransition(from, to OperationPhase) bool {
 type SubmitRequest struct {
 	IdempotencyKey string         `json:"idempotency_key"`
 	Request        deploy.Request `json:"request"`
+	// PayloadBytes and PayloadSHA256 describe the bounded binary stream sent
+	// immediately after an accepted submit frame. Private values and build
+	// contexts never enter the JSON control envelope.
+	PayloadBytes  int64  `json:"payload_bytes,omitempty"`
+	PayloadSHA256 string `json:"payload_sha256,omitempty"`
 }
 
 func ValidateSubmitRequest(r SubmitRequest) error {
 	if !idempRE.MatchString(r.IdempotencyKey) {
 		return errors.New("idempotency_key must be 32–64 lowercase hex characters")
+	}
+	if r.PayloadBytes < 0 || r.PayloadBytes > 16<<30 {
+		return errors.New("payload_bytes must be between 0 and 16 GiB")
+	}
+	if (r.PayloadBytes == 0) != (r.PayloadSHA256 == "") || (r.PayloadSHA256 != "" && !buildmeta.ValidID(r.PayloadSHA256)) {
+		return errors.New("payload size and SHA-256 must be specified together")
 	}
 	if err := deploy.ValidateRequest(r.Request); err != nil {
 		return err

@@ -6,7 +6,7 @@
 
 - Requests and responses use strict single-document newline-delimited JSON frames bounded to `64 KiB` (`MaxEnvelopeBytes`) for control metadata.
 - Every frame decoder sets `DisallowUnknownFields()` and rejects trailing JSON documents.
-- Large inputs (build context archives, private secret payloads, repository credentials) remain bounded out-of-band stream payloads alongside structured metadata—never inlined into `RPCRequest` JSON.
+- Large inputs (build context archives, private secret payloads, repository credentials) remain bounded out-of-band stream payloads alongside structured metadata—never inlined into `RPCRequest` JSON. A `submit` declares `payload_bytes` and `payload_sha256`; after the accepted response the client writes exactly those bytes before the next frame. The agent stores them mode `0600`, verifies the digest, and fences an incomplete transfer as `uncertain`.
 
 ## Handshake (`hello`)
 
@@ -25,7 +25,7 @@ Every client connection begins with `hello` before submitting mutations:
 
 ## Durable queueing and idempotency
 
-- `submit` carries a 32–64 hex `idempotency_key` alongside a validated `deploy.Request`.
+- `submit` carries a 32–64 hex `idempotency_key` alongside a validated `deploy.Request` and, when needed, the size and SHA-256 of its following out-of-band payload.
 - Retrying `submit` with the same `idempotency_key` returns the existing `OperationRecord` (`deduplicated: true`) rather than creating a duplicate operation.
 - Allowed lifecycle transitions:
   - `queued` → `running` | `cancelled`
