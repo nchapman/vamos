@@ -53,12 +53,22 @@ const agentSSHConfig = `Match User soar
     AllowAgentForwarding no
     PermitTunnel no
     GatewayPorts no
-    ForceCommand /usr/local/lib/soar/soar-agent internal-agent bridge --principal default-deployer
+    PermitUserRC no
 `
 
 const defaultPrincipals = `[
   {"id":"default-deployer","role":"deployer"}
 ]
+`
+
+const defaultAgentConfig = `{
+  "concurrency": {
+    "max_queue_depth": 32,
+    "max_staged_bytes": 536870912,
+    "max_concurrent_builds": 1,
+    "max_concurrent_deploys": 1
+  }
+}
 `
 
 var dataPaths = []string{"/etc/caddy", "/etc/docker", "/etc/containerd", "/var/lib/caddy", "/var/lib/docker", "/var/lib/containerd", "/var/log/caddy", "/usr/local/lib/soar"}
@@ -287,6 +297,9 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err := atomicWrite(m.path(AgentPath), m.Agent, 0755); err != nil {
 			return nil, err
 		}
+		if err := atomicWrite(m.path("/etc/soar/agent.json"), []byte(defaultAgentConfig), 0600); err != nil {
+			return nil, err
+		}
 		if err := atomicWrite(m.path("/etc/soar/principals.json"), []byte(defaultPrincipals), 0600); err != nil {
 			return nil, err
 		}
@@ -299,7 +312,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err := atomicWrite(m.path("/etc/systemd/system/"+agentUnit), []byte(agentServiceConfig), 0644); err != nil {
 			return nil, err
 		}
-		if _, err := m.command(ctx, "useradd", "--system", "--user-group", "--home-dir", "/nonexistent", "--shell", "/bin/sh", "soar"); err != nil {
+		if _, err := m.command(ctx, "useradd", "--system", "--user-group", "--home-dir", "/nonexistent", "--shell", AgentPath, "soar"); err != nil {
 			return nil, err
 		}
 		if _, err := m.command(ctx, "sshd", "-t"); err != nil {
@@ -478,7 +491,7 @@ func (m *Manager) verifyFiles(s *State) error {
 	// Principals and authorized keys are deliberately administrator-managed
 	// dynamic ACL inputs. They must remain private regular files, but their
 	// contents are not frozen into the lifecycle receipt.
-	for _, path := range []string{"/etc/soar/principals.json", "/etc/soar/authorized_keys"} {
+	for _, path := range []string{"/etc/soar/agent.json", "/etc/soar/principals.json", "/etc/soar/authorized_keys"} {
 		info, err := os.Lstat(m.path(path))
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0600 {
 			return fmt.Errorf("managed ACL file %s is missing or unsafe", path)
@@ -519,7 +532,7 @@ func (m *Manager) verifyFiles(s *State) error {
 			return err
 		}
 	}
-	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/containerd": "config.toml", "/etc/soar": "authorized_keys principals.json"} {
+	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/containerd": "config.toml", "/etc/soar": "agent.json authorized_keys principals.json"} {
 		entries, err := os.ReadDir(m.path(dir))
 		if errors.Is(err, os.ErrNotExist) {
 			continue

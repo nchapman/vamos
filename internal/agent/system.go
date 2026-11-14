@@ -5,29 +5,47 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/user"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/nchapman/soar/internal/agentproto"
 )
 
 const (
-	DefaultSocket     = "/run/soar/agent.sock"
-	DefaultQueueRoot  = "/var/lib/soar/queue"
-	DefaultPrincipals = "/etc/soar/principals.json"
+	DefaultSocket         = "/run/soar/agent.sock"
+	DefaultQueueRoot      = "/var/lib/soar/queue"
+	DefaultPrincipals     = "/etc/soar/principals.json"
+	DefaultConfig         = "/etc/soar/agent.json"
+	DefaultAuthorizedKeys = "/etc/soar/authorized_keys"
 )
+
+var forcedKeyRE = regexp.MustCompile(`^restrict,command="/usr/local/lib/soar/soar-agent internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" ssh-(?:ed25519|rsa|ecdsa(?:-sha2-nistp(?:256|384|521))?) [A-Za-z0-9+/=]+(?: .*)?$`)
+
+type Config struct {
+	Concurrency agentproto.ConcurrencyPolicy `json:"concurrency"`
+}
 
 // ServeSystem starts the installed agent with the fixed, root-owned paths
 // written by lifecycle.Manager. It is intentionally not configurable through
 // SSH/client input.
 func ServeSystem(ctx context.Context) error {
+	config, err := ReadConfig(DefaultConfig)
+	if err != nil {
+		return err
+	}
 	principals, err := ReadPrincipals(DefaultPrincipals)
 	if err != nil {
 		return err
 	}
-	queue, err := NewQueue(DefaultQueueRoot, agentproto.DefaultConcurrencyPolicy())
+	if err := ValidateAuthorizedKeys(DefaultAuthorizedKeys, principals); err != nil {
+		return err
+	}
+	queue, err := NewQueue(DefaultQueueRoot, config.Concurrency)
 	if err != nil {
 		return err
 	}
@@ -40,6 +58,50 @@ func ServeSystem(ctx context.Context) error {
 		return err
 	}
 	return (&Daemon{SocketPath: DefaultSocket, Queue: queue, Principals: principals, SocketGID: gid}).Serve(ctx)
+}
+
+// ValidateAuthorizedKeys permits only restricted forced bridge commands whose
+// principal IDs exist in the root-owned ACL. This makes key-to-principal
+// attribution an sshd-enforced boundary rather than client-provided input.
+func ValidateAuthorizedKeys(path string, principals map[string]agentproto.Principal) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	for lineNo, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		match := forcedKeyRE.FindStringSubmatch(line)
+		if match == nil {
+			return fmt.Errorf("authorized key line %d is not a restricted Soar bridge key", lineNo+1)
+		}
+		if _, ok := principals[match[1]]; !ok {
+			return fmt.Errorf("authorized key line %d names unknown principal %q", lineNo+1, match[1])
+		}
+	}
+	return nil
+}
+
+func ReadConfig(path string) (Config, error) {
+	var config Config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return config, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&config); err != nil {
+		return config, err
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return config, errors.New("agent configuration must contain exactly one JSON document")
+	}
+	if err := config.Concurrency.Validate(); err != nil {
+		return config, err
+	}
+	return config, nil
 }
 
 // ReadPrincipals strictly loads the root-owned ACL file. Empty ACLs are valid:

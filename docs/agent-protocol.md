@@ -34,6 +34,7 @@ Every client connection begins with `hello` before submitting mutations:
 
 ## Concurrency policy and ACLs
 
-- Default host concurrency: `max_queue_depth=32`, `max_staged_bytes=512 MiB`, `max_concurrent_builds=1`, `max_concurrent_deploys=1`.
+- Default host concurrency is stored in root-owned `/etc/soar/agent.json`: `max_queue_depth=32`, `max_staged_bytes=512 MiB`, `max_concurrent_builds=1`, `max_concurrent_deploys=1`. The coordinator enforces deploy/build semaphores, one mutation per app, and a short ingress transaction lock; restart the agent after an administrator changes this validated file.
 - `admin` principals may execute host-administration actions (`server-add`, `server-upgrade`, `server-configure`, `server-teardown`, `acl-manage`).
 - `deployer` principals are confined to explicitly allowed apps and actions and cannot list all host apps (`apps`) without explicit wildcard scope.
+- Scoped CI access is mapped by root-owned `/etc/soar/authorized_keys`: every nonempty key must use `restrict,command="/usr/local/lib/soar/soar-agent internal-agent bridge --principal <id>"` and name a principal in `/etc/soar/principals.json`. The daemon refuses unsafe or unmatched mappings at startup, so the client cannot choose its own principal.

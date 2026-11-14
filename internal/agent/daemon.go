@@ -28,24 +28,28 @@ var bridgePrincipalRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}
 
 // Daemon serves the coordinator's local Unix socket. SSH never executes an
 // uploaded program: a restricted account runs Bridge, which relays its stdio to
-// this socket and identifies the fixed principal named by its ForceCommand.
+// this socket and identifies the scoped principal selected by its forced-key command.
 type Daemon struct {
 	SocketPath string
 	StatePath  string
 	Queue      *Queue
 	Principals map[string]agentproto.Principal
 	SocketGID  int
-	// BridgePrincipal is the only principal the installed fixed ForceCommand
-	// may assert. Scoped per-key principal mapping is added with ACL management.
+	// BridgePrincipal optionally pins a test or single-key installation. Production
+	// uses command= options in authorized_keys to select a configured principal.
 	BridgePrincipal string
 	Version         string
 	BuildID         string
 	Capabilities    []string
 	// Execute performs one admitted worker. Production defaults to the shared
 	// engine; the serial coordinator fence remains outside this callback.
-	Execute func(context.Context, deploy.Request, []byte) (deploy.Response, error)
-	workMu  sync.Mutex
-	workWG  sync.WaitGroup
+	Execute  func(context.Context, deploy.Request, []byte) (deploy.Response, error)
+	workWG   sync.WaitGroup
+	builds   chan struct{}
+	deploys  chan struct{}
+	locksMu  sync.Mutex
+	appLocks map[string]*sync.Mutex
+	ingress  chan struct{}
 }
 
 func (d *Daemon) defaults() {
@@ -69,13 +73,10 @@ func (d *Daemon) defaults() {
 		}
 	}
 	if len(d.Capabilities) == 0 {
-		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapDurableQueue, agentproto.CapSessions}
-	}
-	if d.BridgePrincipal == "" {
-		d.BridgePrincipal = "default-deployer"
+		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapDurableQueue, agentproto.CapPerAppConcurrency, agentproto.CapScopedACL, agentproto.CapSecrets, agentproto.CapBackups, agentproto.CapSessions}
 	}
 	if d.Execute == nil {
-		d.Execute = deploy.NewManager().Execute
+		d.Execute = d.defaultExecute
 	}
 	if d.SocketGID == 0 {
 		// Zero is the Go default but root:root would exclude the restricted
@@ -92,6 +93,10 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	if d.Queue == nil {
 		return errors.New("agent queue is required")
 	}
+	d.builds = make(chan struct{}, d.Queue.policy.MaxConcurrentBuilds)
+	d.deploys = make(chan struct{}, d.Queue.policy.MaxConcurrentDeploys)
+	d.appLocks = make(map[string]*sync.Mutex)
+	d.ingress = make(chan struct{}, 1)
 	if err := d.Queue.Recover(); err != nil {
 		return fmt.Errorf("recover agent queue: %w", err)
 	}
@@ -163,7 +168,7 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 	if len(line) > len(prefix)+1 && line[:len(prefix)] == prefix {
 		principalID = line[len(prefix) : len(line)-1]
 	}
-	if !bridgePrincipalRE.MatchString(principalID) || principalID != d.BridgePrincipal {
+	if !bridgePrincipalRE.MatchString(principalID) || (d.BridgePrincipal != "" && principalID != d.BridgePrincipal) {
 		return errors.New("invalid bridge principal")
 	}
 	principal, ok := d.Principals[principalID]
@@ -266,13 +271,26 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 }
 
 func (d *Daemon) execute(ctx context.Context, id string) {
-	// Phase 2 intentionally admits one worker at a time. Phase 3 replaces this
-	// with configured build/deploy semaphores and per-app/ingress lock scopes.
-	d.workMu.Lock()
-	defer d.workMu.Unlock()
 	request, payload, err := d.Queue.Start(id)
 	if err != nil {
 		return
+	}
+	if request.Mutating() {
+		if err := acquire(ctx, d.deploys); err != nil {
+			_ = d.Queue.Fence(id, "agent stopped before deploy admission")
+			return
+		}
+		defer release(d.deploys)
+		lock := d.appLock(request.App)
+		lock.Lock()
+		defer lock.Unlock()
+	}
+	if request.Action == "deploy" || request.Action == "run" {
+		if err := acquire(ctx, d.builds); err != nil {
+			_ = d.Queue.Fence(id, "agent stopped before build admission")
+			return
+		}
+		defer release(d.builds)
 	}
 	response, runErr := d.Execute(ctx, request, payload)
 	if ctx.Err() != nil {
@@ -280,6 +298,38 @@ func (d *Daemon) execute(ctx context.Context, id string) {
 		return
 	}
 	_ = d.Queue.Finish(id, response, runErr)
+}
+
+func acquire(ctx context.Context, sem chan struct{}) error {
+	select {
+	case sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func release(sem chan struct{}) { <-sem }
+func (d *Daemon) appLock(app string) *sync.Mutex {
+	d.locksMu.Lock()
+	defer d.locksMu.Unlock()
+	lock := d.appLocks[app]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		d.appLocks[app] = lock
+	}
+	return lock
+}
+func (d *Daemon) defaultExecute(ctx context.Context, request deploy.Request, payload []byte) (deploy.Response, error) {
+	manager := deploy.NewManager()
+	// Per-app admission happens above; bypass the legacy host-wide flock.
+	manager.MutationLock = func(context.Context, string, bool) (bool, func(), error) { return false, func() {}, nil }
+	manager.IngressLock = func(ctx context.Context) (func(), error) {
+		if err := acquire(ctx, d.ingress); err != nil {
+			return nil, err
+		}
+		return func() { release(d.ingress) }, nil
+	}
+	return manager.Execute(ctx, request, payload)
 }
 
 func decodePayload(data json.RawMessage, dst any) error {

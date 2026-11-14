@@ -98,7 +98,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 					if parts[0] == "group" && (len(fields) != 4 || fields[0] != parts[1] || fields[3] != "") {
 						return nil, errors.New("unexpected service group after interrupted setup")
 					}
-					if parts[0] == "passwd" && parts[1] == "soar" && (len(fields) != 7 || fields[0] != "soar" || fields[5] != "/nonexistent" || fields[6] != "/bin/sh") {
+					if parts[0] == "passwd" && parts[1] == "soar" && (len(fields) != 7 || fields[0] != "soar" || fields[5] != "/nonexistent" || fields[6] != AgentPath) {
 						return nil, errors.New("unexpected soar account after interrupted setup")
 					}
 				}

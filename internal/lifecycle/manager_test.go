@@ -92,7 +92,7 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		}
 		return out(value + "\n")
 	case "useradd":
-		f.accounts["passwd:soar"] = "soar:x:997:997::/nonexistent:/bin/sh"
+		f.accounts["passwd:soar"] = "soar:x:997:997::/nonexistent:" + AgentPath
 		f.accounts["group:soar"] = "soar:x:997:"
 		return out("")
 	case "systemctl":
