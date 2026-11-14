@@ -164,6 +164,7 @@ type journal struct {
 }
 type Runner func(context.Context, string, []string, []byte) (process.Result, error)
 type Manager struct {
+	Builder           ImageBuilder
 	RepositoryBackend backup.Backend
 	DomainProbe       func(context.Context, string) DomainStatus
 	// RuntimeDir is the private worker staging directory for transient env files.
@@ -192,12 +193,13 @@ func allocatePort() (string, error) {
 
 func NewManager() *Manager {
 	return &Manager{Root: "/", Run: func(c context.Context, n string, a []string, b []byte) (process.Result, error) {
-		if n == "docker" && len(a) > 0 && a[0] == "buildx" {
+		dockerArgs := dockerCommandArgs(n, a)
+		if len(dockerArgs) > 1 && dockerArgs[0] == "buildx" && dockerArgs[1] == "build" {
 			return process.RunTail(c, n, a, b)
 		}
 		// Full Docker inspection includes runtime values, which can be much larger
 		// than the metadata-only SSH response. Never increase the transport budget.
-		if n == "docker" && len(a) > 1 && a[1] == "inspect" {
+		if len(dockerArgs) > 1 && dockerArgs[1] == "inspect" {
 			return process.RunLimited(c, n, a, b, 8<<20)
 		}
 		return process.Run(c, n, a, b)

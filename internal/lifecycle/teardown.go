@@ -68,7 +68,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if s.Phase == "removed" {
 		return s, nil
 	}
-	if err := m.checkStateDirectory(); err != nil {
+	if err := m.checkStateDirectory(ctx); err != nil {
 		return nil, err
 	}
 	if err := m.checkMounts(); err != nil {
@@ -167,6 +167,9 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	s.Phase = "removing"
 	s.PurgeApproved = true
 	if err := m.step(s, "stop-services"); err != nil {
+		return nil, err
+	}
+	if err := m.buildService().RemoveReceipt(ctx, s.ID); err != nil {
 		return nil, err
 	}
 	if err := m.mask(ctx); err != nil {

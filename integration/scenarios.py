@@ -48,13 +48,10 @@ def run(h):
     h.cli("server", "teardown", "--yes", "--purge", "local")
     bootstrap()
     done("fresh host bootstrap/status, successful teardown and rebootstrap")
-    # OrbStack's isolated guest rejects BuildKit's nested overlay mount. Keep
-    # isolation enabled and use a guest-only native (copying) snapshotter instead.
-    # This changes neither Soar's managed Docker configuration nor the Mac daemon.
-    h.command(["docker", "buildx", "create", "--name", "soar-integration",
-               "--driver", "docker-container", "--driver-opt", "network=host",
-               "--buildkitd-flags", "--oci-worker-snapshotter=native --allow-insecure-entitlement network.host",
-               "--use", "--bootstrap"], user="root")
+    from build_network import configure_native, run as build_network
+    configure_native(h)
+    build_network(h)
+    done("isolated build service blocks host/app access and insecure entitlements")
 
     app = "ledger-" + secrets.token_hex(4)
     base = h.work / app

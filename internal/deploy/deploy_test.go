@@ -28,6 +28,10 @@ func setup(t *testing.T) (*Manager, Request) {
 	t.Helper()
 	m := NewManager()
 	m.Root, _ = filepath.EvalSymlinks(t.TempDir())
+	m.Builder = fixtureBuilder(m)
+	if err := atomic(m.path("/etc/docker/daemon.json"), []byte(`{"bridge":"none","log-driver":"local"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 	m.Drain = 0
 	m.HealthTimeout = time.Millisecond
 	h := lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "host", Domain: "example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), Packages: []lifecycle.Package{{Name: "docker.io", Version: "1"}}, Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x"}}

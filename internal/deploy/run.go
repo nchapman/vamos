@@ -496,7 +496,7 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 		if _, e := os.Lstat(p); !errors.Is(e, os.ErrNotExist) {
 			return resp, errors.New("run image identity already exists")
 		}
-		out, buildErr := m.Run(ctx, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", cfg.Build.Dockerfile, "-"}, archives[key])
+		out, buildErr := m.buildImage(ctx, j.HostID, cfg.Build.Dockerfile, p, archives[key])
 		if buildErr != nil {
 			rec.Error = m.buildDiagnostic(j, out, buildErr, 1024, len(rec.SecretRefs) > 0)
 			if saveErr := m.saveRun(j, rec); saveErr != nil {

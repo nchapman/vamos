@@ -12,8 +12,11 @@ implemented features.
   root SSH administration. Keep host keys independently verified and authentication
   noninteractive; do not weaken strict known-host checking to restore access.
 - Trust all administrators, application code, Dockerfiles, and build inputs.
-  Builds use host networking and can reach host-local services. App networks and
-  local identity bindings are not a hostile multi-tenant security boundary.
+  [Build networking](builds.md) isolates the builder from host-local services and
+  Soar app bridges, but the privileged builder is not a hostile-code sandbox.
+  App networks and local identity bindings are not a hostile multi-tenant
+  security boundary. Coordinate firewall changes with builds; do not remove
+  their network guards while a builder is running.
 - Keep the client and matching Linux executor artifacts together. App operations,
   including status/logs, stage the matching executor; they do not upgrade the
   bootstrap-owned installed binary. Host inspect/status/connect need no artifact.

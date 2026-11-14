@@ -153,7 +153,7 @@ func (m *Manager) workloads(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) checkStateDirectory() error {
+func (m *Manager) checkStateDirectory(ctx context.Context) error {
 	entries, err := os.ReadDir(filepath.Dir(m.path(StatePath)))
 	if err != nil {
 		return err
@@ -162,11 +162,26 @@ func (m *Manager) checkStateDirectory() error {
 	if err != nil {
 		return err
 	}
+	if s == nil {
+		return errors.New("missing host ownership manifest")
+	}
 	for _, entry := range entries {
 		switch entry.Name() {
 		case "host.json":
 		case "apps":
 			if _, err := m.appReceipts(s); err != nil {
+				return err
+			}
+		case "buildkit":
+			if s.PurgeApproved {
+				// The final receipt unlink may have completed before its empty
+				// directory was removed. Only authorized purge may reconcile it.
+				files, err := os.ReadDir(m.path("/var/lib/soar/buildkit"))
+				if err == nil && len(files) == 0 {
+					continue
+				}
+			}
+			if err := m.buildService().ReceiptGone(ctx, s.ID); err != nil {
 				return err
 			}
 		default:

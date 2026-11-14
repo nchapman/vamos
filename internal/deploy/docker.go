@@ -327,7 +327,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 		}
 		// Bootstrap disables Docker's shared default bridge. Trusted builds use
 		// host networking; runtime containers still get isolated app bridges.
-		out, e := m.Run(c, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", s.Build.Dockerfile, "-"}, tar)
+		out, e := m.buildImage(c, j.HostID, s.Build.Dockerfile, p, tar)
 		if e != nil {
 			return errors.New(m.buildDiagnostic(j, out, e, diagnosticLimit))
 		}

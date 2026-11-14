@@ -13,6 +13,8 @@ RELEASE = b'R'
 
 
 def matches(config, name, args):
+    if name == 'docker' and args[:2] == ['--host', 'unix:///var/run/docker.sock']:
+        args = args[2:]
     prefix = config.get('prefix')
     return (name in ('docker', 'caddy') and config.get('command') == name
             and isinstance(prefix, list) and bool(prefix)

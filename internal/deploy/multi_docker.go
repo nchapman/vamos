@@ -63,7 +63,7 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 				return errors.New("remove build image file failed")
 			}
 			// Only build archives, never runtime environment or secrets, enter builds.
-			out, err := m.Run(ctx, "docker", []string{"buildx", "build", "--load", "--network", "host", "--iidfile", p, "--file", cfg.Build.Dockerfile, "-"}, archives[key])
+			out, err := m.buildImage(ctx, j.HostID, cfg.Build.Dockerfile, p, archives[key])
 			if err != nil {
 				return errors.New(m.buildDiagnostic(j, out, err, diagnosticLimit))
 			}

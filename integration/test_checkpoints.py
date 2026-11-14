@@ -124,6 +124,13 @@ class Gates(unittest.TestCase):
 
 
 class Contracts(unittest.TestCase):
+    def test_matching_explicit_local_docker_endpoint(self):
+        config = dict(command='docker', prefix=['buildx', 'build'], when='before')
+        self.assertTrue(command_gate.matches(config, 'docker',
+                        ['--host', 'unix:///var/run/docker.sock', 'buildx', 'build', '--load']))
+        self.assertFalse(command_gate.matches(config, 'docker',
+                         ['--host', 'tcp://foreign:2375', 'buildx', 'build']))
+
     def test_matching(self):
         config = dict(command='docker', prefix=['rm'], contains='exact', when='before')
         self.assertTrue(command_gate.matches(config, 'docker', ['rm', '-f', 'exact']))

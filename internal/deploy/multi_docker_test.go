@@ -99,7 +99,7 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 		}
 		return dockerJSON(map[string]any{"MemoryLimit": true, "SwapLimit": true, "CpuCfsQuota": true, "CpuCfsPeriod": true, "NCPU": 8})
 	case "buildx":
-		if len(a) != 10 || !reflect.DeepEqual(a[:6], []string{"buildx", "build", "--load", "--network", "host", "--iidfile"}) || a[7] != "--file" || a[9] != "-" {
+		if len(a) != 10 || !reflect.DeepEqual(a[:6], []string{"buildx", "build", "--load", "--network", "default", "--iidfile"}) || a[7] != "--file" || a[9] != "-" {
 			f.t.Fatalf("build signature: %v", a)
 		}
 		id := "sha256:" + strings.Repeat("d", 64)

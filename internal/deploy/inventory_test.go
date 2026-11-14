@@ -8,7 +8,7 @@ import (
 	"github.com/nchapman/soar/internal/process"
 )
 
-func TestBuildDoesNotRequireDisabledDefaultBridge(t *testing.T) {
+func TestBuildNeverRequestsHostNetworking(t *testing.T) {
 	f, request := flowSetup(t)
 	f.m.Run = func(ctx context.Context, name string, args []string, input []byte) (process.Result, error) {
 		if name == "docker" && args[0] == "buildx" {
@@ -18,8 +18,8 @@ func TestBuildDoesNotRequireDisabledDefaultBridge(t *testing.T) {
 					hostNetwork = true
 				}
 			}
-			if !hostNetwork {
-				return process.Result{}, errors.New("network bridge not found: bootstrap disables the default bridge")
+			if hostNetwork {
+				return process.Result{}, errors.New("build escaped into host networking")
 			}
 		}
 		return f.run(ctx, name, args, input)
