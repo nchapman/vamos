@@ -25,6 +25,15 @@ creation abandonment. Native Windows live acceptance remains unverified. The dis
 [OrbStack suite](docs/testing.md) adds native arm64-host, selected live worker
 interruptions and machine-restart coverage.
 
+### Next-generation coordinator and shared engine (proposed)
+
+[Server coordinator agent, non-root deploys, and shared engine boundary](docs/agent-proposal.md)
+captures the planned evolution from per-command `root` SSH executor uploads and
+immediate busy-refusal locking to an installed `soar-agent` coordinator with
+non-root CI deployment access, durable server-owned queueing and concurrency
+governance, explicit version handshakes + `soar server upgrade`, and a shared
+container engine boundary preserving room for a future local `soar dev` stack.
+
 ## 1. The goal
 
 Rent a good Ubuntu 24.04+ server, install Soar once, and deploy our apps from Dockerfiles. Keep Fly's app-oriented experience without building a cloud provider.
