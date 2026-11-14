@@ -90,7 +90,9 @@ Build contexts are relative to the configuration directory; Dockerfile paths are
 
 [Encrypted S3-compatible repository setup](docs/backup-repositories.md) is implemented:
 create/connect, independent private recovery kits, pinned identity verification and
-read-only reconciliation of uncertain initialization. **Application capture, restore,
+read-only reconciliation of uncertain initialization. [Shared backup plans](docs/backup-plans.md)
+provide strict three-method source/set configuration with identity-bound preview/apply.
+**Application capture, restore,
 scheduling and pruning are not implemented yet.** An empty repository is not a backup.
 The [backup design](docs/backups.md) covers PostgreSQL, SQLite and files together:
 explicit named sources, consistency and downtime policies, encrypted off-host recovery

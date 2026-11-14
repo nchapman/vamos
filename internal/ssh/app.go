@@ -64,6 +64,17 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 	command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
 	result, runErr := run(ctx, "ssh", arguments(target, command), payload)
 	decodeErr := decodeJSON(result.Stdout, &response)
+	if request.Action == "backup-plan" {
+		if decodeErr == nil && response.Version == 1 && response.Error != "" {
+			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {
+				return deploy.Response{Version: 1, Error: message, ErrorCode: response.ErrorCode}, errors.New(message)
+			}
+		}
+		if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.ErrorCode != "" || response.BackupPlan == nil {
+			return deploy.Response{}, errors.New("backup plan request outcome unknown; inspect recorded policy before retrying")
+		}
+		return deploy.Response{Version: 1, BackupPlan: response.BackupPlan}, nil
+	}
 	if request.Action == "backup-repository" {
 		if decodeErr == nil && response.Version == 1 && response.Error != "" {
 			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {

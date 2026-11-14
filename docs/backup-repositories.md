@@ -1,10 +1,11 @@
 # Encrypted backup repository setup
 
-**Implemented boundary: repository setup only.** Soar can create or connect to an
+**This guide covers repository setup.** Soar can create or connect to an
 encrypted S3-compatible repository and verify its identity. It does **not** yet
 capture application data, restore it, schedule backups, prune snapshots, or run a
 recovery drill. A repository reporting `ready` is not evidence that your data is
-backed up. The [three-method backup design](backups.md) covers the next increments.
+backed up. [Shared plan configuration](backup-plans.md) is also implemented;
+[the three-method backup design](backups.md) covers the remaining capture/restore work.
 
 ## Requirements
 

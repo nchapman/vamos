@@ -18,6 +18,15 @@ var (
 
 // ErrorCode classifies identities, never diagnostic strings.
 func ErrorCode(err error) string {
+	if errors.Is(err, errBackupPlanLegacy) {
+		return "backup_plan_legacy"
+	}
+	if errors.Is(err, errBackupPlanAppState) {
+		return "backup_plan_app_state"
+	}
+	if errors.Is(err, errBackupPlanRuntime) {
+		return "backup_plan_runtime"
+	}
 	if code := backup.ErrorCode(err); code != "" {
 		return code
 	}
@@ -48,7 +57,16 @@ var refusalClasses = []struct {
 
 // RefusalMessage returns only local, action-appropriate explanatory text.
 func RefusalMessage(action, code string) string {
-	if action == "backup-repository" {
+	if action == "backup-plan" && code == "backup_plan_legacy" {
+		return errBackupPlanLegacy.Error()
+	}
+	if action == "backup-plan" && code == "backup_plan_app_state" {
+		return errBackupPlanAppState.Error()
+	}
+	if action == "backup-plan" && code == "backup_plan_runtime" {
+		return errBackupPlanRuntime.Error()
+	}
+	if action == "backup-repository" || action == "backup-plan" {
 		if message := backup.RefusalMessage(code); message != "" {
 			return message
 		}

@@ -29,48 +29,50 @@ import (
 )
 
 type Request struct {
-	Backup         *backup.Request   `json:"backup,omitempty"`
-	Partial        bool              `json:"partial,omitempty"`
-	Bindings       map[string]string `json:"bindings,omitempty"`
-	HostIdentity   string            `json:"host_identity,omitempty"`
-	ReAdd          bool              `json:"re_add,omitempty"`
-	AllowProtected bool              `json:"allow_protected,omitempty"`
-	AllowDowntime  bool              `json:"allow_downtime,omitempty"`
-	Command        []string          `json:"command,omitempty"`
-	RunOperation   string            `json:"run_operation,omitempty"`
-	ReuseData      bool              `json:"reuse_data,omitempty"`
-	ContextFormat  string            `json:"context_format,omitempty"`
-	Service        string            `json:"service,omitempty"`
-	Candidate      bool              `json:"candidate,omitempty"`
-	Replica        int               `json:"replica,omitempty"`
-	SecretName     string            `json:"secret_name,omitempty"`
-	Apply          bool              `json:"apply,omitempty"`
-	Supersede      string            `json:"supersede,omitempty"`
-	Version        int               `json:"version"`
-	Action         string            `json:"action"`
-	App            string            `json:"app"`
-	Operation      string            `json:"operation,omitempty"`
-	Config         *config.App       `json:"config,omitempty"`
-	Host           lifecycle.Config  `json:"host"`
-	Tail           int               `json:"tail,omitempty"`
+	BackupPlan     *backup.PlanRequest `json:"backup_plan,omitempty"`
+	Backup         *backup.Request     `json:"backup,omitempty"`
+	Partial        bool                `json:"partial,omitempty"`
+	Bindings       map[string]string   `json:"bindings,omitempty"`
+	HostIdentity   string              `json:"host_identity,omitempty"`
+	ReAdd          bool                `json:"re_add,omitempty"`
+	AllowProtected bool                `json:"allow_protected,omitempty"`
+	AllowDowntime  bool                `json:"allow_downtime,omitempty"`
+	Command        []string            `json:"command,omitempty"`
+	RunOperation   string              `json:"run_operation,omitempty"`
+	ReuseData      bool                `json:"reuse_data,omitempty"`
+	ContextFormat  string              `json:"context_format,omitempty"`
+	Service        string              `json:"service,omitempty"`
+	Candidate      bool                `json:"candidate,omitempty"`
+	Replica        int                 `json:"replica,omitempty"`
+	SecretName     string              `json:"secret_name,omitempty"`
+	Apply          bool                `json:"apply,omitempty"`
+	Supersede      string              `json:"supersede,omitempty"`
+	Version        int                 `json:"version"`
+	Action         string              `json:"action"`
+	App            string              `json:"app"`
+	Operation      string              `json:"operation,omitempty"`
+	Config         *config.App         `json:"config,omitempty"`
+	Host           lifecycle.Config    `json:"host"`
+	Tail           int                 `json:"tail,omitempty"`
 }
 type Response struct {
-	Backup          *backup.Response   `json:"backup,omitempty"`
-	ErrorCode       string             `json:"error_code,omitempty"`
-	Apps            *AppList           `json:"apps,omitempty"`
-	RollbackPreview *RollbackPreview   `json:"rollback_preview,omitempty"`
-	Run             *RunResult         `json:"run,omitempty"`
-	DeployPreview   *DeploymentPreview `json:"deploy_preview,omitempty"`
-	LogService      string             `json:"log_service,omitempty"`
-	LogContainer    string             `json:"log_container,omitempty"`
-	LogCandidate    bool               `json:"log_candidate,omitempty"`
-	Secret          *secrets.Entry     `json:"secret,omitempty"`
-	SecretVersions  []secrets.Entry    `json:"secret_versions,omitempty"`
-	Plan            *Plan              `json:"plan,omitempty"`
-	Version         int                `json:"version"`
-	Status          *Status            `json:"status,omitempty"`
-	Logs            string             `json:"logs,omitempty"`
-	Error           string             `json:"error,omitempty"`
+	BackupPlan      *backup.PlanResponse `json:"backup_plan,omitempty"`
+	Backup          *backup.Response     `json:"backup,omitempty"`
+	ErrorCode       string               `json:"error_code,omitempty"`
+	Apps            *AppList             `json:"apps,omitempty"`
+	RollbackPreview *RollbackPreview     `json:"rollback_preview,omitempty"`
+	Run             *RunResult           `json:"run,omitempty"`
+	DeployPreview   *DeploymentPreview   `json:"deploy_preview,omitempty"`
+	LogService      string               `json:"log_service,omitempty"`
+	LogContainer    string               `json:"log_container,omitempty"`
+	LogCandidate    bool                 `json:"log_candidate,omitempty"`
+	Secret          *secrets.Entry       `json:"secret,omitempty"`
+	SecretVersions  []secrets.Entry      `json:"secret_versions,omitempty"`
+	Plan            *Plan                `json:"plan,omitempty"`
+	Version         int                  `json:"version"`
+	Status          *Status              `json:"status,omitempty"`
+	Logs            string               `json:"logs,omitempty"`
+	Error           string               `json:"error,omitempty"`
 }
 type SecretStatus struct {
 	AppliedVersions map[string]string `json:"applied_versions,omitempty"`
@@ -255,6 +257,9 @@ func validateLegacyApp(a *config.App) error {
 	return nil
 }
 func (r Request) Mutating() bool {
+	if r.Action == "backup-plan" {
+		return r.BackupPlan != nil && r.BackupPlan.Action != "show"
+	}
 	if r.Action == "backup-repository" {
 		return r.Backup != nil && r.Backup.Mutating()
 	}
@@ -262,6 +267,12 @@ func (r Request) Mutating() bool {
 }
 
 func ValidateRequest(r Request) error {
+	if r.Action == "backup-plan" {
+		return validateBackupPlanRequest(r)
+	}
+	if r.BackupPlan != nil {
+		return errors.New("backup plan fields require a plan request")
+	}
 	if r.Action == "backup-repository" {
 		return validateBackupRequest(r)
 	}
@@ -629,6 +640,27 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 	if h == nil || h.Phase != "ready" || h.Config != r.Host || (r.HostIdentity != "" && r.HostIdentity != h.ID) {
 		err = errHostIdentity
 		return
+	}
+	if r.Action == "backup-plan" {
+		manager := backup.NewManager(m.Root, m.RuntimeDir)
+		var runtime backup.PlanRuntime
+		if r.BackupPlan.Action != "show" {
+			journal, loadErr := m.load(r.App)
+			if loadErr != nil || journal == nil || journal.HostID != h.ID {
+				return resp, errBackupPlanAppState
+			}
+			var runtimeErr error
+			runtime, runtimeErr = m.backupPlanRuntime(ctx, journal)
+			if runtimeErr != nil {
+				if errors.Is(runtimeErr, errBackupPlanLegacy) {
+					return resp, errBackupPlanLegacy
+				}
+				return resp, errBackupPlanRuntime
+			}
+		}
+		result, executeErr := manager.ExecutePlan(ctx, h.ID, r.App, *r.BackupPlan, runtime)
+		resp.BackupPlan = &result
+		return resp, executeErr
 	}
 	if r.Action == "backup-repository" {
 		manager := backup.NewManager(m.Root, m.RuntimeDir)

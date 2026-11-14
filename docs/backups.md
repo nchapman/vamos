@@ -1,9 +1,11 @@
 # Proposal: application backup and recovery
 
-**Status: application capture/restore design; repository setup is implemented.**
-Use the [repository setup guide](backup-repositories.md) for the currently supported
-`soar backup repository` commands. All app-level YAML, capture, scheduling and
-`soar restore` commands below remain proposed interfaces, not implemented features.
+**Status: application capture/restore design; repository setup and shared plan
+configuration are implemented.** Use the [repository setup guide](backup-repositories.md)
+and [shared plan guide](backup-plans.md) for supported commands. The source/set YAML,
+`backup configure` preview/apply and recorded `backup plan` are implemented only
+within that guide's explicit bounds. Capture, scheduling and `soar restore` below
+remain proposed interfaces, not implemented features.
 This document designs **PostgreSQL, SQLite, and files together**. Repository setup
 alone does not provide application backups or claim restore verification. Existing [volume](volumes.md),
 [secret](secrets.md), and [runtime](runtime-evolution.md) contracts remain in force.

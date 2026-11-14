@@ -50,6 +50,9 @@ func commandHelpArgs(path []string) ([]string, bool) {
 		return nil, false
 	}
 	if path[0] == "backup" {
+		if len(path) == 2 && slices.Contains([]string{"configure", "plan"}, path[1]) {
+			return append(append([]string{}, path...), "--help"), true
+		}
 		if len(path) >= 2 && path[1] != "repository" {
 			return nil, false
 		}

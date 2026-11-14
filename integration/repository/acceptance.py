@@ -36,6 +36,18 @@ def fixture_container_command(container, envfile, network):
     return ['docker', 'run', '-d', '--name', container, '--label', 'soar.integration.repository=true', '--env-file', envfile, '--network', network, '-p', '127.0.0.1:19000:9000', IMAGE, '/data']
 
 
+def fixture_proxy_config(cert, key):
+    return {'admin': {'disabled': True}, 'apps': {
+        'tls': {'certificates': {'load_files': [{'certificate': str(cert), 'key': str(key)}]}},
+        'http': {'servers': {'fixture': {
+            'listen': ['127.0.0.1:19001'],
+            # Static TLS only: automatic redirects would steal Soar's port 80.
+            'automatic_https': {'disable': True},
+            'tls_connection_policies': [{}],
+            'routes': [{'handle': [{'handler': 'reverse_proxy', 'upstreams': [{'dial': '127.0.0.1:19000'}]}]}],
+        }}}}}
+
+
 def cleanup_fixture(h, proc, cid, network=None):
     try:
         if proc is not None:
@@ -71,7 +83,7 @@ def run(h):
     key.chmod(0o600)
     credentials['ca_certificate'] = cert.read_text()
     proxy = work / 'caddy.json'
-    proxy.write_text(json.dumps({'admin': {'disabled': True}, 'apps': {'tls': {'certificates': {'load_files': [{'certificate': str(cert), 'key': str(key)}]}}, 'http': {'servers': {'fixture': {'listen': ['127.0.0.1:19001'], 'tls_connection_policies': [{}], 'routes': [{'handle': [{'handler': 'reverse_proxy', 'upstreams': [{'dial': '127.0.0.1:19000'}]}]}]}}}}}))
+    proxy.write_text(json.dumps(fixture_proxy_config(cert, key)))
     helper = work / 's3-admin'
     h.command(['go', 'build', '-o', helper, './integration/repository'])
     container = 'soar-repository-' + secrets.token_hex(8)
@@ -182,6 +194,9 @@ def run(h):
             clean_output(output, credentials)
         (h.artifacts / 'repository-summary.json').write_text(json.dumps({'passed': True, 'image': IMAGE, 'repository_id': identity, 'objects': objects, 'checks': ['first cross-filesystem install', 'create', 'verify twice', 'list/show/resume', 'connect', 'wrong password', 'wrong ID', 'missing prefix never initialized', 'private kit/record/scratch/output']}))
         h.log('Live S3 repository acceptance passed; synthetic records retained until owned VM deletion')
+        from repository.plan_acceptance import run as run_plan_acceptance
+        run_plan_acceptance(h, identity, credentials)
+        unchanged()
     finally:
         cleanup_fixture(h, proc, cid, network)
 

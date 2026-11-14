@@ -22,6 +22,8 @@ import (
 )
 
 const backupHelp = `Usage:
+  soar backup configure --app APP [-f backup.yaml] [--server NAME] [--yes]
+  soar backup plan --app APP [--server NAME] [--json]
   soar backup repository add [flags] NAME
   soar backup repository list [--server NAME] [--json]
   soar backup repository show [flags] NAME
@@ -61,6 +63,9 @@ func backupCommand(ctx context.Context, args []string, input io.Reader, stdout, 
 	return backupCommandInteractive(ctx, args, input, stdout, stderr, deps, secret, terminal)
 }
 func backupCommandInteractive(ctx context.Context, args []string, input io.Reader, stdout, stderr io.Writer, deps appDeps, secret secretInputFunc, terminal bool) int {
+	if len(args) > 0 && (args[0] == "configure" || args[0] == "plan") {
+		return backupPlanCommand(ctx, args, input, stdout, stderr, deps)
+	}
 	help := func() int { _ = writeHelpText(stdout, backupHelp); return 0 }
 	if len(args) == 0 {
 		return help()

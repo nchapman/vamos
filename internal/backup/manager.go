@@ -25,7 +25,10 @@ var (
 )
 
 var refusalMessages = map[string]error{
-	"backup_input": errInput, "backup_state": errStore, "backup_conflict": errConflict,
+	"backup_plan_input": errPlanInput, "backup_plan_state": errPlanState,
+	"backup_plan_conflict": errPlanConflict, "backup_plan_selection": errPlanSelection,
+	"backup_plan_repository": errPlanRepository,
+	"backup_input":           errInput, "backup_state": errStore, "backup_conflict": errConflict,
 	"backup_missing": errMissing, "backup_capacity": errCapacity, "backup_preflight": errPreflight,
 	"backup_unknown": errUnknown, "backup_verify": errVerify, "backup_resume": errResume,
 }

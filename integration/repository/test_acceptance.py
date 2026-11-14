@@ -12,6 +12,16 @@ spec.loader.exec_module(acceptance)
 
 
 class SafetyTests(unittest.TestCase):
+    def test_tls_proxy_cannot_create_automatic_port_80_listener(self):
+        config = acceptance.fixture_proxy_config(Path('cert.pem'), Path('key.pem'))
+        self.assertTrue(config['admin']['disabled'])
+        server = config['apps']['http']['servers']['fixture']
+        self.assertEqual(server['listen'], ['127.0.0.1:19001'])
+        self.assertTrue(server.get('automatic_https', {}).get('disable'))
+        self.assertEqual(server['tls_connection_policies'], [{}])
+        self.assertEqual(config['apps']['tls']['certificates']['load_files'],
+                         [{'certificate': 'cert.pem', 'key': 'key.pem'}])
+
     def test_secret_output_rejected(self):
         for field in ('access_key_id', 'secret_access_key', 'password'):
             with self.subTest(field=field):
