@@ -4,8 +4,11 @@
 configuration are implemented.** Use the [repository setup guide](backup-repositories.md)
 and [shared plan guide](backup-plans.md) for supported commands. The source/set YAML,
 `backup configure` preview/apply and recorded `backup plan` are implemented only
-within that guide's explicit bounds. Capture, scheduling and `soar restore` below
-remain proposed interfaces, not implemented features.
+within that guide's explicit bounds. Capture/create, recovery-point
+list/status/resume, scheduling and `soar restore` below remain proposed interfaces,
+not implemented features. Their syntax is
+provisional; the implemented configure/plan syntax is not. All capture and
+recovery guarantees below are design requirements, not current capabilities.
 This document designs **PostgreSQL, SQLite, and files together**. Repository setup
 alone does not provide application backups or claim restore verification. Existing [volume](volumes.md),
 [secret](secrets.md), and [runtime](runtime-evolution.md) contracts remain in force.
@@ -36,7 +39,7 @@ or frameworks. The user selects a method; preflight verifies its prerequisites.
 A declaration is not proof that the target is the declared database product.
 Never fall back from a failed database backup to copying live files.
 
-Use a separate app-level backup plan, provisionally `backup.yaml`, rather than
+Use a separate app-level backup plan, `backup.yaml` by default, rather than
 one `backup` property per service. This lets SQLite and uploads share one volume,
 and avoids giving a scoped deploy authority to replace another directory's
 backup policy. Applying a plan is a separate, preview-first operation against an
@@ -60,7 +63,7 @@ sources:
     restore:
       profile: single-owner
 sets:
-  daily:
+  app-state:
     sources: [primary]
     consistency: online-per-source
     repository: offsite
@@ -77,7 +80,8 @@ latest-secret selection rule.
 The connection targets the captured same-app database service, not an arbitrary
 URL. Its container must already be running, verified, and uniquely identified;
 initial PostgreSQL sources require a singleton service. No published database
-port is needed. Ports default to 5432; an explicit validated port can override it.
+port is needed. An omitted or zero port defaults to 5432; an explicit port from
+1–65535 can override it. `restore: {profile: single-owner}` is required, not defaulted.
 Initially allow one PostgreSQL database source per database service in a set;
 multiple databases on that server must be reported as omitted coverage, not
 silently included. Whole-cluster and multi-database privilege coordination are
@@ -101,7 +105,7 @@ sources:
     volume: data
     path: uploads
 sets:
-  daily:
+  app-state:
     sources: [entries, uploads]
     consistency: quiesced
     stop: [web]
@@ -131,24 +135,41 @@ not inferred application dependencies or deploy-order changes.
 Plan installation resolves source and stop-service names to current immutable
 service incarnations, volume IDs and bindings, under the app/host identity.
 Removing/re-adding a service or changing storage identity invalidates that
-selection; scheduled work refuses until explicitly reconfigured. A normal
-compatible deployment is not invalidation: each backup captures the then-current
+selection; future scheduled work must refuse until explicitly reconfigured.
+A normal compatible deployment is not invalidation: each backup captures the then-current
 runtime identities, configuration and secret pins anew.
 
 Plan application replaces the full backup plan, with a revision-bound preview
 and explicit approval. It does not use deployment's selected-service merge rules.
-Omitting a source from a new plan never deletes its historical backups. Preview
-lists changed coverage, schedules, repository and downtime permissions. Backup
-policy is stored separately from deployment journals; an ordinary deploy or
-rollback cannot enable, disable, or silently revert scheduled backups.
+Omitting a source does not delete repository data. Current preview returns
+current/proposed JSON metadata; `--json` only removes the heading. Changed-coverage,
+schedule and downtime-permission previews are future requirements. Backup policy
+is stored separately from deployment journals; scheduling is not implemented.
+When added, ordinary deploy or rollback must not enable, disable or silently
+revert scheduled backups.
 
-Proposed user flow (not implemented):
+**This is app-wide full replacement, unlike scoped deploy.** Use explicit
+`--server` (project bindings are ignored); `repository` is a verified registered
+name on that server, not a URL or bucket. Set names are arbitrary labels, not
+schedules. Resolution uses the effective deployed app, not local `soar.yaml`.
+
+Implemented policy-only flow (no capture or downtime authorization):
 
 ```sh
 soar backup configure --server home --app journal -f backup.yaml
 soar backup configure --server home --app journal -f backup.yaml --yes
-soar backup create --server home --app journal --set daily
-soar backup create --server home --app journal --set daily --allow-downtime --yes
+soar backup plan --server home --app journal --json
+```
+
+Configure without `--yes` only previews. `--yes` obtains a fresh preview and
+applies it without an interactive prompt; it does not approve a prior invocation.
+See the [plan guide](backup-plans.md) for complete field and validation rules.
+
+Proposed capture flow (not implemented):
+
+```sh
+soar backup create --server home --app journal --set app-state
+soar backup create --server home --app journal --set app-state --allow-downtime --yes
 soar backup list --server home --app journal
 soar backup status --server home --app journal --operation OPERATION
 soar backup resume --server home --app journal --operation OPERATION
@@ -535,9 +556,10 @@ universal backup command while only one method has actually been verified.
 - Read-only SQLite helper behavior across real Docker mounts/locking and WAL
   modes. Do not relax storage safety to make a convenience path work.
 - Archive format, file metadata support and exact resource/metadata size bounds.
-- Durable state schemas, worker deadlines, source-selection parser and final CLI
-  spelling. Existing v1–v8 deployment recovery must remain unchanged; new schema
-  support must be explicit rather than treating future versions as compatible.
+- Durable state schemas, worker deadlines, capture execution schemas and final
+  capture/restore CLI spelling (the policy parser and configure/plan CLI are
+  implemented). Existing v1–v8 deployment recovery must remain unchanged; new
+  schema support must be explicit rather than treating future versions as compatible.
 
 These are bounded feasibility/design gates, not permission to defer the SQLite
 or files recovery contract until after a PostgreSQL-only abstraction ships.

@@ -144,7 +144,7 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 func fixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	for _, p := range []string{"cmd/main.go", "internal/x.go", "integration/linux_suite.py", "examples/ledger/bin/run", "go.mod", "go.sum", "mise.toml"} {
+	for _, p := range []string{"cmd/main.go", "internal/x.go", "integration/linux_suite.py", "examples/ledger/bin/run", "docs/backup-plans.md", "docs/backups.md", "go.mod", "go.sum", "mise.toml"} {
 		p = filepath.Join(root, p)
 		if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
 			t.Fatal(err)
@@ -242,6 +242,7 @@ func TestArchive(t *testing.T) {
 	defer f.Close()
 	tr := tar.NewReader(f)
 	script := false
+	docs := map[string]bool{}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -253,9 +254,15 @@ func TestArchive(t *testing.T) {
 		if strings.Contains(h.Name, "secret") || strings.Contains(h.Name, ".env") {
 			t.Fatalf("secret included %s", h.Name)
 		}
+		if h.Name == "docs/backup-plans.md" || h.Name == "docs/backups.md" {
+			docs[h.Name] = true
+		}
 		if h.Name == "examples/ledger/bin/run" {
 			script = true
 		}
+	}
+	if len(docs) != 2 {
+		t.Fatal("documentation example tests require both backup guides in the snapshot")
 	}
 	if !script {
 		t.Fatal("nested bin script missing")

@@ -32,18 +32,78 @@ sources:
     volume: data
     path: uploads
 sets:
-  daily:
+  app-state:
     sources: [database, uploads]
     consistency: quiesced
     stop: [web]
     repository: offsite
 ```
 
-Paths must match your application's layout; plan setup does not inspect their
-contents or existence. The [three-method design](backups.md) also shows PostgreSQL
-sources, credential selectors and a PostgreSQL-plus-uploads set. PostgreSQL uses
-`restore.profile: single-owner` (the default), and port 5432 by default. Those are
-policy selections, not proof of SQL authentication or restore-profile support.
+Journal's deployed `web` service mounts `volume.name: data` at `/data`:
+`journal.sqlite` therefore selects `/data/journal.sqlite`, and `uploads` selects
+`/data/uploads`. Setup does not inspect path contents or existence.
+
+For [Rails Ledger](../examples/rails-ledger/README.md), save this complete plan
+as a separate file (for example `rails-backup.yaml`):
+
+```yaml
+app: rails-ledger
+sources:
+  primary:
+    type: postgres
+    service: database
+    database: rails_ledger
+    user: rails_ledger
+    credentials:
+      service: database
+      env: POSTGRES_PASSWORD
+    restore:
+      profile: single-owner
+sets:
+  app-state:
+    sources: [primary]
+    consistency: quiesced
+    stop: [web, worker]
+    repository: offsite
+```
+
+Rails Ledger has no uploads or application filesystem volume. Its application
+and queue tables share `rails_ledger`. The stop list names application writers
+(`web`, including its replicas, and `worker`), not the database or credential
+provider: PostgreSQL must remain running for a future logical dump. Configuring
+this policy neither stops writers nor grants permission for future downtime.
+`restore: {profile: single-owner}` is **required**, not defaulted. An omitted or
+zero PostgreSQL `port` defaults to 5432; nonzero ports must be 1–65535. These
+selections do not prove SQL authentication or restore-profile support.
+
+### Field reference
+
+Selections resolve against the **effective deployed app on the selected server**,
+not an adjacent local `soar.yaml` or pending deployment changes.
+
+| Field | Meaning |
+| --- | --- |
+| `app` | Existing deployed app; must equal `--app`. |
+| `sources` keys | User-chosen source labels, referenced by `sets.*.sources`. |
+| `service` | Deployed same-app service owning the volume or serving PostgreSQL. |
+| `volume` | Deployed service's `volume.name`, not its mount path or Docker name. |
+| `path` | Path relative to that volume's root. |
+| `database`, `user` | Explicit PostgreSQL database and login role. |
+| `credentials.service`, `credentials.env` | Deployed service and its case-sensitive secret-backed environment key. `POSTGRES_PASSWORD` is the key, **not** the secret name `database-password` or its value. |
+| `sets` keys | Arbitrary group labels such as `app-state`; names are **not schedules**. |
+| `sources`, `consistency`, `stop` in a set | Source labels, required consistency policy, and explicit writer services; see limits below. |
+| `repository` | Verified server-scoped registered repository name (here `offsite`), not a URL or bucket. Register it on the selected server first. |
+
+The credential service may differ from the PostgreSQL service. Setup verifies
+that the selected environment key has an applied secret-backed mapping, not that
+its password authenticates to PostgreSQL. Do not put credential values in YAML.
+
+### Preview, replace and inspect
+
+**Apply replaces the entire app-wide plan, unlike scoped deploy.** Omitted
+sources and sets are not merged or retained in the policy. Use explicit
+`--server`: project-directory bindings are ignored. Repository registration and
+policy application do not create backups or authorize downtime.
 
 ```sh
 # Inspect both the current policy and the fully resolved proposed policy.
@@ -53,7 +113,7 @@ soar backup configure --server home --app journal -f backup.yaml --json
 # and resolved-identity digest using compare-and-swap.
 soar backup configure --server home --app journal -f backup.yaml --yes
 
-# Read installed metadata without inspecting containers or contacting storage.
+# Read installed metadata from the host, without container or repository checks.
 soar backup plan --server home --app journal --json
 ```
 
@@ -61,7 +121,10 @@ soar backup plan --server home --app journal --json
 `--server` defaults to the registered default server; project-directory bindings
 are deliberately ignored. Flags precede arguments; these commands take no
 positional arguments. Both support `--executor PATH` and `--timeout DURATION`.
-There is no interactive approval prompt. Without `--yes`, configure only previews;
+Configure preview prints current/proposed JSON metadata with a heading;
+`--json` removes the heading, not a separate human-readable diff. Summarized
+coverage changes and schedule/downtime previews are future work. There is no
+interactive approval prompt. Without `--yes`, configure only previews;
 `--yes` approves a **fresh** preview in that invocation, not a digest copied from
 an earlier invocation. It authorizes policy replacement only, never downtime.
 
@@ -97,18 +160,28 @@ If the apply result is lost, inspect the recorded plan; do not assume no change.
 
 ## Selection limits and remaining proof
 
+App, source, set, service, volume and repository names match
+`[a-z][a-z0-9-]{0,62}`. PostgreSQL database/user names contain 1–63 ASCII letters,
+digits, underscores or hyphens. Credential environment keys match
+`[A-Za-z_][A-Za-z0-9_]{0,127}` (case-sensitive, at most 128 characters).
+
 Plans are bounded to 16 KiB, 16 named sources and 8 sets. Installed records are
 bounded to 24 KiB, including resolved bindings. YAML aliases, anchors, explicit
 tags, nulls, duplicate/unknown keys and extra documents are rejected.
 
 - SQLite and files select clean relative paths inside an owned volume. SQLite
-  selects a file; files may select `.`. Traversal, globs and environment expansion
-  are unsupported. Selections within a set cannot overlap, including SQLite's
+  selects a file; files may select `.`. Paths are at most 512 bytes and 32
+  components, clean and relative, with no trailing slash or backslash.
+  `.` means the **whole volume**, not “everything else”; selecting it alongside
+  SQLite on the same service/volume in a set is rejected as overlap. Traversal,
+  globs and environment expansion are unsupported. Selections within a set cannot overlap, including SQLite's
   reserved WAL, shared-memory and rollback-journal siblings.
 - `online-per-source` accepts PostgreSQL and SQLite without a stop list. It makes
   no cross-source atomicity guarantee. Files require `quiesced`.
-- A quiesced set declares its stop services explicitly and must include each
-  selected SQLite/file owner. The selected PostgreSQL service remains running;
+- Every set requires nonempty, unique source references and a repository name.
+  Stop lists have at most 8 unique services.
+- A quiesced set declares a nonempty list of its stop services explicitly and
+  must include each selected SQLite/file owner. The selected PostgreSQL service remains running;
   at most one database is selected per PostgreSQL service in a set. A stop list
   cannot prove that all database writers are stopped, especially external writers.
 - PostgreSQL sources require a singleton service and an applied secret-backed

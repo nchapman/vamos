@@ -26,8 +26,13 @@ Flags must precede arguments; positional arguments are not accepted.
 --server defaults to the registered default, not project bindings.
 Both commands accept --executor PATH and --timeout DURATION (default 5m).
 Configure previews by default. --yes previews then applies that exact revision
-and binding digest using compare-and-swap. No credentials are accepted.
-Plan shows recorded metadata only, not current capture readiness.
+and binding digest using compare-and-swap. Apply replaces the whole app plan;
+omitted sources/sets are removed from policy, unlike a scoped deploy.
+No credential values are accepted; PostgreSQL uses secret-backed selectors.
+Set names do not create schedules. A stop list grants no downtime permission.
+Preview prints current/proposed JSON; --json suppresses the explanatory heading.
+Plan reads recorded metadata from the host, not current capture readiness.
+See docs/backup-plans.md for fields, examples and selection limits.
 Capture, restore and schedules are not implemented. No application backups are created.
 `
 
@@ -76,8 +81,13 @@ func backupPlanCommand(ctx context.Context, args []string, stdin io.Reader, stdo
 		}
 		p, err := backup.DecodePlan(file)
 		file.Close()
-		if err != nil || p.App != *app {
-			return usageError(stderr, "invalid backup plan or app mismatch")
+		if err != nil {
+			// DecodePlan returns only fixed, value-free local diagnostics. Do not
+			// apply this policy to raw parser, filesystem or remote errors.
+			return usageError(stderr, err.Error())
+		}
+		if p.App != *app {
+			return usageError(stderr, "backup plan app does not match --app")
 		}
 		plan = &p
 	}

@@ -50,6 +50,45 @@ func TestBackupPlanRejectInputBeforeDependencies(t *testing.T) {
 	}
 }
 
+func TestBackupPlanActionableLocalErrors(t *testing.T) {
+	const valid = `app: private-canary
+sources:
+  primary:
+    type: postgres
+    service: database
+    database: app_db
+    user: app_user
+    credentials: {service: database, env: POSTGRES_PASSWORD}
+    restore: {profile: single-owner}
+sets:
+  app-state: {sources: [primary], consistency: online-per-source, repository: offsite}
+`
+	for _, tt := range []struct{ name, text, app, want string }{
+		{"missing profile", strings.Replace(valid, "    restore: {profile: single-owner}\n", "", 1), "private-canary", "PostgreSQL sources require restore.profile: single-owner"},
+		{"app mismatch", valid, "other", "backup plan app does not match --app"},
+		{"unknown field", valid + "private-canary: PRIVATE_CANARY\n", "private-canary", "invalid backup plan fields"},
+		{"syntax", "app: [PRIVATE_CANARY", "private-canary", "invalid backup plan YAML"},
+		{"invalid selector", strings.Replace(valid, "POSTGRES_PASSWORD", "PRIVATE-CANARY", 1), "private-canary", "credentials.env must be an environment-variable name"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "backup.yaml")
+			if err := os.WriteFile(filename, []byte(tt.text), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out, diagnostic bytes.Buffer
+			// Empty dependencies deliberately make any registry/network access fail the test.
+			code := backupPlanCommand(context.Background(), []string{"configure", "--app", tt.app, "-f", filename, "--yes"}, nil, &out, &diagnostic, appDeps{})
+			if code != 2 || !strings.Contains(diagnostic.String(), tt.want) {
+				t.Fatalf("code %d: %s", code, &diagnostic)
+			}
+			combined := strings.ToLower(out.String() + diagnostic.String())
+			if strings.Contains(combined, "private-canary") || strings.Contains(combined, "private_canary") {
+				t.Fatal("local input leaked")
+			}
+		})
+	}
+}
+
 func TestBackupPlanPreviewAndCAS(t *testing.T) {
 	for _, mode := range []string{"preview", "default-file", "apply", "apply-error", "wrong-target", "wrong-digest"} {
 		t.Run(mode, func(t *testing.T) {

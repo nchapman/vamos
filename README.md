@@ -97,7 +97,9 @@ scheduling and pruning are not implemented yet.** An empty repository is not a b
 The [backup design](docs/backups.md) covers PostgreSQL, SQLite and files together:
 explicit named sources, consistency and downtime policies, encrypted off-host recovery
 points, and fresh-target restore.
-Its configuration and CLI examples are proposals, not accepted syntax.
+Repository setup and plan configuration/inspection use the supported syntax in
+their guides; capture, recovery-point listing/status/resume, scheduling and restore
+interfaces in the design remain proposals.
 
 ## Inspect a host
 

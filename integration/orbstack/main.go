@@ -314,7 +314,7 @@ func archiveSource(root, dest string) (result error) {
 	}
 	tw := tar.NewWriter(f)
 	defer func() { result = errors.Join(result, tw.Close(), f.Close()) }()
-	for _, base := range []string{"cmd", "internal", "integration", "examples", "go.mod", "go.sum", "mise.toml"} {
+	for _, base := range []string{"cmd", "internal", "integration", "examples", "docs/backup-plans.md", "docs/backups.md", "go.mod", "go.sum", "mise.toml"} {
 		err = filepath.WalkDir(filepath.Join(root, base), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
