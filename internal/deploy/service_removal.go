@@ -148,29 +148,19 @@ func (m *Manager) executeServiceRemoval(ctx context.Context, r Request, j *journ
 			copy.Phase = "ready"
 			planSource = &copy
 		}
-		w, e := m.planMaintenance(ctx, planSource, "destroy", r.Operation)
+		w, e := m.preparedMaintenance(j, "service-remove", r.Operation)
 		if e != nil {
 			return resp, e
 		}
-		w.Action = "service-remove"
-		w.Service = r.Service
-		w.Plan.Action = w.Action
-		w.Network = nil
-		w.Plan.Network = ""
-		w.Images = nil
-		w.Plan.Images = nil
-		w.Files = nil
-		w.Plan.Archives = nil
-		cs := w.Containers
-		w.Containers = nil
-		w.Plan.Containers = nil
-		for _, c := range cs {
-			if c.Service == r.Service {
-				w.Containers = append(w.Containers, c)
-				w.Plan.Containers = append(w.Plan.Containers, c.Name)
+		if w == nil {
+			w, e = m.planMaintenanceScope(ctx, planSource, "destroy", r.Operation, r.Service)
+			if e != nil {
+				return resp, e
 			}
 		}
-		w.Plan.Retained = append(w.Plan.Retained, "service data, secrets, shared network, images and archives retained")
+		if w.Service != r.Service {
+			return resp, errors.New("prepared maintenance service differs")
+		}
 		resp.Plan = &w.Plan
 		if !r.Apply {
 			return resp, nil
@@ -187,13 +177,16 @@ func (m *Manager) executeServiceRemoval(ctx context.Context, r Request, j *journ
 		if e != nil {
 			return resp, e
 		}
-		if e = validateJournal(&clone, j.App); e != nil {
+		if e = validateMaintenanceCapture(&clone); e != nil {
 			if abandoning {
 				return resp, fmt.Errorf("cannot persist safe service abandonment; resume the captured deployment operation first: %w", e)
 			}
 			return resp, e
 		}
 		if e = m.maintenanceRoutes(ctx, &clone, false); e != nil {
+			return resp, e
+		}
+		if e = m.persistMaintenance(j, w); e != nil {
 			return resp, e
 		}
 		if e = m.save(&clone); e != nil {
@@ -220,6 +213,7 @@ func (m *Manager) executeServiceRemoval(ctx context.Context, r Request, j *journ
 	commitServiceRemoval(&clone)
 	if err = m.save(&clone); err == nil {
 		*j = clone
+		err = m.finishMaintenanceStorage(j)
 	}
 	return
 }

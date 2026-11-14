@@ -104,61 +104,70 @@ func ReadState(filename string) (*State, error) {
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return nil, errors.New("trailing host state data")
 	}
-	if s.Version != 1 || len(s.ID) != 32 {
-		return nil, errors.New("invalid host state version or identity")
+	if err := ValidateState(&s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// ValidateState applies the same ownership checks to local journals and remote
+// observations used to recover a client registration. It does not inspect runtimes.
+func ValidateState(s *State) error {
+	if s == nil || s.Version != 1 || len(s.ID) != 32 {
+		return errors.New("invalid host state version or identity")
 	}
 	if _, err := hex.DecodeString(s.ID); err != nil {
-		return nil, errors.New("invalid installation identity")
+		return errors.New("invalid installation identity")
 	}
 	if err := ValidateConfig(s.Config); err != nil {
-		return nil, err
+		return err
 	}
 	switch s.Phase {
 	case "installing", "ready", "removing", "removed":
 	default:
-		return nil, errors.New("invalid installation phase")
+		return errors.New("invalid installation phase")
 	}
 	if (s.Phase == "removing" || s.Phase == "removed") != s.PurgeApproved {
-		return nil, errors.New("inconsistent purge authorization in host state")
+		return errors.New("inconsistent purge authorization in host state")
 	}
 	if (s.Phase == "ready" || s.Phase == "removed") && s.Step != "complete" {
-		return nil, errors.New("incomplete terminal host state")
+		return errors.New("incomplete terminal host state")
 	}
 	if s.Phase == "ready" && !s.Configured {
-		return nil, errors.New("ready host is not configured")
+		return errors.New("ready host is not configured")
 	}
 	if !contains([]string{"planned", "install-packages", "configure", "start-services", "complete", "stop-services", "purge-packages", "remove-owned-data"}, s.Step) {
-		return nil, errors.New("invalid host lifecycle step")
+		return errors.New("invalid host lifecycle step")
 	}
 	for key := range s.Accounts {
 		if key != "passwd:caddy" && key != "group:caddy" && key != "group:docker" {
-			return nil, errors.New("invalid service account record")
+			return errors.New("invalid service account record")
 		}
 	}
 	if s.Configured {
 		if len(s.Accounts) != 3 || len(s.ExecutorSHA) != 64 {
-			return nil, errors.New("missing configured resource ownership")
+			return errors.New("missing configured resource ownership")
 		}
 		if _, err := hex.DecodeString(s.ExecutorSHA); err != nil {
-			return nil, errors.New("invalid executor digest")
+			return errors.New("invalid executor digest")
 		}
 	}
 	if s.ContainerdConfigSHA != "" {
 		if digest, err := hex.DecodeString(s.ContainerdConfigSHA); err != nil || len(digest) != 32 {
-			return nil, errors.New("invalid containerd config digest")
+			return errors.New("invalid containerd config digest")
 		}
 	}
 	seen := map[string]bool{}
 	for _, p := range s.Packages {
 		if !packageRE.MatchString(p.Name) || !versionRE.MatchString(p.Version) || seen[p.Name] {
-			return nil, errors.New("invalid package ownership record")
+			return errors.New("invalid package ownership record")
 		}
 		seen[p.Name] = true
 	}
 	if len(s.Packages) == 0 {
-		return nil, errors.New("host state has no package ownership record")
+		return errors.New("host state has no package ownership record")
 	}
-	return &s, nil
+	return nil
 }
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {

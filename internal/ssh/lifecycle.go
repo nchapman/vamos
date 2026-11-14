@@ -27,8 +27,20 @@ const statusScript = `set -eu
 for p in /var/lib/soar /var/lib/soar/host.json; do
   if [ -L "$p" ]; then printf '%s\n' 'refusing symlinked host state' >&2; exit 1; fi
 done
-active=false
-if systemctl is-active --quiet soar-host-operation.service; then active=true; fi
+# A failed query is not evidence that the operation is at rest. Capture both
+# the state and exit code, suppressing systemctl's potentially sensitive errors.
+code=0
+service_state=$(systemctl is-active soar-host-operation.service 2>/dev/null) || code=$?
+case "$service_state:$code" in
+  active:0|reloading:0|activating:0|activating:3|deactivating:0|deactivating:3)
+    active=true ;;
+  inactive:3|inactive:4|failed:3|unknown:3|unknown:4)
+    # Missing units report inactive:4 on systemd 255 or unknown on older versions.
+    active=false ;;
+  *)
+    printf '%s\n' 'cannot establish host operation service state' >&2
+    exit 1 ;;
+esac
 printf '{"active":%s,"state":' "$active"
 if [ -f /var/lib/soar/host.json ]; then
   head -c 1048577 /var/lib/soar/host.json

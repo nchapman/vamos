@@ -11,6 +11,7 @@ import subprocess
 import time
 
 from checkpoints import Barrier, Client, install
+from client_recovery import fresh_client
 from scenarios import identities, require
 
 UNIT = 'soar-host-operation.service'
@@ -211,7 +212,22 @@ def prepare(h, owner):
             require(client.wait(check=False).returncode != 0, 'killed worker reported success')
     am['services']['api']['env']['RELEASE'] = 'never-submitted'
     save(h, api, am, 'never-submitted')
-    h.cli('resume', '--server', 'local', '--app', app, operation)
+    # Lose only the client registry, retaining independently trusted SSH material.
+    # Re-registration must not bootstrap, rewrite the pending journal or restart apps.
+    observed = h.status(app)
+    journal_path = '/var/lib/soar/apps/' + app + '/state.json'
+    journal_before = h.command(['sha256sum', journal_path], user='root').stdout
+    with fresh_client(h):
+        require(h.status(app) == observed, 'connect changed pending app state')
+        h.cli('apps', '--server', 'local', '--json')
+        require(h.command(['sha256sum', journal_path], user='root').stdout == journal_before,
+                'connect or inventory rewrote the interrupted operation')
+        h.cli('resume', '--server', 'local', '--app', app, operation)
+        recovered = fixture(h, base, 'recovered-client-project', am, 'never-submitted')
+        before_bind = h.status(app)
+        h.cli('service', 'bind', 'api', '--server', 'local', '--app', app, cwd=recovered)
+        require(h.status(app) == before_bind, 'explicit project binding changed remote state')
+    progress(h, 'fresh client reconnects to populated host, inspects and resumes captured operation, then binds locally')
     after = stable(h, app, before, ('database', 'worker'))
     require(after['phase'] == 'ready' and after['services']['api']['container'] == candidate,
             'resume replaced the promoted candidate')

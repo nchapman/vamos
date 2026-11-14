@@ -70,6 +70,9 @@ func maintenanceStatus(j *journal, domain string) Status {
 }
 
 func (m *Manager) maintenanceFence(r Request) error {
+	if err := m.checkMaintenanceNamespace(); err != nil {
+		return err
+	}
 	entries, e := os.ReadDir(m.path("/var/lib/soar/apps"))
 	if errors.Is(e, os.ErrNotExist) {
 		return nil
@@ -87,6 +90,11 @@ func (m *Manager) maintenanceFence(r Request) error {
 		}
 		if j.Maintenance != nil && !(r.Action == "resume" && r.App == j.App && r.Operation == j.Maintenance.Operation) {
 			return errors.New("pending maintenance requires exact resume")
+		}
+		if j.Maintenance == nil {
+			if err := m.fenceMaintenancePublication(j, r); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -142,7 +150,10 @@ func validateMaintenance(j *journal) error {
 		return bad
 	}
 	pb, e := json.Marshal(w.Plan)
-	if e != nil || len(pb) > maxMaintenancePlanBytes {
+	if e != nil || len(pb) > maxMaintenancePlanBytes || len(w.Plan.Containers)+len(w.Plan.Images)+len(w.Plan.Archives)+len(w.Plan.Retained) > maxMaintenancePlanItems {
+		return bad
+	}
+	if ref := w.Manifest; ref != nil && (ref.Version != 1 || ref.Pages < 1 || !fullResourceID.MatchString(ref.Root) || !fullResourceID.MatchString(ref.Binding)) {
 		return bad
 	}
 	phase := "cleaning"
@@ -164,7 +175,7 @@ func validateMaintenance(j *journal) error {
 	if w.Action == "destroy" && (w.OldCaddy == "" || w.NewCaddy == "") {
 		return bad
 	}
-	if len(w.Containers)+len(w.Images)+len(w.Files)+len(w.Plan.Retained) > maxMaintenancePlanItems {
+	if w.Manifest == nil && (w.ResourcesDone || w.Plan.DetailsIncomplete || len(w.Containers)+len(w.Images)+len(w.Files)+len(w.Plan.Retained) > maxMaintenancePlanItems) {
 		return bad
 	}
 	seen := map[string]bool{}
@@ -194,13 +205,10 @@ func validateMaintenance(j *journal) error {
 			}
 		}
 	}
-	if len(w.Plan.Archives) != len(w.Files) {
+	if !maintenancePreviewMatches(w) {
 		return bad
 	}
-	for i, v := range w.Files {
-		if len(w.Plan.Archives) != len(w.Files) || w.Plan.Archives[i] != v.Name {
-			return bad
-		}
+	for _, v := range w.Files {
 		if !maintenanceFile.MatchString(v.Name) || !fullResourceID.MatchString(v.SHA256) {
 			return bad
 		}
@@ -213,19 +221,6 @@ func validateMaintenance(j *journal) error {
 	}
 	if w.Network != nil && (w.Network.Name != "soar-"+j.App || !fullResourceID.MatchString(w.Network.ID)) {
 		return bad
-	}
-	if len(w.Plan.Containers) != len(w.Containers) || len(w.Plan.Images) != len(w.Images) {
-		return bad
-	}
-	for i, v := range w.Containers {
-		if w.Plan.Containers[i] != v.Name {
-			return bad
-		}
-	}
-	for i, v := range w.Images {
-		if w.Plan.Images[i] != v {
-			return bad
-		}
 	}
 	return nil
 }
@@ -362,6 +357,9 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		return resp, errors.New("app is unmanaged")
 	}
 	if j.Phase == "destroyed" {
+		if err = m.finishMaintenanceStorage(j); err != nil {
+			return
+		}
 		if r.Action == "resume" && r.Operation != j.Operation {
 			return resp, errors.New("resume operation does not match")
 		}
@@ -373,6 +371,9 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		return resp, m.maintenanceVolumes(c, j, resp.Plan)
 	}
 	if r.Action == "resume" && j.Maintenance == nil {
+		if err = m.finishMaintenanceStorage(j); err != nil {
+			return
+		}
 		if r.Operation != j.LastMaintenanceOperation {
 			return resp, errors.New("resume operation does not match")
 		}
@@ -386,9 +387,15 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		if r.Operation == j.LastMaintenanceOperation || maintenanceRetainedOperation(j, r.Operation) {
 			return resp, errors.New("operation ID already used")
 		}
-		w, e := m.planMaintenance(c, j, r.Action, r.Operation)
+		w, e := m.preparedMaintenance(j, r.Action, r.Operation)
 		if e != nil {
 			return resp, e
+		}
+		if w == nil {
+			w, e = m.planMaintenance(c, j, r.Action, r.Operation)
+			if e != nil {
+				return resp, e
+			}
 		}
 		resp.Plan = &w.Plan
 		if w.Action == "destroy" {
@@ -411,13 +418,16 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		if w.Action == "destroy" {
 			clone.Phase = "destroying"
 		}
-		if e = validateJournal(&clone, j.App); e != nil {
+		if e = validateMaintenanceCapture(&clone); e != nil {
 			return resp, e
 		}
 		if w.Action == "destroy" {
 			if e = m.maintenanceRoutes(c, &clone, false); e != nil {
 				return resp, e
 			}
+		}
+		if e = m.persistMaintenance(j, w); e != nil {
+			return resp, e
 		}
 		if e = m.save(&clone); e != nil {
 			return resp, e
@@ -446,6 +456,7 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		clone.LastError = ""
 		if err = m.save(&clone); err == nil {
 			*j = clone
+			err = m.finishMaintenanceStorage(j)
 		}
 		return
 	}
@@ -467,5 +478,6 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		return
 	}
 	*j = journal{Version: 1, Status: Status{App: t.App, Operation: t.Operation, Phase: t.Phase}, HostID: t.HostID}
+	err = m.finishMaintenanceStorage(j)
 	return
 }

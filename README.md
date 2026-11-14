@@ -4,6 +4,12 @@ A small, Dockerfile-first app platform for one server. The intended stack is a G
 
 **Multi-service apps work:** up to eight Dockerfile-built or prebuilt-image public/private services per app, with private DNS, remote builds, readiness-checked public replacement, stop/start private replacement, Caddy routing/automatic HTTPS, and captured-input recovery. Root-only Ubuntu setup/teardown, preview-first app cleanup/destruction, and staged runtime secrets are implemented. Persistent local volumes use single-writer stop/start with durable public 503 routing and retained data. Protected manual updates, scoped deployment and noninteractive one-off commands are implemented; preview-first [code/config rollback](docs/rollback.md) is also implemented. See [the deployment boundary](docs/deployment.md) and [multi-service recovery semantics](docs/multi-service.md) before using it.
 
+For day-to-day SRE work, use the [whole-system operations checklist](docs/operations.md):
+external health checks, rollout capacity, retention, recovery custody, and the
+operator maintenance boundary. Same-host replicas are not HA; application
+capture/restore and a supported host-upgrade/ownership-reconciliation API are
+not implemented.
+
 ## Everyday commands
 
 ```sh
@@ -126,8 +132,6 @@ See [the host inspection boundary](docs/host-inspection.md) for protocol details
 mise run build  # Builds the client plus Linux amd64/arm64 executors in bin/
 ./bin/soar server add --yes --domain apps.example.com test root@server.example.com
 ./bin/soar server status test
-# Repeating add with the same identity verifies an already-ready installation.
-./bin/soar server add --yes --domain apps.example.com test root@server.example.com
 ./bin/soar server teardown --yes --purge test
 ```
 
@@ -135,7 +139,38 @@ Use a **fresh, dedicated, disposable host** for initial testing. Keep the Linux 
 
 Teardown is intentionally conservative: containers, images, volumes, build cache, custom networks, containerd resources, changed configuration, package-version drift, and mounted data block it. `--purge` authorizes deleting owned runtime data/certificates, not arbitrary workloads. A small ownership receipt remains for retry safety. APT/system logs and caches are not erased; this is not a byte-for-byte restoration of the original OS.
 
-Remote operations run in a bounded systemd worker and survive SSH loss. If interrupted, query `server status NAME TARGET` before retrying the same command. An explicit target permits recovery even when setup failed before local registration. See [the lifecycle contract and recovery notes](docs/host-lifecycle.md).
+Remote mutations run in a bounded systemd worker and survive SSH loss. If interrupted, query `server status NAME TARGET` before choosing recovery. An explicit target permits diagnosis even when setup failed before local registration. Retry the same add only for an incomplete bootstrap; if the host reached ready, use connect to recover local registration. See [the lifecycle contract and recovery notes](docs/host-lifecycle.md).
+
+## Reconnect to an existing host
+
+On a fresh client or after losing the local registry, restore noninteractive root
+SSH access and independently verify the host key. Use the **installed** name and
+base domain, not a new identity:
+
+```sh
+soar server status --json test root@server.example.com
+soar server connect --domain apps.example.com test root@server.example.com
+soar apps --server test
+soar status --server test --app workspace
+# After inspecting the existing service, bind each intended source directory:
+soar service bind api -f api/soar.yaml --server test
+```
+
+Connect verifies supported Ubuntu/root access, valid ready host ownership, exact
+name/domain, no active host lifecycle worker, and no conflicting local registration.
+It writes **only the local server registry**, prints the installation ID, and makes
+the first registration the default. Repeats verify again. It defaults to a 15-second
+`--timeout` and has no `--yes`, `--executor`, or `--json` option. It needs no executor
+artifact, but subsequent app commands need the matching client/Linux executor
+bundle. Connect does not bind project services or change their normal target;
+explicit `--server` selects only that invocation.
+
+Apps can be pending while the host stays ready; registration and recorded metadata
+are not proof of health. **Do not rerun add on a populated host to reconnect**:
+add is bootstrap and can refuse app-managed configuration. Connect is neither
+host-loss recovery nor upgrade/drift repair. See the full
+[fresh-client procedure](docs/host-lifecycle.md#reconnect-from-a-fresh-client) and
+[operations/recovery checklist](docs/operations.md).
 
 ## Deploy a stateless web app
 

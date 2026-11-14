@@ -512,7 +512,14 @@ func (m *Manager) save(j *journal) error {
 			return err
 		}
 	}
-	b, e := json.Marshal(j)
+	// Hydrated records are process-local. The journal contains only the bounded
+	// immutable chain reference, preview, and execution stage.
+	disk := *j
+	if j.Maintenance != nil && j.Maintenance.Manifest != nil {
+		w := maintenanceDiskIntent(j.Maintenance)
+		disk.Maintenance = &w
+	}
+	b, e := json.Marshal(&disk)
 	if e != nil {
 		return e
 	}
@@ -565,6 +572,17 @@ func (m *Manager) load(app string) (*journal, error) {
 	if d.Decode(&extra) != io.EOF {
 		return nil, errors.New("trailing journal JSON")
 	}
+	if j.Maintenance != nil && j.Maintenance.Manifest != nil {
+		w := j.Maintenance
+		if len(w.Containers)+len(w.Images)+len(w.Files) != 0 {
+			return nil, errors.New("mixed inline and paged maintenance authority")
+		}
+		if e = m.hydrateMaintenance(&j, w); e != nil {
+			// A missing authority page is corrupt managed state, never an absent
+			// app. Do not expose os.ErrNotExist to the unmanaged-app dispatcher.
+			return nil, errors.New("invalid maintenance manifest: " + diagnostic(e.Error()))
+		}
+	}
 	if e = validateJournal(&j, app); e != nil {
 		return nil, e
 	}
@@ -592,6 +610,9 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		if err != nil {
 			resp.Error = diagnostic(err.Error())
 			resp.ErrorCode = ErrorCode(err)
+		}
+		if r.Action == "cleanup" || r.Action == "destroy" || r.Action == "service-remove" || (resp.Plan != nil && (resp.Plan.Action == "cleanup" || resp.Plan.Action == "destroy" || resp.Plan.Action == "service-remove")) {
+			resp, err = boundMaintenanceResponse(resp, err)
 		}
 	}()
 	if err = ValidateRequest(r); err != nil {
@@ -780,6 +801,9 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		return
 	}
 	if err = m.maintenanceFence(r); err != nil {
+		return
+	}
+	if err = m.recoverMaintenancePublication(j, &r); err != nil {
 		return
 	}
 	if r.Action == "run" {

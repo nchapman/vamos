@@ -1,4 +1,4 @@
-# Host bootstrap and teardown
+# Host bootstrap, reconnect, and teardown
 
 ## Supported boundary
 
@@ -11,9 +11,11 @@ bin/soar server status --json test
 bin/soar server teardown --yes --purge test
 ```
 
-Flags precede positional arguments. Setup requires both name and target. Status and teardown resolve a registered name, or accept `NAME TARGET` for recovery when no registration exists. An explicit target cannot override a conflicting local registration. Names are lowercase DNS labels; the base domain is a lowercase hostname without a scheme, port, or wildcard.
+Flags precede positional arguments. Setup and connect require both name and target. Status and teardown resolve a registered name, or accept `NAME TARGET` for recovery when no registration exists. An explicit target cannot override a conflicting local registration. Names are lowercase DNS labels; the base domain is a lowercase hostname without a scheme, port, or wildcard.
 
-`mise run build` bundles `soar-linux-amd64` and `soar-linux-arm64` beside the native client. `--executor FILE` overrides artifact selection; ELF architecture must match the inspected host. Artifacts are built locally, not downloaded from an unsigned release URL. The root executor is installed at `/usr/local/lib/soar/executor`; repeat setup verifies its recorded digest rather than silently upgrading it.
+`mise run build` bundles `soar-linux-amd64` and `soar-linux-arm64` beside the native client. Keep a matching client/Linux executor bundle; on commands that stage an executor, `--executor FILE` overrides artifact selection and ELF architecture must match the inspected host. Artifacts are built locally, not downloaded from an unsigned release URL. Inspect, host status, and connect do not need an executor artifact. The root executor is installed at `/usr/local/lib/soar/executor`; repeat setup verifies its recorded digest rather than silently upgrading it. App commands stage their matching executor without replacing that installed binary.
+
+See the [whole-system operations checklist](operations.md) for health monitoring, capacity, independent recovery custody, and the **unsupported host-upgrade/ownership-reconciliation gap**.
 
 ## Setup
 
@@ -24,11 +26,45 @@ Flags precede positional arguments. Setup requires both name and target. Status 
 5. Refresh Ubuntu's configured APT indexes and simulate installing `docker.io`, `docker-buildx`, and `caddy` without recommendations. Refuse changes to pre-existing packages. Record every newly installed dependency and exact version **before** installing anything.
 6. Mask the new services so package scripts cannot start an unconfigured default Caddy site. Install the recorded package versions; reject package-plan drift. Installer logs are drained with bounded diagnostic tails, not killed for being verbose.
 7. Write a Caddy configuration with its admin listener on `127.0.0.1:2019` and no app routes. Configure Docker with no shared default bridge and the bounded `local` log driver. Record managed file digests and service-account identities, unmask/enable/start services, and check Docker, Buildx, Caddy, and Caddy's live configuration.
-8. Mark the host ready, then register it locally. The first local registration becomes the default. A local write failure does not undo a successful remote installation; rerun the same add command to register it.
+8. Mark the host ready, then register it locally. The first local registration becomes the default. A local write failure does not undo a successful remote installation; use `server connect` with the same identity once host status confirms ready and no active worker.
 
 State lives in the private `/var/lib/soar/host.json` ownership manifest/journal. Writes use a synced temporary file and atomic replacement. The local registry is `soar/registry.json` under Go's platform user-config directory (`~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux, `%AppData%` on Windows), protected by a stable advisory lock. It is not app configuration and is not stored in the project.
 
-A repeated add with the same name/domain verifies a ready host without reinstalling packages or restarting healthy services. Changing the identity, overwriting drifted configuration, adopting existing resources, and upgrading package/executor versions are not implicit operations.
+A repeated add with the same name/domain can verify an unchanged, bootstrap-only ready host without reinstalling packages or restarting healthy services. **Add is bootstrap, not reconnect:** on a populated host it may reject the app-managed Caddyfile because it differs from the bootstrap-only configuration. Do not rerun add to recover a lost local registry after deploying apps. Changing the identity, overwriting drifted configuration, adopting existing resources, and upgrading package/executor versions are not implicit operations.
+
+## Reconnect from a fresh client
+
+Use this when the host still exists with its Soar ownership state, but the local server registry is missing. Obtain the expected installed server name, base domain, and installation ID from trusted operational records. Establish the SSH host key independently and restore noninteractive root key/agent access; connect does not accept unknown or changed keys. An SSH alias may supply the user, key, port, and jump host.
+
+```sh
+# Read-only host observations work before local registration.
+soar server inspect root@host
+soar server status --json test root@host
+# Use the exact installed name and base domain; flags precede NAME TARGET.
+soar server connect --domain apps.example.com test root@host
+# Inspect recorded apps, then live observations for each intended app.
+soar apps --server test
+soar status --server test --app workspace
+soar logs --server test --app workspace --service api --tail 100
+```
+
+Connect uses read-only inspection to require root on supported Ubuntu, then host status to require a valid `ready` ownership manifest, the exact name/domain, and no active host lifecycle worker. Conflicting local registrations are refused. It writes **only the local server registry**, prints the installation ID for comparison with your records, and makes the first registration the default. Repeating connect verifies the host again. The verification deadline defaults to 15 seconds (`--timeout 30s` can override it); there is no `--yes`, `--executor`, or `--json` option for connect. Ordinary SSH authentication/audit side effects still apply.
+
+The host can remain `ready` while apps have incomplete operations. Connect does not require apps to be settled and does not inspect or repair their runtimes. It does not bootstrap, replace an executor, upgrade packages, repair drift, deploy, or create project service bindings. A successful connection and installation ID are identity evidence, **not proof of application health**. Host status fails when it cannot establish worker state (for example a system-bus error); a failed query is not permission to assume inactivity.
+
+For app inventory/status/logs and service binding, supply the matching trusted client/Linux executor bundle for the host architecture. These commands stage an executor; connect itself does not. Inspect the remote service identity before acknowledging it in **each** source directory:
+
+```sh
+# These manifests declare the existing workspace app and their respective services.
+soar service bind web -f frontend/soar.yaml --server test
+soar service bind api -f api/soar.yaml --server test
+# Alternatively, from the intended directory, without loading a manifest:
+# soar service bind api --app workspace --server test
+```
+
+`-f` saves the service binding beside that manifest; `--app` saves it in the current directory. Repeat for every existing service the directory will manage. Binding reads remote status and writes local metadata only. An explicit `--server` selects this invocation, not a new normal project target; keep it on subsequent commands unless the project's default-target binding has been deliberately established and checked. Do not copy or edit identity records to bypass a stale binding. See [independent service directories](services.md#explicit-identity-bindings).
+
+This is **lost-client-registration recovery, not host-loss recovery**. Missing/corrupt ownership state, a different host identity, or a non-ready host requires diagnosis, not forced registration. Recovering application data on a newly commissioned host requires a separately tested external migration/recovery procedure; Soar application capture/restore is not implemented.
 
 ## Teardown
 
@@ -55,17 +91,26 @@ The client defaults to a 25-minute wait, while the executor has a 20-minute oper
 
 ```sh
 bin/soar server status test root@host
-# If active=true, let the worker settle. Then repeat the same authorized operation.
+# If active=true, let the worker settle. For an incomplete bootstrap only,
+# retry the SAME captured identity with the original matching executor bundle.
 bin/soar server add --yes --domain apps.example.com test root@host
-# Or explicitly remove a partial installation:
+# If setup instead reached ready, recover local registration with connect:
+bin/soar server connect --domain apps.example.com test root@host
+# Alternatively, explicitly remove a partial installation after diagnosis:
 bin/soar server teardown --yes --purge test root@host
 ```
 
-Status is read-only and shows the saved phase/step, active-worker flag, and last recorded error. A lost response after successful setup/teardown is recoverable through the receipt. Worker staging directories normally disappear on completion. A hard crash during upload or before worker launch can leave a private `/run/soar-stage.*` directory until reboot; do not remove a stage belonging to an active worker.
+Status is read-only and shows the saved phase/step, active-worker flag, and last recorded error; it is not a runtime health check. Unexpected systemd output or a failed system-bus query returns an error rather than falsely reporting an inactive worker (the recognized missing-unit result is distinct). A lost response after successful setup/teardown is recoverable through the receipt. Worker staging directories normally disappear on completion. A hard crash during upload or before worker launch can leave a private `/run/soar-stage.*` directory until reboot; do not remove a stage belonging to an active worker.
 
 Partial package transactions are not repaired by a broad `apt --fix-broken`, `dpkg --configure -a`, autoremove, or prune command. Retry uses the captured package list; broken dpkg state or unavailable pinned versions may require operator diagnosis. Resolve the exact reported problem before retrying. If a stopped/unhealthy daemon prevents proving that data is unused, restore it and inspect resources rather than bypassing the guard. A deadline during APT can leave pending dpkg work; the receipt is not a promise of transactional OS rollback.
 
 The internal JSON protocol adds `bootstrap` and `teardown` operations with `config`, `confirm`, and `purge` fields. Unauthorized/invalid requests fail before inspection or mutation. Success returns `host_state`; failure returns the versioned error envelope with `lifecycle_failed`. There are no arbitrary remote path or command fields.
+
+## Package maintenance is not a host upgrade API
+
+There is **no supported in-place host upgrade or ownership-reconciliation API**. Neither add nor connect blesses new package versions, managed file hashes, or an executor replacement. Package drift can block setup/teardown even while app operations still work. Do not edit ownership journals or hashes to make checks pass, and do not freeze vulnerable packages as a workaround.
+
+The [maintenance procedure](operations.md#os-and-runtime-maintenance-boundary) describes operator-controlled distro maintenance: test on a disposable equivalent host, establish independently tested recovery, schedule an outage, exclude concurrent root/Soar operations, and verify daemon restart, runtime, route, and data invariants afterward. This is an operator procedure, not a supported automated Soar workflow; the gap remains until implemented and tested. For a supported fresh-identity host lifecycle, commission a new host and use a tested external application migration rather than pretending Soar restore exists.
 
 ## Verification
 

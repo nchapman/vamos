@@ -541,6 +541,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 		if p := response.Plan; p != nil {
+			if notice := maintenanceDetailNotice(p); notice != "" {
+				if _, err := fmt.Fprintln(stdout, notice); err != nil {
+					return lifecycleError(stderr, err)
+				}
+			}
 			if _, err := fmt.Fprintf(stdout, "Plan: %s / %s\nContainers: %q\nImages: %q\nArchives: %q\nNetwork: %q\nRetained: %q\n", p.Action, p.App, p.Containers, p.Images, p.Archives, p.Network, p.Retained); err != nil {
 				return lifecycleError(stderr, err)
 			}

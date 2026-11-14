@@ -44,12 +44,12 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 		},
 		"cleanup": {
 			"soar cleanup [OPTIONS]", "app yes json",
-			"Preview owned-resource cleanup unless --yes. Retained data and secrets are not deleted.\n--json emits the full response, including the exact plan. Preview success does not mean resources were deleted.",
+			"Preview owned-resource cleanup unless --yes. Retained data and secrets are not deleted.\n--json emits the full response; large plans explicitly summarize details with exact totals. Preview success does not mean resources were deleted.",
 			"soar cleanup --server home --app notes --json",
 		},
 		"destroy": {
 			"soar destroy [OPTIONS]", "app yes json",
-			"Preview app destruction unless --yes. Retain data and secret versions; remove live app resources.\n--json emits the full response, including the exact plan. Preview success does not mean the app was destroyed.",
+			"Preview app destruction unless --yes. Retain data and secret versions; remove live app resources.\n--json emits the full response; large plans explicitly summarize details with exact totals. Preview success does not mean the app was destroyed.",
 			"soar destroy --server home --app notes",
 		},
 		"service-bind": {
@@ -59,7 +59,7 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 		},
 		"service-remove": {
 			"soar service remove NAME [OPTIONS]", "app yes allow-protected json",
-			"Preview service removal unless --yes. A manual service also requires --allow-protected.\nRetain data and secret versions. --json emits the full response, including the exact plan.",
+			"Preview service removal unless --yes. A manual service also requires --allow-protected.\nRetain data and secret versions. --json emits the full response; large plans explicitly summarize details with exact totals.",
 			"soar service remove worker --server home --app notes",
 		},
 	}

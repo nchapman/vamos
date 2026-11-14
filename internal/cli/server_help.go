@@ -18,6 +18,10 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		usage = "soar server add [OPTIONS] --yes --domain DOMAIN NAME TARGET"
 		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDNS is configured separately. Started mutations survive client disconnection."
 		names = append(names, "yes", "domain", "executor")
+	case "connect":
+		usage = "soar server connect [OPTIONS] --domain DOMAIN NAME TARGET"
+		notes = "Verify an existing ready installation and register it locally. Requires root SSH.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME and DOMAIN must match the installed identity; SSH host keys must already be trusted."
+		names = append(names, "domain")
 	case "status":
 		usage = "soar server status [OPTIONS] NAME [TARGET]"
 		notes = "Read the host lifecycle journal. TARGET is optional for registered names;\nprovide it to recover an unregistered host."

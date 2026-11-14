@@ -206,6 +206,17 @@ func (p *presentation) retainedReport(s *deploy.Status, selected string) string 
 	}
 	return b.String()
 }
+func maintenanceDetailNotice(plan *deploy.Plan) string {
+	if !plan.DetailsIncomplete {
+		return ""
+	}
+	text := "Details are incomplete: displaying a bounded subset."
+	if totals := plan.Totals; totals != nil {
+		text += fmt.Sprintf("\nExact totals: containers=%d images=%d archives/files=%d retained=%d.", totals.Containers, totals.Images, totals.Archives, totals.Retained)
+	}
+	return text + "\nApproval covers the entire recomputed plan, not just the displayed details."
+}
+
 func (p *presentation) maintenanceReport(response deploy.Response, r appReport) string {
 	var b strings.Builder
 	if !r.mutation {
@@ -225,6 +236,9 @@ func (p *presentation) maintenanceReport(response deploy.Response, r appReport) 
 	b.WriteString("\n" + p.ink(role, message, true) + "\n")
 	if plan := response.Plan; plan != nil {
 		b.WriteString(p.field("Plan", plan.Action+" / "+plan.App))
+		if notice := maintenanceDetailNotice(plan); notice != "" {
+			b.WriteString(p.prose(notice))
+		}
 		if !r.apply && (r.action == "destroy" || r.action == "service-remove") {
 			b.WriteString(p.prose("Applying this plan removes live resources. Retained data is not a backup."))
 		}
@@ -234,7 +248,11 @@ func (p *presentation) maintenanceReport(response deploy.Response, r appReport) 
 			values []string
 		}{{"Containers", plan.Containers}, {"Images", plan.Images}, {"Archives", plan.Archives}} {
 			if len(group.values) == 0 {
-				b.WriteString(p.field(group.label, "(none)"))
+				empty := "(none)"
+				if plan.DetailsIncomplete {
+					empty = "(none displayed)"
+				}
+				b.WriteString(p.field(group.label, empty))
 				continue
 			}
 			b.WriteString(p.ink("secondary", group.label, false) + "\n")
@@ -245,7 +263,11 @@ func (p *presentation) maintenanceReport(response deploy.Response, r appReport) 
 		b.WriteString(p.field("Network", plan.Network))
 		b.WriteString(p.section("Retain"))
 		if len(plan.Retained) == 0 {
-			b.WriteString(p.prose("No retained resources listed in this plan."))
+			if plan.DetailsIncomplete {
+				b.WriteString(p.prose("No retained entries displayed."))
+			} else {
+				b.WriteString(p.prose("No retained resources listed in this plan."))
+			}
 		}
 		for _, value := range plan.Retained {
 			b.WriteString("  " + displayText(value) + "\n")

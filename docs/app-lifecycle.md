@@ -44,7 +44,14 @@ It can remove stopped older containers, obsolete captured contexts, and unused u
 
 Image references/tags are checked again during apply. An image that becomes shared is retained rather than forcing removal. The returned plan is the authorized plan, not a per-object deletion receipt; newly shared images may remain. Cleanup does not discard their provenance. Shared base images, BuildKit cache, certificates, and unknown resources are outside this command's ownership scope.
 
-Plans are deliberately bounded: at most 256 planned resources/retention entries and 8 KiB of preview JSON. Larger plans fail before mutation. Docker inventories are also bounded; failed or truncated inventory is never interpreted as an empty host.
+Public preview details are bounded to 1,024 resource/retention entries and 32 KiB
+of JSON, independently of captured deletion authority. Large previews explicitly
+report `details_incomplete: true` and exact category `totals`; the displayed
+arrays are only a subset, not an exhaustive list. Approval covers the **entire
+freshly recomputed plan**, including omitted details. Small previews retain their
+complete detail arrays. The returned plan is still authorization, not a deletion
+receipt. Docker inventories remain bounded; failed or truncated inventory is
+never interpreted as an empty host.
 
 ## Destruction and recovery
 
@@ -52,13 +59,13 @@ Destruction removes the app's generated route, verified owned containers, its em
 
 The sequence is:
 
-1. Capture exact container/network IDs, immutable image IDs, and hashes of known files in a durable maintenance record.
+1. Capture exact container/network IDs, immutable image IDs, and hashes of known files in a durable maintenance record. New operations publish private hash-linked pages under `/var/lib/soar/maintenance/<app>/` before installing their bounded journal reference. Historical inline maintenance records remain resumable.
 2. Persist old/new whole-host Caddy route intent.
 3. Validate/reload and prove the route-free live Caddy configuration.
-4. Disable restart, stop, and remove only recorded, reverified containers; remove safe images and the empty recorded network; unlink only hash-matching recorded files.
+4. Disable restart, stop, and remove only recorded, reverified containers; remove safe images and the empty recorded network. Persist completion of this resource phase before unlinking hash-matching recorded files, so interrupted provenance deletion cannot cause another image/container deletion attempt.
 5. Replace app state with a minimal completed-destruction receipt.
 
-Containers with mounts, unexpected network attachments, replaced identities, unknown files, and unrecognized Caddy drift block the operation. No recursive app-directory removal is used. Shared/tagged images survive destruction; their IID records are intentionally discarded, so subsequent cleanup of those images is the operator's responsibility.
+Containers with unverified mounts, unexpected network attachments, replaced identities, unknown files, and unrecognized Caddy drift block the operation. No recursive app-directory removal is used. Shared/tagged images survive destruction; their IID records are intentionally discarded, so subsequent cleanup of those images is the operator's responsibility.
 
 An interruption leaves a resumable operation. While maintenance is pending, other app mutations are fenced even after the original worker exits. Host setup/teardown also refuses active or incomplete app state. Status and logs remain available (logs require a surviving current container).
 
@@ -67,7 +74,17 @@ An interruption leaves a resumable operation. While maintenance is pending, othe
 ./bin/soar resume --server droplet --app temporary-app OPERATION_ID
 ```
 
-Resume replays only the saved plan and rechecks route removal before continuing destructive work. Missing objects count as completed only after a successful inventory query; a replacement with the same name is not adopted. Successful cleanup and destruction can be resumed idempotently until a later operation replaces their completion record.
+The private page chain binds the host, app, operation, route intent and full
+captured resource list. Missing, substituted or corrupt pages fail closed.
+Publication that completed before the app-journal write still fences mutations;
+the refusal identifies the app and exact operation to resume. A never-published
+preparation grants no deletion authority and may be rebuilt only against the
+unchanged journal. Completed operations clean up their private pages; a crash
+during that cleanup can be reconciled by exact-operation resume or subsequent
+maintenance. Leftover maintenance state can block host teardown; do not remove it
+manually to bypass the guard.
+
+Resume replays only the published plan and rechecks route removal before continuing destructive work. Missing objects count as completed only after a successful inventory query; a replacement with the same name is not adopted. Successful cleanup and destruction can be resumed idempotently until a later operation replaces their completion record.
 
 A destroyed app can be deployed again normally. The small receipt remains for status/retry safety. Explicit host teardown/purge accepts only strictly decoded, matching-host completed receipts with no extra app files; existing workload, image, build-cache, mount, and ownership checks remain intact. It does not treat a receipt as proof that Docker is empty, and retained secret stores still block host teardown/purge.
 
@@ -79,13 +96,13 @@ New deployments select an explicit loopback host port, record it before Docker c
 
 All app commands now use a matching trusted local Linux executor artifact. Status/logs upload it to a private temporary directory, execute it directly, and remove that staging directory; they do not use the mutation worker or replace the bootstrap-owned installed executor. This avoids older strict state decoders rejecting newer deployment/maintenance fields. `server inspect` remains unchanged and does not upload an executor.
 
-This is a **root-SSH administration interface**, not a restricted read-only credential API. Status/logs are read-only with respect to application/runtime state but stage executable files. Use trusted client binaries and executor artifacts; the payload checksum checks transfer integrity, not software authenticity. Older clients may reject newer journal fields; update the client and companion Linux executor artifacts together.
+This is a **root-SSH administration interface**, not a restricted read-only credential API. Status/logs are read-only with respect to application/runtime state but stage executable files. Use trusted client binaries and executor artifacts; the payload checksum checks transfer integrity, not software authenticity. Older clients may reject newer journal or summarized-preview fields; update the client and companion Linux executor artifacts together before managing these operations. An older strict decoder fails closed rather than interpreting a partial preview as complete.
 
 ## Verification
 
 Historical evidence below predates storage lifecycle acceptance unless explicitly noted. See [persistent volumes](volumes.md) for the storage boundary; no new live/full-suite results are implied.
 
-Offline tests cover preview immutability, maintenance fencing, strict receipts and teardown refusal, same-name replacement detection, network identity changes, image sharing/tag retention, archive hash drift, replay of missing resources, Caddy route proof, cross-app route isolation, port intent/recreation, and bounded journals. External Docker/Caddy boundaries are simulated.
+Offline tests cover preview immutability, maintenance fencing, strict receipts and teardown refusal, same-name replacement detection, network identity changes, image sharing/tag retention, archive hash drift, replay of missing resources, Caddy route proof, cross-app route isolation, port intent/recreation, and bounded journals. Capacity regressions exercise actual planning with 500, 1,024 and 4,096 keyed IID receipts, repeated cleanup and interrupted destruction, plus a 20,000-file intent beyond the old journal ceiling. They also cover page corruption/substitution, interrupted publication, scoped removal with unrelated history, run-removal proofs and preserved replay fences. These are filesystem-backed tests with simulated runtime boundaries, not thousands of live deployments. External Docker/Caddy boundaries are simulated.
 
 On the Ubuntu 26.04 amd64 droplet with Docker 29.1.3 and Caddy 2.6.2:
 

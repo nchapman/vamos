@@ -36,6 +36,8 @@ Usage:
   soar validate [-f soar.yaml]           Validate local app configuration
   soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
+  soar server connect --domain DOMAIN NAME TARGET
+                                      Register an existing host without remote changes
   soar server status NAME [TARGET]     Read the host lifecycle journal
   soar server teardown [flags] NAME    Remove an unused owned installation
   soar backup repository [COMMAND]      Register and inspect backup repositories

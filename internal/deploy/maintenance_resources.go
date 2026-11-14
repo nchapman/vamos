@@ -185,17 +185,9 @@ func (m *Manager) resourceReferences(ctx context.Context, j *journal, exclude ma
 		for _, id := range other.BuildImages {
 			refs[id] = true
 		}
-		// Decode the optional intent independently so this helper does not depend on orchestration fields.
-		b, _, e := resourceRead(filepath.Join(m.dir(d.Name()), "state.json"), 2<<20)
-		if e != nil {
-			return nil, e
-		}
-		var pending struct{ Maintenance *maintenance }
-		if e = json.Unmarshal(b, &pending); e != nil {
-			return nil, e
-		}
-		if pending.Maintenance != nil {
-			for _, id := range pending.Maintenance.Images {
+		// load hydrates either legacy inline or digest-bound paged authority.
+		if other.Maintenance != nil {
+			for _, id := range other.Maintenance.Images {
 				refs[id] = true
 			}
 		}
@@ -203,6 +195,10 @@ func (m *Manager) resourceReferences(ctx context.Context, j *journal, exclude ma
 	return refs, nil
 }
 func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op string) (*maintenance, error) {
+	return m.planMaintenanceScope(ctx, j, action, op, "")
+}
+
+func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, op, service string) (*maintenance, error) {
 	if (action != "cleanup" && action != "destroy") || !operation.MatchString(op) {
 		return nil, errors.New("invalid maintenance request")
 	}
@@ -256,6 +252,9 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		}
 		if e = m.verifyResourceContainer(ctx, v, j, r); e != nil {
 			return nil, e
+		}
+		if service != "" && v.Config.Labels["soar.service"] != service {
+			continue
 		}
 		o := v.Config.Labels["soar.operation"]
 		if action == "cleanup" && (retainedContainer(j, r.Name) || v.State.Running) {
@@ -311,7 +310,7 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		}
 		for id := range v.Containers {
 			if !exclude[id] {
-				if action == "destroy" {
+				if action == "destroy" && service == "" {
 					return nil, errors.New("unplanned network attachment")
 				}
 				known := false
@@ -336,6 +335,16 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 	}
 	if !found && len(w.Containers) > 0 {
 		return nil, errors.New("owned network missing")
+	}
+	if service != "" {
+		w.Action = "service-remove"
+		w.Service = service
+		w.Plan.Action = w.Action
+		w.Network = nil
+		w.Plan.Network = ""
+		w.Plan.Retained = append(w.Plan.Retained, "service data, secrets, shared network, images and archives retained")
+		sortMaintenanceContainers(w)
+		return w, boundMaintenancePreview(&w.Plan)
 	}
 	entries, e := os.ReadDir(m.dir(j.App))
 	if e != nil {
@@ -428,20 +437,24 @@ func (m *Manager) planMaintenance(ctx context.Context, j *journal, action, op st
 		w.Images = append(w.Images, id)
 		w.Plan.Images = append(w.Plan.Images, id)
 	}
-	if len(w.Containers)+len(w.Images)+len(w.Files)+len(w.Plan.Retained) > maxMaintenancePlanItems {
-		return nil, errors.New("maintenance plan too large")
-	}
+	sortMaintenanceContainers(w)
 	sort.Strings(w.Images)
 	sort.Strings(w.Plan.Images)
 	sort.Strings(w.Plan.Retained)
-	b, e := json.Marshal(w.Plan)
-	if e != nil {
-		return nil, e
+	// Run records must be removed before their IID receipts. Files otherwise
+	// retain lexicographic order; this order is captured, never recomputed on resume.
+	sort.SliceStable(w.Files, func(i, k int) bool {
+		a, b := strings.HasSuffix(w.Files[i].Name, ".run.json"), strings.HasSuffix(w.Files[k].Name, ".run.json")
+		if a != b {
+			return a
+		}
+		return w.Files[i].Name < w.Files[k].Name
+	})
+	w.Plan.Archives = nil
+	for _, f := range w.Files {
+		w.Plan.Archives = append(w.Plan.Archives, f.Name)
 	}
-	if len(b) > maxMaintenancePlanBytes {
-		return nil, errors.New("maintenance output too large")
-	}
-	return w, nil
+	return w, boundMaintenancePreview(&w.Plan)
 }
 
 func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p plannedContainer) (*resourceInspection, error) {
@@ -508,6 +521,12 @@ func syncResourceDir(path string) error {
 func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w *maintenance) error {
 	if w.Action != "cleanup" && w.Action != "destroy" && w.Action != "service-remove" {
 		return errors.New("invalid maintenance action")
+	}
+	if w.ResourcesDone {
+		if err := m.verifyMaintenanceResourceBarrier(ctx, w); err != nil {
+			return err
+		}
+		return m.removeMaintenanceFiles(j, w)
 	}
 	if err := m.maintenanceRuns(ctx, j); err != nil {
 		return err
@@ -621,6 +640,22 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			}
 		}
 	}
+	if w.Manifest != nil {
+		if err := m.verifyMaintenanceResourceBarrier(ctx, w); err != nil {
+			return err
+		}
+		// Commit the dependency barrier before removing any provenance. Retained
+		// shared images are not reconsidered after this barrier on replay.
+		w.ResourcesDone = true
+		if err := m.save(j); err != nil {
+			w.ResourcesDone = false
+			return err
+		}
+	}
+	return m.removeMaintenanceFiles(j, w)
+}
+
+func (m *Manager) removeMaintenanceFiles(j *journal, w *maintenance) error {
 	for _, p := range w.Files {
 		match := resourceFile.FindStringSubmatch(p.Name)
 		if match == nil || !resourceID.MatchString(p.SHA256) {

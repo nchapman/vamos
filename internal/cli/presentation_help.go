@@ -82,6 +82,7 @@ func (p *presentation) renderMainHelp() string {
 		{"Manage a server", []command{
 			{"server inspect", "Inspect a host over SSH without provisioning"},
 			{"server add", "Bootstrap a dedicated Ubuntu host"},
+			{"server connect", "Register an existing ready host without remote changes"},
 			{"server status", "Read the host lifecycle journal"},
 			{"server teardown", "Remove an unused owned installation"},
 		}},

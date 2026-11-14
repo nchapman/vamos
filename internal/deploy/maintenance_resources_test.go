@@ -13,7 +13,7 @@ import (
 )
 
 func TestMaintenanceRemovalIdentityBoundary(t *testing.T) {
-	for _, mode := range []string{"replacement", "list-error", "missing", "running", "destroy", "network-replacement"} {
+	for _, mode := range []string{"replacement", "list-error", "missing", "running", "destroy", "network-replacement", "update-error"} {
 		t.Run(mode, func(t *testing.T) {
 			m := NewManager()
 			j := &journal{HostID: "host", Status: Status{App: "notes"}}
@@ -23,7 +23,7 @@ func TestMaintenanceRemovalIdentityBoundary(t *testing.T) {
 			name := "soar-notes-" + op
 			p := plannedContainer{Name: name, ID: id, Image: image, Operation: op, NetworkID: strings.Repeat("e", 64)}
 			w := &maintenance{Action: "cleanup", Containers: []plannedContainer{p}}
-			if mode == "destroy" || mode == "network-replacement" {
+			if mode == "destroy" || mode == "network-replacement" || mode == "update-error" {
 				w.Action = "destroy"
 			}
 			if mode == "network-replacement" {
@@ -69,6 +69,12 @@ func TestMaintenanceRemovalIdentityBoundary(t *testing.T) {
 					return process.Result{Stdout: b}, nil
 				}
 				mutations = append(mutations, strings.Join(a, " "))
+				if mode == "update-error" && a[1] == "update" {
+					// A real crash-looping container can exit during runc update.
+					// Refuse safely; exact-operation resume, not blind retries,
+					// is the existing recovery contract.
+					return process.Result{}, errors.New("container not running")
+				}
 				return process.Result{}, nil
 			}
 			e := m.removeMaintenanceResources(context.Background(), j, w)
@@ -83,6 +89,10 @@ func TestMaintenanceRemovalIdentityBoundary(t *testing.T) {
 				want := []string{"container update --restart=no " + id, "container stop " + id, "container rm " + id}
 				if strings.Join(mutations, ";") != strings.Join(want, ";") || inspects != 3 {
 					t.Fatalf("commands %v inspections %d", mutations, inspects)
+				}
+			} else if mode == "update-error" {
+				if len(mutations) != 1 || mutations[0] != "container update --restart=no "+id || inspects != 1 {
+					t.Fatalf("continued deletion or blindly retried after failed restart fencing: %v", mutations)
 				}
 			} else if len(mutations) != 0 {
 				t.Fatal(mutations)

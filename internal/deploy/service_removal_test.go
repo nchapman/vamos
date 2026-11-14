@@ -42,6 +42,10 @@ func TestServiceRemovalFailureResumeIsolation(t *testing.T) {
 	for _, failure := range []string{"reload", "delete"} {
 		t.Run(failure, func(t *testing.T) {
 			f := newMultiMaintenanceInventory(t)
+			// Large unrelated immutable history must not constrain scoped removal.
+			for i := 0; i < 4096; i++ {
+				f.file(t, fmt.Sprintf("%032x.%032x.image.iid", i+1, i+1), "sha256:"+strings.Repeat("9", 64)+"\n")
+			}
 			image := "sha256:" + strings.Repeat("c", 64)
 			f.j.Config = &config.App{Name: f.j.App, Services: map[string]config.Service{}}
 			f.j.Completed = &completedRelease{Operation: f.j.Operation, Services: map[string]*release{}}

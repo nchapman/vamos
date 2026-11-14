@@ -29,6 +29,9 @@ func defaultLifecycleDeps() lifecycleDeps {
 }
 
 func serverLifecycle(ctx context.Context, operation string, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {
+	if operation == "connect" {
+		return serverConnect(ctx, args, stdout, stderr, deps)
+	}
 	flags := flag.NewFlagSet("server "+operation, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	yes := flags.Bool("yes", false, "authorize host changes")
@@ -180,7 +183,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 			return lifecycleError(stderr, errors.New("bootstrap did not return ready; inspect server status"))
 		}
 		if err := store.Put(server); err != nil {
-			return lifecycleError(stderr, fmt.Errorf("host is ready but local registration failed: %w; rerun add with the same identity", err))
+			return lifecycleError(stderr, fmt.Errorf("host is ready but local registration failed: %w; rerun server connect with the same identity", err))
 		}
 	} else {
 		if state.Phase != "removed" {
