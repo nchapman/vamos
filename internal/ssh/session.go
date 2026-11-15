@@ -84,7 +84,7 @@ func streamApp(ctx context.Context, target string, request deploy.SessionRequest
 	if !request.Stdin {
 		stdin = nil
 	}
-	command = "/run/vamos-sessions/" + token + "/executor internal-session-attach " + token
+	command = "/var/lib/.vamos-session-exec." + token + " internal-session-attach " + token
 	code, err := stream(ctx, "ssh", sessionArguments(target, command, request.TTY), stdin, stdout, stderr)
 	if err != nil || code == 255 {
 		if request.Action == "exec" {
@@ -109,7 +109,9 @@ func sessionCleanupCommand(token string) string {
 	// The token has already passed a fixed lowercase-hex grammar. Neither
 	// application names nor command arguments ever enter shell source.
 	path := "/run/vamos-sessions/" + token
-	return "/bin/sh -c 'if [ -e " + path + " ] || [ -L " + path + " ]; then " +
+	execbin := "/var/lib/.vamos-session-exec." + token
+	return "/bin/sh -c 'trap \"rm -f " + execbin + "\" EXIT; if [ -e " + path + " ] || [ -L " + path + " ]; then " +
 		"[ -d " + path + " ] && [ ! -L " + path + " ] && [ \"$(stat -c %u " + path + ")\" = 0 ] && [ \"$(stat -c %a " + path + ")\" = 700 ] || exit 1; " +
-		path + "/executor internal-session-cleanup " + token + "; fi'"
+		"[ -f " + execbin + " ] && [ ! -L " + execbin + " ] && [ \"$(stat -c %u " + execbin + ")\" = 0 ] && [ \"$(stat -c %a " + execbin + ")\" = 700 ] || exit 1; " +
+		execbin + " internal-session-cleanup " + token + "; fi'"
 }

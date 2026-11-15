@@ -2,7 +2,8 @@
 set -eu
 [ "$(id -u)" = 0 ] || { printf '%s\n' 'sessions require root' >&2; exit 1; }
 stage=$(mktemp -d /run/vamos-session-upload.XXXXXXXX)
-trap 'rm -rf "$stage"' EXIT HUP INT TERM
+execbin=/var/lib/.vamos-session-exec.__TOKEN__
+trap 'rm -rf "$stage" "$execbin"' EXIT HUP INT TERM
 tar -xf - -C "$stage"
 [ "$(stat -c %a "$stage")" = 700 ] || exit 1
 for file in request.json checksum; do
@@ -11,6 +12,12 @@ done
 [ -f "$stage/executor" ] && [ ! -L "$stage/executor" ] || exit 1
 [ ! -e "$stage/secret.value" ] && [ ! -L "$stage/secret.value" ] || exit 1
 (cd "$stage" && sha256sum --status -c checksum)
-chmod 700 "$stage/executor"
+mv -f "$stage/executor" "$execbin"
+touch "$execbin"
+chmod 700 "$execbin"
 cd "$stage"
-./executor internal-session-prepare __TOKEN__ < request.json
+"$execbin" internal-session-prepare __TOKEN__ < request.json
+trap 'rm -rf "$stage"' EXIT HUP INT TERM
+for old in $(find /var/lib -maxdepth 1 -name '.vamos-session-exec.*' -mmin +3 2>/dev/null); do
+  [ -e "/run/vamos-sessions/${old##*.}" ] || rm -f "$old"
+done

@@ -3,17 +3,19 @@
 set -eu
 [ "$(id -u)" = 0 ] || { printf '%s\n' 'bootstrap requires root' >&2; exit 1; }
 stage=$(mktemp -d /run/vamos-stage.XXXXXXXX)
-trap 'rm -rf "$stage"' EXIT HUP INT TERM
+execdir=$(mktemp -d /var/lib/.vamos-exec.XXXXXXXX)
+trap 'rm -rf "$stage" "$execdir"' EXIT HUP INT TERM
 if ! tar -xf - -C "$stage"; then exit 1; fi
 (cd "$stage" && sha256sum --status -c checksum)
-chmod 700 "$stage/executor"
+mv "$stage/executor" "$execdir/executor"
+chmod 700 "$execdir/executor"
 # From this point the worker owns cleanup. SSH loss must not delete its inputs or
 # kill an in-flight package transaction. A fixed unit name rejects concurrency.
 trap - EXIT HUP INT TERM
 set +e
 systemd-run --quiet --collect --wait --pipe --unit=vamos-host-operation \
   --property=RuntimeMaxSec=21min --property=KillMode=control-group \
-  /bin/sh -c 'stage=$1; trap '\''rm -rf "$stage"'\'' EXIT; "$stage/executor" internal-executor < "$stage/request.json"' sh "$stage"
+  /bin/sh -c 'stage=$1; execdir=$2; trap '\''rm -rf "$stage" "$execdir"'\'' EXIT; "$execdir/executor" internal-executor < "$stage/request.json"' sh "$stage" "$execdir"
 status=$?
-rm -rf "$stage"
+rm -rf "$stage" "$execdir"
 exit "$status"

@@ -111,3 +111,19 @@ func TestLifecycleRejectsBeforeRunner(t *testing.T) {
 		}
 	}
 }
+
+func TestTransportScriptsExecuteOutsideNoexecRun(t *testing.T) {
+	for name, script := range map[string]string{
+		"bootstrap":       bootstrapScript,
+		"app":             appScript,
+		"app-read":        appReadScript,
+		"session-prepare": sessionPrepareScript,
+	} {
+		if strings.Contains(script, `"$stage/executor" internal-`) || strings.Contains(script, `./executor`) {
+			t.Fatalf("%s still executes uploaded binary directly from /run staging:\n%s", name, script)
+		}
+		if !strings.Contains(script, "/var/lib/.vamos-") {
+			t.Fatalf("%s does not move executable out of /run staging:\n%s", name, script)
+		}
+	}
+}

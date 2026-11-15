@@ -285,14 +285,21 @@ func discoverDeployKey() (string, error) {
 	if err != nil {
 		return "", errors.New("no SSH public key found for the restricted deploy bridge; pass --deploy-key PATH")
 	}
-	for _, name := range []string{"id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
-		data, err := os.ReadFile(filepath.Join(home, ".ssh", name))
-		if err != nil {
-			continue
+	for _, base := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+		keyPath := filepath.Join(home, ".ssh", base)
+		if data, err := os.ReadFile(keyPath + ".pub"); err == nil {
+			first := strings.TrimSpace(strings.SplitN(string(data), "\n", 2)[0])
+			if first != "" && lifecycle.ValidateDeployKey(first) == nil {
+				return first, nil
+			}
 		}
-		first := strings.TrimSpace(strings.SplitN(string(data), "\n", 2)[0])
-		if first != "" && lifecycle.ValidateDeployKey(first) == nil {
-			return first, nil
+		if info, err := os.Stat(keyPath); err == nil && info.Mode().IsRegular() {
+			if result, err := process.Run(ctx, "ssh-keygen", []string{"-y", "-P", "", "-f", keyPath}, nil); err == nil && len(result.Stdout) != 0 {
+				first := strings.TrimSpace(strings.SplitN(string(result.Stdout), "\n", 2)[0])
+				if first != "" && lifecycle.ValidateDeployKey(first) == nil {
+					return first, nil
+				}
+			}
 		}
 	}
 	return "", errors.New("no SSH public key found for the restricted deploy bridge; pass --deploy-key PATH")

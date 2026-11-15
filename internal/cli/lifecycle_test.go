@@ -5,11 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nchapman/vamos/internal/executor"
 	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 	"github.com/nchapman/vamos/internal/registry"
 	"github.com/nchapman/vamos/internal/ssh"
 )
@@ -192,5 +196,30 @@ func TestLifecycleStatusAndTeardownOwnership(t *testing.T) {
 		if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.Active != status.Active {
 			t.Fatalf("status=%s err=%v", &out, err)
 		}
+	}
+}
+
+func TestDiscoverDeployKeyFallsBackToPrivateKeyWithoutPubFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("SSH_AUTH_SOCK", filepath.Join(home, "missing.sock"))
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(sshDir, "id_ed25519")
+	if _, err := process.Run(context.Background(), "ssh-keygen", []string{"-q", "-t", "ed25519", "-N", "", "-C", "deploy@test", "-f", keyPath}, nil); err != nil {
+		t.Skipf("ssh-keygen unavailable: %v", err)
+	}
+	if err := os.Remove(keyPath + ".pub"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := discoverDeployKey()
+	if err != nil {
+		t.Fatalf("discoverDeployKey failed without .pub file: %v", err)
+	}
+	if !strings.HasPrefix(got, "ssh-ed25519 ") || !strings.HasSuffix(got, " deploy@test") {
+		t.Fatalf("unexpected discovered key %q", got)
 	}
 }
