@@ -93,7 +93,10 @@ func (m *Manager) checkCaddyRuntime(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) checkMounts() error {
+// checkMounts refuses mounts at or under owned data. Mounts that belong to the
+// running owned Caddy container (its root filesystem and other per-container
+// mounts under /var/lib/docker) are allowed while it is still in service.
+func (m *Manager) checkMounts(caddy *caddyContainer) error {
 	var data []byte
 	var err error
 	if m.MountInfo != nil {
@@ -106,10 +109,15 @@ func (m *Manager) checkMounts() error {
 	}
 	// Completed app receipts and coordinator directories are also explicitly
 	// removed during host purge, so verify none of them overlap mount points.
-	return checkMountInfo(data, append(append([]string{}, dataPaths...), "/var/lib/vamos/apps", "/var/lib/vamos/queue", "/etc/vamos"))
+	paths := append(append([]string{}, dataPaths...), "/var/lib/vamos/apps", "/var/lib/vamos/queue", "/etc/vamos")
+	allowed := func(string) bool { return false }
+	if caddy != nil {
+		allowed = caddy.ownsMount
+	}
+	return checkMountInfo(data, paths, allowed)
 }
 
-func checkMountInfo(data []byte, paths []string) error {
+func checkMountInfo(data []byte, paths []string, allowed func(string) bool) error {
 	unescape := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
 	for _, line := range bytes.Split(bytes.TrimSpace(data), []byte{'\n'}) {
 		if len(line) == 0 {
@@ -120,6 +128,9 @@ func checkMountInfo(data []byte, paths []string) error {
 			return errors.New("invalid mount inventory")
 		}
 		mount := unescape.Replace(fields[4])
+		if allowed(mount) {
+			continue
+		}
 		for _, path := range paths {
 			if mount == path || strings.HasPrefix(mount, path+"/") {
 				return fmt.Errorf("mount at %s overlaps owned data; unmount it explicitly before teardown", mount)

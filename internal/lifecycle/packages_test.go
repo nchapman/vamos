@@ -57,11 +57,11 @@ func TestBuildCacheRequiresRecognizedEmptyReport(t *testing.T) {
 
 func TestMountGuardRecognizesDescendantsAndEscapedPaths(t *testing.T) {
 	for _, path := range []string{"/var/lib/docker", "/var/lib/docker/overlay2/data", `/var/lib/docker/with\040space`} {
-		if err := checkMountInfo([]byte("1 2 0:3 / "+path+" rw - tmpfs tmpfs rw\n"), dataPaths); err == nil {
+		if err := checkMountInfo([]byte("1 2 0:3 / "+path+" rw - tmpfs tmpfs rw\n"), dataPaths, func(string) bool { return false }); err == nil {
 			t.Errorf("accepted mount %s", path)
 		}
 	}
-	if err := checkMountInfo([]byte("1 2 0:3 / /var/lib/docker-other rw - tmpfs tmpfs rw\n"), dataPaths); err != nil {
+	if err := checkMountInfo([]byte("1 2 0:3 / /var/lib/docker-other rw - tmpfs tmpfs rw\n"), dataPaths, func(string) bool { return false }); err != nil {
 		t.Fatal(err)
 	}
 }

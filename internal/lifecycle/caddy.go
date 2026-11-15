@@ -65,12 +65,37 @@ type caddyContainer struct {
 	State struct {
 		Running bool `json:"Running"`
 	} `json:"State"`
+	// GraphDriver reports the root filesystem path only for Docker's classic
+	// storage drivers; the containerd image store mounts it under a path named
+	// by the container ID instead.
+	GraphDriver struct {
+		Data struct {
+			MergedDir string `json:"MergedDir"`
+		} `json:"Data"`
+	} `json:"GraphDriver"`
 	HostConfig struct {
 		NetworkMode   string `json:"NetworkMode"`
 		RestartPolicy struct {
 			Name string `json:"Name"`
 		} `json:"RestartPolicy"`
 	} `json:"HostConfig"`
+}
+
+// ownsMount reports whether a host mount point is one of this container's own
+// per-container mounts under Docker's data directory.
+func (c *caddyContainer) ownsMount(mount string) bool {
+	if !strings.HasPrefix(mount, "/var/lib/docker/") {
+		return false
+	}
+	if c.GraphDriver.Data.MergedDir != "" && mount == c.GraphDriver.Data.MergedDir {
+		return true
+	}
+	for _, part := range strings.Split(mount, "/") {
+		if part == c.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *caddyContainer) current() bool {

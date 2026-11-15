@@ -161,3 +161,37 @@ func TestDigestRef(t *testing.T) {
 		}
 	}
 }
+
+func TestTeardownAllowsOnlyTheRunningIngressMounts(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		foreign bool
+	}{{"ingress", false}, {"foreign", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, f := newTestManager(t)
+			if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
+				t.Fatal(err)
+			}
+			m.MountInfo = func() ([]byte, error) {
+				var lines []string
+				if f.caddy != nil {
+					lines = append(lines, "40 25 0:40 / /var/lib/docker/rootfs/overlayfs/"+f.caddy.ID+" rw - overlay overlay rw")
+				}
+				if tc.foreign {
+					lines = append(lines, "41 25 0:41 / /var/lib/docker/rootfs/overlayfs/"+strings.Repeat("f", 64)+" rw - overlay overlay rw")
+				}
+				return []byte(strings.Join(lines, "\n")), nil
+			}
+			_, err := m.Teardown(context.Background(), testConfig.Name, true)
+			if tc.foreign {
+				if err == nil || !strings.Contains(err.Error(), "overlaps owned data") || f.caddy == nil {
+					t.Fatalf("foreign Docker mount accepted or ingress removed: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("running ingress blocked teardown: %v", err)
+			}
+		})
+	}
+}

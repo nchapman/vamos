@@ -73,7 +73,20 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if err := m.checkStateDirectory(ctx); err != nil {
 		return nil, err
 	}
-	if err := m.checkMounts(); err != nil {
+	// The owned ingress container keeps running until approval, so its root
+	// filesystem mounts under /var/lib/docker are expected here. The check after
+	// package purge covers them again once the container is gone.
+	dockerActive, err := m.serviceRunning(ctx, "docker.service")
+	if err != nil {
+		return nil, err
+	}
+	var caddy *caddyContainer
+	if dockerActive {
+		if caddy, err = m.findCaddy(ctx, s); err != nil {
+			return nil, err
+		}
+	}
+	if err := m.checkMounts(caddy); err != nil {
 		return nil, err
 	}
 	for _, path := range dataPaths {
@@ -122,19 +135,9 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 				return nil, fmt.Errorf("account %s changed; refusing removal", key)
 			}
 		}
-		dockerActive, err := m.serviceRunning(ctx, "docker.service")
-		if err != nil {
-			return nil, err
-		}
-		var caddy *caddyContainer
-		if dockerActive {
-			if caddy, err = m.findCaddy(ctx, s); err != nil {
+		if caddy != nil && caddy.State.Running {
+			if err := m.checkCaddyRuntime(ctx); err != nil {
 				return nil, err
-			}
-			if caddy != nil && caddy.State.Running {
-				if err := m.checkCaddyRuntime(ctx); err != nil {
-					return nil, err
-				}
 			}
 		}
 		entries, statErr := os.ReadDir(m.path("/var/lib/docker"))
@@ -160,7 +163,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	// A lost connection is not rollback. While the daemon is still active,
 	// remove the owned ingress and prove Docker is otherwise empty; after it is
 	// stopped/masked, package cleanup can resume.
-	dockerActive, err := m.serviceRunning(ctx, "docker.service")
+	dockerActive, err = m.serviceRunning(ctx, "docker.service")
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +215,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	}
 	// Only fixed paths proven absent on first setup can be removed. The caller
 	// has explicitly approved runtime-data deletion and workloads were checked.
-	if err := m.checkMounts(); err != nil {
+	if err := m.checkMounts(nil); err != nil {
 		return nil, err
 	}
 	for _, path := range dataPaths {

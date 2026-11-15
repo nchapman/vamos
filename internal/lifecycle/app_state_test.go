@@ -102,8 +102,11 @@ func TestTeardownRefusesMountedAppReceipt(t *testing.T) {
 	if _, err := m.Teardown(context.Background(), testConfig.Name, true); err == nil {
 		t.Fatal("accepted mounted app receipt")
 	}
-	if len(f.calls) != 0 {
-		t.Fatal("mutated before mount refusal", f.calls)
+	// Only the read-only ingress lookup that scopes the mount check may run.
+	for _, call := range f.calls {
+		if !strings.HasPrefix(call, "systemctl is-active") && !strings.HasPrefix(call, "docker container ls") && !strings.HasPrefix(call, "docker container inspect") {
+			t.Fatal("mutated before mount refusal", f.calls)
+		}
 	}
 }
 
