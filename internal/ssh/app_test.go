@@ -34,7 +34,7 @@ func TestAppTransportUsesFixedCommandAndBoundedTar(t *testing.T) {
 		reader := tar.NewReader(bytes.NewReader(input))
 		for {
 			header, err := reader.Next()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {
@@ -82,7 +82,7 @@ func TestAppQueriesUploadMatchingExecutorToTemporaryStage(t *testing.T) {
 			tr := tar.NewReader(bytes.NewReader(input))
 			for {
 				h, err := tr.Next()
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				if err != nil {
@@ -141,7 +141,7 @@ func TestRunTransportPreservesKnownFailure(t *testing.T) {
 		found := false
 		for {
 			h, err := reader.Next()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			if err != nil {

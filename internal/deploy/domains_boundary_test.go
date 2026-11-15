@@ -18,12 +18,12 @@ func TestDomainJournalsRemainStrictAcrossVersions(t *testing.T) {
 	}
 	b, _ := json.Marshal(j)
 	for _, version := range []int{1, 2, 3, 4, 5, 7} {
-		var copy journal
-		if err := json.Unmarshal(b, &copy); err != nil {
+		var cp journal
+		if err := json.Unmarshal(b, &cp); err != nil {
 			t.Fatal(err)
 		}
-		copy.Version = version
-		if err := validateJournal(&copy, copy.App); err == nil {
+		cp.Version = version
+		if err := validateJournal(&cp, cp.App); err == nil {
 			t.Fatalf("aliases admitted by version %d", version)
 		}
 	}

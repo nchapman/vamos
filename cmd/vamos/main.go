@@ -17,7 +17,19 @@ func main() {
 	os.Exit(run())
 }
 
-const forcedBridgePrefix = "/usr/local/lib/vamos/vamos-agent internal-agent bridge --principal "
+var forcedBridgePrefixes = []string{
+	"/usr/local/lib/vamos/vamos-agent internal-agent bridge --principal ",
+	"/usr/local/lib/vamos/executor internal-agent bridge --principal ",
+}
+
+func parseForcedBridgeCommand(cmd string) (string, bool) {
+	for _, prefix := range forcedBridgePrefixes {
+		if principal, ok := strings.CutPrefix(cmd, prefix); ok && principal != "" && !strings.ContainsAny(principal, " \t\r\n") {
+			return principal, true
+		}
+	}
+	return "", false
+}
 
 func run() int {
 	ctx, stop := shutdownContext()
@@ -26,8 +38,7 @@ func run() int {
 	// Accept only its authorized_keys forced bridge command; any unmatched SSH
 	// command (including a key added before sshd reloads) fails closed.
 	if len(os.Args) == 3 && os.Args[1] == "-c" {
-		principal, ok := strings.CutPrefix(os.Args[2], forcedBridgePrefix)
-		if ok && !strings.ContainsAny(principal, " \t\r\n") {
+		if principal, ok := parseForcedBridgeCommand(os.Args[2]); ok && os.Getenv("SSH_ORIGINAL_COMMAND") == "" {
 			if err := agent.Bridge(ctx, agent.DefaultSocket, principal, os.Stdin, os.Stdout, os.Stderr); err != nil {
 				return 1
 			}

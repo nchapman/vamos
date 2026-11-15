@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/nchapman/vamos/internal/process"
 )
 
@@ -29,10 +30,38 @@ type build struct {
 	dir, stopID string
 }
 
+func (m Manager) lock(ctx context.Context) (func(), error) {
+	root := m.Root
+	if root == "" {
+		root = "/"
+	}
+	lockPath := filepath.Join(root, "run/lock/vamos/buildkit.lock")
+	if safeDir(filepath.Dir(lockPath), true) != nil {
+		return nil, errInfra
+	}
+	l := flock.New(lockPath, flock.SetPermissions(0600))
+	lockCtx, cancelLock := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancelLock()
+	ok, err := l.TryLockContext(lockCtx, 25*time.Millisecond)
+	if err != nil || !ok {
+		_ = l.Close()
+		return nil, errInfra
+	}
+	return func() {
+		_ = l.Unlock()
+		_ = l.Close()
+	}, nil
+}
+
 // Build loads an image into the local Docker daemon. Only build output is
 // returned; infrastructure subprocess diagnostics and errors are value-free.
 // Cancellation never cancels the bounded independent stop attempt.
 func (m Manager) Build(ctx context.Context, hostID, dockerfile, iidfile string, archive []byte) (result process.Result, err error) {
+	unlock, lockErr := m.lock(ctx)
+	if lockErr != nil {
+		return result, lockErr
+	}
+	defer unlock()
 	s, dir, err := m.state(hostID)
 	if err != nil {
 		return result, errInfra

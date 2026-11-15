@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/nchapman/vamos/internal/buildcontext"
@@ -320,7 +321,7 @@ func (m *Manager) runLogs(ctx context.Context, j *journal, op string) (string, e
 	if err != nil {
 		return "", errors.New("read run logs failed")
 	}
-	b := append(result.Stdout, result.Stderr...)
+	b := slices.Concat(result.Stdout, result.Stderr)
 	if len(b) > runOutputLimit {
 		b = b[len(b)-runOutputLimit:]
 	}

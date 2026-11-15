@@ -232,15 +232,16 @@ func TestReceiptNamespaceAndCorruptionRefused(t *testing.T) {
 			m, f := newEngine(t)
 			dir := filepath.Join(f.root, "var/lib/vamos/buildkit")
 			path := filepath.Join(dir, "state.json")
-			if kind == "empty namespace" {
+			switch kind {
+			case "empty namespace":
 				if os.MkdirAll(dir, 0700) != nil {
 					t.Fatal("mkdir")
 				}
-			} else if kind == "symlink namespace" {
+			case "symlink namespace":
 				if os.MkdirAll(filepath.Dir(dir), 0700) != nil || os.Symlink(f.root, dir) != nil {
 					t.Fatal("symlink")
 				}
-			} else {
+			default:
 				runBuild(t, m)
 				switch kind {
 				case "unknown JSON":

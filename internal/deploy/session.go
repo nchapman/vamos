@@ -132,21 +132,66 @@ func (m *Manager) ResolveSession(ctx context.Context, r SessionRequest) (Session
 		return zero, err
 	}
 	if r.Action == "exec" {
-		p := m.path(lifecycle.LockPath)
-		if err := safe(p); err != nil {
-			return zero, err
-		}
-		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
-			return zero, err
-		}
-		lock := flock.New(p, flock.SetPermissions(0600))
-		defer lock.Close()
-		ok, err := lock.TryLock()
-		if err != nil {
-			return zero, err
-		}
-		if !ok {
-			return zero, errors.New("host mutation already active")
+		if m.MutationLock != nil {
+			active, unlock, lockErr := m.MutationLock(ctx, r.App, false)
+			if lockErr != nil {
+				return zero, lockErr
+			}
+			if unlock != nil {
+				defer unlock()
+			}
+			if active {
+				return zero, errors.New("host mutation already active")
+			}
+		} else {
+			p := m.path(lifecycle.LockPath)
+			if err := safe(p); err != nil {
+				return zero, err
+			}
+			if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+				return zero, err
+			}
+			lock := flock.New(p, flock.SetPermissions(0600))
+			defer lock.Close()
+			ok, err := lock.TryRLock()
+			if err != nil {
+				return zero, err
+			}
+			if !ok {
+				return zero, errors.New("host mutation already active")
+			}
+			defer func() { _ = lock.Unlock() }()
+
+			coordDir := m.path("/run/lock/vamos")
+			if err := safe(coordDir); err != nil {
+				return zero, err
+			}
+			hostOpPath := filepath.Join(coordDir, "host-op.lock")
+			if _, statErr := os.Lstat(hostOpPath); statErr == nil {
+				hostOpLock := flock.New(hostOpPath, flock.SetPermissions(0600))
+				defer hostOpLock.Close()
+				ok, err := hostOpLock.TryRLock()
+				if err != nil {
+					return zero, err
+				}
+				if !ok {
+					return zero, errors.New("host mutation already active")
+				}
+				defer func() { _ = hostOpLock.Unlock() }()
+			}
+			appPath := filepath.Join(coordDir, "app-"+r.App+".lock")
+			if _, statErr := os.Lstat(appPath); statErr == nil {
+				appLock := flock.New(appPath, flock.SetPermissions(0600))
+				defer appLock.Close()
+				ok, err := appLock.TryLock()
+				if err != nil {
+					return zero, err
+				}
+				if !ok {
+					return zero, errors.New("host mutation already active")
+				}
+				defer func() { _ = appLock.Unlock() }()
+			}
 		}
 	}
 	h, err := lifecycle.ReadState(m.path(lifecycle.StatePath))

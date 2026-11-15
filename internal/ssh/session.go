@@ -22,7 +22,6 @@ import (
 var sessionPrepareScript string
 
 var sessionToken = regexp.MustCompile(`^[0-9a-f]{32}$`)
-var sessionContainerID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type streamProcess func(context.Context, string, []string, io.Reader, io.Writer, io.Writer) (int, error)
 

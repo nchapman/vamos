@@ -247,17 +247,17 @@ func publish(source, dest string) error {
 	}
 	defer os.Remove(temp.Name())
 	if _, err = io.Copy(temp, bytes.NewReader(data)); err != nil {
-		temp.Close()
+		_ = temp.Close()
 		return err
 	}
 	if err = temp.Chmod(0755); err != nil {
-		temp.Close()
+		_ = temp.Close()
 		return err
 	}
-	if err = temp.Close(); err != nil {
+	if err := temp.Close(); err != nil {
 		return err
 	}
-	if err = os.Rename(temp.Name(), dest); err != nil {
+	if err := os.Rename(temp.Name(), dest); err != nil {
 		if runtime.GOOS == "windows" {
 			if rmErr := os.Remove(dest); rmErr == nil || errors.Is(rmErr, os.ErrNotExist) {
 				return os.Rename(temp.Name(), dest)

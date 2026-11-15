@@ -36,7 +36,7 @@ func TestBuildServiceReceivesCapturedInputs(t *testing.T) {
 		return process.Result{Stderr: []byte("build diagnostic")}, want
 	})
 	out, err := m.buildImage(context.Background(), strings.Repeat("a", 32), "docker/Dockerfile", "/captured/image.iid", []byte("captured archive"))
-	if err != want || calls != 1 || string(out.Stderr) != "build diagnostic" {
+	if !errors.Is(err, want) || calls != 1 || string(out.Stderr) != "build diagnostic" {
 		t.Fatalf("build result lost: %v %v calls=%d", out, err, calls)
 	}
 }

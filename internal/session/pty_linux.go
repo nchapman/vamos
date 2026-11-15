@@ -27,15 +27,29 @@ func openPTY() (*os.File, *os.File, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	var unlock int32
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), syscall.TIOCSPTLCK, uintptr(unsafe.Pointer(&unlock))); errno != 0 {
+	raw, err := master.SyscallConn()
+	if err != nil {
 		master.Close()
-		return nil, nil, errno
+		return nil, nil, err
 	}
+	var unlock int32
 	var ptyNum uint32
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), syscall.TIOCGPTN, uintptr(unsafe.Pointer(&ptyNum))); errno != 0 {
+	var ioctlErr error
+	if err := raw.Control(func(fd uintptr) {
+		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCSPTLCK, uintptr(unsafe.Pointer(&unlock))); errno != 0 {
+			ioctlErr = errno
+			return
+		}
+		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCGPTN, uintptr(unsafe.Pointer(&ptyNum))); errno != 0 {
+			ioctlErr = errno
+		}
+	}); err != nil {
 		master.Close()
-		return nil, nil, errno
+		return nil, nil, err
+	}
+	if ioctlErr != nil {
+		master.Close()
+		return nil, nil, ioctlErr
 	}
 	slave, err := os.OpenFile(fmt.Sprintf("/dev/pts/%d", ptyNum), os.O_RDWR|syscall.O_NOCTTY, 0)
 	if err != nil {
@@ -45,15 +59,24 @@ func openPTY() (*os.File, *os.File, error) {
 	return master, slave, nil
 }
 
-func setWinsize(fd uintptr, size WindowSize) error {
+func setWinsize(master *os.File, size WindowSize) error {
 	if size.Rows == 0 && size.Cols == 0 {
 		return nil
 	}
-	ws := ttyWinsize{Row: size.Rows, Col: size.Cols}
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws))); errno != 0 {
-		return errno
+	raw, err := master.SyscallConn()
+	if err != nil {
+		return err
 	}
-	return nil
+	ws := ttyWinsize{Row: size.Rows, Col: size.Cols}
+	var ioctlErr error
+	if err := raw.Control(func(fd uintptr) {
+		if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&ws))); errno != 0 {
+			ioctlErr = errno
+		}
+	}); err != nil {
+		return err
+	}
+	return ioctlErr
 }
 
 func runPTY(ctx context.Context, name string, args []string, initial *WindowSize, resizes <-chan WindowSize, stdin io.Reader, stdout io.Writer) (int, error) {
@@ -65,7 +88,7 @@ func runPTY(ctx context.Context, name string, args []string, initial *WindowSize
 	if initial != nil && (initial.Rows > 0 || initial.Cols > 0) {
 		size = *initial
 	}
-	_ = setWinsize(master.Fd(), size)
+	_ = setWinsize(master, size)
 
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdin = slave
@@ -111,7 +134,7 @@ func runPTY(ctx context.Context, name string, args []string, initial *WindowSize
 					}
 					masterMu.Lock()
 					if !masterClosed {
-						_ = setWinsize(master.Fd(), next)
+						_ = setWinsize(master, next)
 					}
 					masterMu.Unlock()
 				}

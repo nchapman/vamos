@@ -107,18 +107,6 @@ func (m *Manager) multiBuild(ctx context.Context, j *journal, archives map[strin
 	return nil
 }
 
-func multiIdentity(j *journal, r *release) error {
-	if r == nil {
-		return errors.New("missing runtime")
-	}
-	for _, ref := range runtimeRefs(r) {
-		if err := instanceIdentity(j, ref); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func instanceIdentity(j *journal, r runtimeRef) error {
 	if r.release == nil || r.Config == nil || !operation.MatchString(r.Operation) || !imageID.MatchString(r.Image) || (r.Service != "" && (!label.MatchString(r.Service) || len(r.Service) > 63)) || r.Container != instanceName(j.App, r.Service, r.Operation, r.Ordinal) || validateInstances(j, r.release) != nil {
 		return errors.New("invalid captured runtime identity")
@@ -279,11 +267,11 @@ func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef,
 				return nil, errors.New("service alias missing")
 			}
 			// Validate this endpoint even when a network inspect fixture omits its ID.
-			copy := *v
-			if copy.Name == "" {
-				copy.Name = r.Container
+			cp := *v
+			if cp.Name == "" {
+				cp.Name = r.Container
 			}
-			if err := validateMultiEndpoint(j, &copy); err != nil {
+			if err := validateMultiEndpoint(j, &cp); err != nil {
 				return nil, err
 			}
 		}

@@ -74,7 +74,7 @@ func inventoryNames(dir string, directories bool) ([]string, error) {
 	}
 	defer f.Close()
 	entries, err := f.ReadDir(MaxApps + 1)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	if len(entries) > MaxApps {
@@ -84,6 +84,9 @@ func inventoryNames(dir string, directories bool) ([]string, error) {
 	for _, entry := range entries {
 		name := entry.Name()
 		if !directories {
+			if strings.HasPrefix(name, ".secret-") || strings.HasPrefix(name, ".volume-") {
+				continue
+			}
 			if !strings.HasSuffix(name, ".json") {
 				return nil, errors.New("unexpected app inventory metadata file")
 			}

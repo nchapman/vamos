@@ -76,3 +76,27 @@ func TestSecretRefusalAndMissingAcknowledgment(t *testing.T) {
 		}
 	}
 }
+
+func TestSecretStagePrefersAgentTransportWhenConfigured(t *testing.T) {
+	path, _, deps := appFixture(t)
+	deps.Run = func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error) {
+		t.Fatal("legacy Run called when Agent was available")
+		return deploy.Response{}, nil
+	}
+	calledAgent := false
+	deps.Agent = func(_ context.Context, target string, r deploy.Request, v []byte) (deploy.Response, error) {
+		calledAgent = true
+		if target != "root@home" || r.Action != "secrets-stage" || r.SecretName != "token" || string(v) != "secret-val" {
+			t.Fatalf("unexpected agent call: target=%q req=%+v val=%q", target, r, v)
+		}
+		return deploy.Response{
+			Version: 1,
+			Secret:  &secrets.Entry{Name: "token", Version: r.Operation, Latest: true},
+		}, nil
+	}
+	var out, diag bytes.Buffer
+	code := secretsCommand(context.Background(), []string{"stage", "-f", path, "--stdin", "--json", "token"}, strings.NewReader("secret-val\n"), &out, &diag, deps, readSecretInput)
+	if code != 0 || !calledAgent {
+		t.Fatalf("code=%d calledAgent=%v out=%s diag=%s", code, calledAgent, &out, &diag)
+	}
+}

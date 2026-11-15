@@ -18,6 +18,7 @@ import (
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/session"
 	"github.com/nchapman/vamos/internal/transport"
 	"golang.org/x/term"
 )
@@ -98,12 +99,10 @@ type bridgeConn struct {
 	waitErr error
 }
 
-func dialBridge(ctx context.Context, target string) (*bridgeConn, error) {
-	bridge, err := bridgeTarget(target)
-	if err != nil {
-		return nil, err
-	}
-	args := []string{
+var dialAgentBridge = dialBridge
+
+func bridgeSSHArguments(bridge string) []string {
+	return []string{
 		"-T",
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=yes",
@@ -121,6 +120,14 @@ func dialBridge(ctx context.Context, target string) (*bridgeConn, error) {
 		"-o", "ServerAliveCountMax=3",
 		"--", bridge,
 	}
+}
+
+func dialBridge(ctx context.Context, target string) (*bridgeConn, error) {
+	bridge, err := bridgeTarget(target)
+	if err != nil {
+		return nil, err
+	}
+	args := bridgeSSHArguments(bridge)
 	stderrBuf := &boundedStderr{}
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stderr = stderrBuf
@@ -172,7 +179,7 @@ func (c *bridgeConn) diagnoseFailure(target string, opErr error) error {
 }
 
 func connectAgent(ctx context.Context, target string, required []string) (*agentclient.Client, func(), error) {
-	conn, err := dialBridge(ctx, target)
+	conn, err := dialAgentBridge(ctx, target)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -185,8 +192,18 @@ func connectAgent(ctx context.Context, target string, required []string) (*agent
 	return client, func() { _ = conn.Close() }, nil
 }
 
-func requiredCapabilities(deploy.Request) []string {
-	return []string{agentproto.CapAppDeploy, agentproto.CapDurableQueue}
+func requiredCapabilities(request deploy.Request) []string {
+	caps := []string{agentproto.CapAppDeploy}
+	if request.Mutating() {
+		caps = append(caps, agentproto.CapDurableQueue)
+	}
+	switch request.Action {
+	case "secrets-stage", "secrets-set", "secrets-list":
+		caps = append(caps, agentproto.CapSecrets)
+	case "backup-plan", "backup-repository":
+		caps = append(caps, agentproto.CapBackups)
+	}
+	return caps
 }
 
 // AgentRunApp performs one app operation through the installed coordinator:
@@ -285,16 +302,20 @@ func AgentStreamApp(ctx context.Context, target string, request deploy.SessionRe
 	if _, err := rand.Read(token[:]); err != nil {
 		return -1, err
 	}
+	tokenHex := hex.EncodeToString(token[:])
 	var initialWin *agentproto.WindowSize
 	if request.TTY {
 		initialWin = initialWindowSize(stdin, stdout)
 	}
-	prepared, stream, err := client.Session(ctx, agentproto.SessionEnvelope{Token: hex.EncodeToString(token[:]), Request: request, Window: initialWin})
+	prepared, stream, err := client.Session(ctx, agentproto.SessionEnvelope{Token: tokenHex, Request: request, Window: initialWin})
 	if err != nil {
 		return -1, err
 	}
 	if prepared.Error != "" {
 		return -1, fmt.Errorf("prepare session: %q", prepared.Error)
+	}
+	if prepared.Version != 1 || prepared.Token != tokenHex || !session.ValidTarget(request, prepared.Target) {
+		return -1, errors.New("invalid session preparation response")
 	}
 	fmt.Fprintf(stderr, "Session: app=%s service=%s container=%s candidate=%t\n", prepared.Target.App, prepared.Target.Service, prepared.Target.ContainerID, prepared.Target.Candidate)
 	if !request.Stdin {

@@ -18,6 +18,7 @@ import (
 	"github.com/nchapman/vamos/internal/agentclient"
 	"github.com/nchapman/vamos/internal/agentproto"
 	"github.com/nchapman/vamos/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/session"
@@ -472,5 +473,39 @@ func TestDaemonPreservesQueuedWorkAcrossRestartBeforeAdmission(t *testing.T) {
 	rec2After, err := cl2.Wait(context.Background(), sub2.OperationID)
 	if err != nil || rec2After.Phase != agentproto.PhaseSucceeded || rec2After.Response == nil || rec2After.Response.Status.App != "second" {
 		t.Fatalf("queued op2 did not schedule and succeed after restart: %+v err=%v", rec2After, err)
+	}
+}
+
+func TestDaemonDeduplicatedSubmitWithPayloadAllowsSubsequentRPCs(t *testing.T) {
+	stampAgentBuild(t)
+	client, _, stop := testDaemon(t, func(_ context.Context, req deploy.Request, payload []byte) (deploy.Response, error) {
+		if string(payload) != "bundle-bytes" {
+			return deploy.Response{}, errors.New("unexpected payload")
+		}
+		return deploy.Response{Version: 1, Status: &deploy.Status{App: req.App, Phase: "ready"}}, nil
+	}, nil)
+	defer stop()
+
+	req := deploy.Request{
+		Version:       1,
+		Action:        "deploy",
+		App:           "billing",
+		Operation:     strings.Repeat("d", 32),
+		ContextFormat: deploy.BundleFormat,
+		Host:          lifecycle.Config{Name: "prod", Domain: "apps.example.com"},
+		Config:        &config.App{Name: "billing", Services: map[string]config.Service{"web": {Image: "nginx:1.27@sha256:" + strings.Repeat("e", 64), HTTP: &config.HTTP{Port: 8080, Health: "/"}, Update: config.UpdateAuto}}},
+	}
+	idem := strings.Repeat("f", 32)
+	sub1, err := client.Submit(context.Background(), req, idem, []byte("bundle-bytes"))
+	if err != nil || sub1.Deduplicated {
+		t.Fatalf("first submit failed: %+v err=%v", sub1, err)
+	}
+	sub2, err := client.Submit(context.Background(), req, idem, []byte("bundle-bytes"))
+	if err != nil || !sub2.Deduplicated || sub2.OperationID != sub1.OperationID {
+		t.Fatalf("deduplicated submit failed: %+v err=%v", sub2, err)
+	}
+	rec, err := client.Wait(context.Background(), sub1.OperationID)
+	if err != nil || rec.Phase != agentproto.PhaseSucceeded {
+		t.Fatalf("wait after deduplicated submit failed: %+v err=%v", rec, err)
 	}
 }

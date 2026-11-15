@@ -1,0 +1,74 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+  settings:
+    errorlint:
+      errorf: false
+    gocritic:
+      disabled-checks:
+        - assignOp
+        - elseif
+        - exitAfterDefer
+        - ifElseChain
+        - singleCaseSwitch
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-keys-type
+        - name: empty-block
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: unused-parameter
+          disabled: true
+        - name: var-declaration
+        - name: var-naming
+          arguments:
+            - []
+            - []
+            - - skip-package-name-checks: true
+    staticcheck:
+      checks:
+        - all
+        - -QF1001
+        - -ST1000
+        - -ST1005
+        - -ST1020
+        - -ST1021
+        - -ST1022
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errorlint
+          - gocritic
+          - revive
+        text: "SA9005"
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA9005"

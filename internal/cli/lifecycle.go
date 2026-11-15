@@ -179,9 +179,10 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		return lifecycleError(stderr, err)
 	}
 	remoteOp := "bootstrap"
-	if operation == "teardown" {
+	switch operation {
+	case "teardown":
 		remoteOp = "teardown"
-	} else if operation == "upgrade" {
+	case "upgrade":
 		remoteOp = "upgrade"
 	}
 	request := executor.Request{Version: executor.Version, Operation: remoteOp, Config: &lifecycle.Config{Name: name, Domain: server.Domain}, Confirm: true, Purge: *purge}
@@ -196,14 +197,15 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
-	if operation == "add" {
+	switch operation {
+	case "add":
 		if state.Phase != "ready" {
 			return lifecycleError(stderr, errors.New("bootstrap did not return ready; inspect server status"))
 		}
 		if err := store.Put(server); err != nil {
 			return lifecycleError(stderr, fmt.Errorf("host is ready but local registration failed: %w; rerun server connect with the same identity", err))
 		}
-	} else if operation == "teardown" {
+	case "teardown":
 		if state.Phase != "removed" {
 			return lifecycleError(stderr, errors.New("teardown did not return removed; inspect server status"))
 		}
@@ -212,9 +214,10 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		}
 	}
 	message := "Installed coordinator and executor were replaced after ownership and health checks."
-	if operation == "teardown" {
+	switch operation {
+	case "teardown":
 		message = "Owned installation removed. A small host receipt and the runtime lock are retained for safe retries."
-	} else if operation == "add" {
+	case "add":
 		message = "Docker/Buildx and Caddy verified. No app routes or certificates configured; set DNS separately."
 	}
 	if err := writeServerMutationResult(stdout, name, state, message); err != nil {
@@ -271,9 +274,11 @@ func discoverDeployKey() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if result, err := process.Run(ctx, "ssh-add", []string{"-L"}, nil); err == nil && len(result.Stdout) != 0 {
-		first := strings.TrimSpace(strings.SplitN(string(result.Stdout), "\n", 2)[0])
-		if strings.HasPrefix(first, "ssh-") {
-			return first, nil
+		for _, raw := range strings.Split(string(result.Stdout), "\n") {
+			line := strings.TrimSpace(raw)
+			if line != "" && lifecycle.ValidateDeployKey(line) == nil {
+				return line, nil
+			}
 		}
 	}
 	home, err := os.UserHomeDir()
@@ -286,7 +291,7 @@ func discoverDeployKey() (string, error) {
 			continue
 		}
 		first := strings.TrimSpace(strings.SplitN(string(data), "\n", 2)[0])
-		if strings.HasPrefix(first, "ssh-") {
+		if first != "" && lifecycle.ValidateDeployKey(first) == nil {
 			return first, nil
 		}
 	}

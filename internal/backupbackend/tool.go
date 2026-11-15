@@ -56,6 +56,10 @@ func verifyFile(path, hash string) bool {
 		return false
 	}
 	defer f.Close()
+	after, e := f.Stat()
+	if e != nil || !os.SameFile(st, after) || !after.Mode().IsRegular() || after.Mode().Perm() != 0755 || !owned(after) || after.Size() > 64<<20 {
+		return false
+	}
 	h := sha256.New()
 	if _, e = io.Copy(h, io.LimitReader(f, 64<<20+1)); e != nil {
 		return false
@@ -144,18 +148,23 @@ func installArtifact(ctx context.Context, dir, _ string, a Artifact) (string, er
 	if e != nil {
 		return "", errTool
 	}
-	defer f.Close()
+	binaryName := f.Name()
 	h.Reset()
 	n, e = io.Copy(io.MultiWriter(f, h), io.LimitReader(bzip2.NewReader(compressed), 64<<20+1))
 	if e != nil || n > 64<<20 || hex.EncodeToString(h.Sum(nil)) != a.SHA256 {
+		_ = f.Close()
 		return "", errTool
 	}
 	if f.Chmod(0755) != nil || f.Sync() != nil {
+		_ = f.Close()
+		return "", errTool
+	}
+	if f.Close() != nil {
 		return "", errTool
 	}
 	// Staging within the version directory keeps this atomic, no-overwrite
 	// hard link on the destination filesystem, independent of runtime storage.
-	if os.Link(f.Name(), dest) != nil {
+	if os.Link(binaryName, dest) != nil {
 		return "", errTool
 	}
 	directory, e := os.Open(dir)

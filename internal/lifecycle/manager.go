@@ -23,7 +23,7 @@ const caddyConfig = "{\n\tadmin 127.0.0.1:2019\n}\n"
 // Applications will get explicit private networks; no shared default bridge.
 const dockerConfig = "{\n  \"bridge\": \"none\",\n  \"log-driver\": \"local\"\n}\n"
 
-var deployKeyLine = regexp.MustCompile(`^ssh-(?:ed25519|rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
+var deployKeyLine = regexp.MustCompile(`^(?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
 
 // ValidateDeployKey accepts exactly one OpenSSH public key line with a
 // printable optional comment. Newlines, quoting, and options are rejected:
@@ -72,6 +72,7 @@ WantedBy=multi-user.target
 
 const agentSSHConfig = `Match User vamos
     AuthorizedKeysFile /etc/vamos/authorized_keys
+    AuthorizedKeysCommand none
     PasswordAuthentication no
     KbdInteractiveAuthentication no
     PermitTTY no
@@ -171,14 +172,17 @@ func (m *Manager) lock(ctx context.Context) (func(), error) {
 	lock := flock.New(m.path(LockPath), flock.SetPermissions(0600))
 	ok, err := lock.TryLock()
 	if err != nil {
-		lock.Close()
+		_ = lock.Close()
 		return nil, err
 	}
 	if !ok {
-		lock.Close()
+		_ = lock.Close()
 		return nil, errors.New("another host lifecycle operation is running; inspect server status before retrying")
 	}
-	return func() { lock.Close() }, nil
+	return func() {
+		_ = lock.Unlock()
+		_ = lock.Close()
+	}, nil
 }
 
 func (m *Manager) save(s *State) error {
@@ -451,10 +455,30 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	if err := m.verifyQueueIdle(); err != nil {
 		return nil, err
 	}
+	oldExecutor, err := os.ReadFile(m.path(ExecutorPath))
+	if err != nil {
+		return nil, err
+	}
+	oldAgent, err := os.ReadFile(m.path(AgentPath))
+	if err != nil {
+		return nil, err
+	}
+	oldExecutorSHA := s.ExecutorSHA
+	oldAgentSHA := s.AgentSHA
 	defer func() { m.recordError(s, err) }()
 	agentStopped := false
+	binariesUpdated := false
 	defer func() {
-		if !agentStopped || err == nil {
+		if err == nil {
+			return
+		}
+		if binariesUpdated {
+			_ = atomicWrite(m.path(ExecutorPath), oldExecutor, 0755)
+			_ = atomicWrite(m.path(AgentPath), oldAgent, 0755)
+			s.ExecutorSHA = oldExecutorSHA
+			s.AgentSHA = oldAgentSHA
+		}
+		if !agentStopped {
 			return
 		}
 		restartCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
@@ -470,18 +494,16 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	if err = m.verifyQueueIdle(); err != nil {
 		return nil, err
 	}
+	binariesUpdated = true
 	if err = atomicWrite(m.path(ExecutorPath), m.Executor, 0755); err != nil {
-		return nil, err
-	}
-	executorHash := sha256.Sum256(m.Executor)
-	s.ExecutorSHA = hex.EncodeToString(executorHash[:])
-	if err = m.save(s); err != nil {
 		return nil, err
 	}
 	if err = atomicWrite(m.path(AgentPath), m.Agent, 0755); err != nil {
 		return nil, err
 	}
+	executorHash := sha256.Sum256(m.Executor)
 	agentHash := sha256.Sum256(m.Agent)
+	s.ExecutorSHA = hex.EncodeToString(executorHash[:])
 	s.AgentSHA = hex.EncodeToString(agentHash[:])
 	if err = m.save(s); err != nil {
 		return nil, err
@@ -494,8 +516,10 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	}
 	agentStopped = false
 	if err = m.health(ctx); err != nil {
+		agentStopped = true
 		return nil, err
 	}
+	binariesUpdated = false
 	if err = m.step(s, "complete"); err != nil {
 		return nil, err
 	}

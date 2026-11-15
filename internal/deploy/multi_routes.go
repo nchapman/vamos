@@ -57,7 +57,7 @@ func (m *Manager) routeJournals(j *journal) ([]*journal, string, error) {
 			return nil, "", errors.New("unexpected app journal entry")
 		}
 		other, e := m.load(entry.Name())
-		if entry.Name() == j.App && errors.Is(e, os.ErrNotExist) {
+		if errors.Is(e, os.ErrNotExist) && (entry.Name() == j.App || m.MutationLock != nil) {
 			continue
 		}
 		if e != nil {

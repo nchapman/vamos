@@ -14,10 +14,10 @@ func ancestors(path string) error {
 	for p := filepath.Clean(path); ; p = filepath.Dir(p) {
 		info, err := os.Lstat(p)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return unsafe
+			return ErrUnsafeStore
 		}
 		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-			return unsafe
+			return ErrUnsafeStore
 		}
 		if filepath.Dir(p) == p {
 			break
@@ -84,7 +84,7 @@ func uniqueJSON(data []byte) bool {
 		return false
 	}
 	_, err := dec.Token()
-	return err == io.EOF
+	return errors.Is(err, io.EOF)
 }
 func replace(dir, path string, data []byte) error {
 	f, err := os.CreateTemp(dir, ".volume-")

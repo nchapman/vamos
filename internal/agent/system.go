@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,7 +25,7 @@ const (
 	DefaultAuthorizedKeys = "/etc/vamos/authorized_keys"
 )
 
-var forcedKeyRE = regexp.MustCompile(`^restrict,command="(?:/usr/local/lib/vamos/vamos-agent|/usr/local/lib/vamos/executor) internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" ssh-(?:ed25519|rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
+var forcedKeyRE = regexp.MustCompile(`^restrict,command="(?:/usr/local/lib/vamos/vamos-agent|/usr/local/lib/vamos/executor) internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" (?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
 
 type Config struct {
 	Concurrency agentproto.ConcurrencyPolicy `json:"concurrency"`
@@ -57,7 +58,14 @@ func ServeSystem(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return (&Daemon{SocketPath: DefaultSocket, Queue: queue, Principals: principals, SocketGID: gid}).Serve(ctx)
+	return (&Daemon{
+		SocketPath:         DefaultSocket,
+		Queue:              queue,
+		Principals:         principals,
+		PrincipalsPath:     DefaultPrincipals,
+		AuthorizedKeysPath: DefaultAuthorizedKeys,
+		SocketGID:          gid,
+	}).Serve(ctx)
 }
 
 // ValidateAuthorizedKeys permits only restricted forced bridge commands whose
@@ -68,8 +76,10 @@ func ValidateAuthorizedKeys(path string, principals map[string]agentproto.Princi
 	if err != nil {
 		return err
 	}
-	for lineNo, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-		if line == "" {
+	for lineNo, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSuffix(rawLine, "\r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 		match := forcedKeyRE.FindStringSubmatch(line)
@@ -136,12 +146,18 @@ func ReadPrincipals(path string) (map[string]agentproto.Principal, error) {
 }
 
 func readRegularFile(path string, maxBytes int64, label string) ([]byte, error) {
+	parent := filepath.Dir(filepath.Clean(path))
+	if parentInfo, err := os.Lstat(parent); err != nil {
+		return nil, err
+	} else if parentInfo.Mode()&os.ModeSymlink != 0 || !parentInfo.IsDir() {
+		return nil, fmt.Errorf("refusing symlinked parent directory for %s", label)
+	}
 	before, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
-	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || before.Size() > maxBytes {
-		return nil, fmt.Errorf("%s must be a regular file no larger than %d bytes", label, maxBytes)
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || before.Size() > maxBytes || !ownedByProcess(before) {
+		return nil, fmt.Errorf("%s must be a non-writable owned regular file no larger than %d bytes", label, maxBytes)
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -152,7 +168,7 @@ func readRegularFile(path string, maxBytes int64, label string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	if !os.SameFile(before, after) || !after.Mode().IsRegular() || after.Size() > maxBytes {
+	if !os.SameFile(before, after) || !after.Mode().IsRegular() || after.Size() > maxBytes || !ownedByProcess(after) {
 		return nil, fmt.Errorf("%s changed or exceeded size limit while reading", label)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))

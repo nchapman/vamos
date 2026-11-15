@@ -44,11 +44,13 @@ type SessionManager interface {
 // uploaded program: a restricted account runs Bridge, which relays its stdio to
 // this socket and identifies the scoped principal selected by its forced-key command.
 type Daemon struct {
-	SocketPath string
-	StatePath  string
-	Queue      *Queue
-	Principals map[string]agentproto.Principal
-	SocketGID  int
+	SocketPath         string
+	StatePath          string
+	PrincipalsPath     string
+	AuthorizedKeysPath string
+	Queue              *Queue
+	Principals         map[string]agentproto.Principal
+	SocketGID          int
 	// BridgePrincipal optionally pins a test or single-key installation. Production
 	// uses command= options in authorized_keys to select a configured principal.
 	BridgePrincipal string
@@ -121,9 +123,14 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		return fmt.Errorf("recover agent queue: %w", err)
 	}
 	for _, id := range readyIDs {
-		idCopy := id
 		d.workWG.Add(1)
-		go func() { defer d.workWG.Done(); d.execute(ctx, idCopy) }()
+		go func() { defer d.workWG.Done(); d.execute(ctx, id) }()
+	}
+	parent := filepath.Dir(d.SocketPath)
+	if info, err := os.Lstat(parent); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("agent socket directory must not be a symlink")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	if info, err := os.Lstat(d.SocketPath); err == nil {
 		if info.Mode()&os.ModeSocket == 0 || info.Mode()&os.ModeSymlink != 0 {
@@ -147,7 +154,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer func() { listener.Close(); os.Remove(d.SocketPath) }()
+	defer func() { _ = listener.Close(); _ = os.Remove(d.SocketPath) }()
 	if err := os.Chmod(d.SocketPath, 0660); err != nil {
 		return err
 	}
@@ -159,7 +166,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	defer d.workWG.Wait()
-	go func() { <-ctx.Done(); _ = listener.Close() }()
+	stopListen := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer stopListen()
+	connSem := make(chan struct{}, 64)
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -168,9 +177,38 @@ func (d *Daemon) Serve(ctx context.Context) error {
 			}
 			return err
 		}
+		select {
+		case connSem <- struct{}{}:
+		default:
+			_ = conn.Close()
+			continue
+		}
 		wg.Add(1)
-		go func() { defer wg.Done(); defer conn.Close(); _ = d.serveConn(ctx, conn) }()
+		go func() {
+			defer wg.Done()
+			defer func() { <-connSem }()
+			defer conn.Close()
+			stopConn := context.AfterFunc(ctx, func() { _ = conn.Close() })
+			defer stopConn()
+			_ = d.serveConn(ctx, conn)
+		}()
 	}
+}
+
+func (d *Daemon) resolvePrincipals() (map[string]agentproto.Principal, error) {
+	if d.PrincipalsPath == "" {
+		return d.Principals, nil
+	}
+	principals, err := ReadPrincipals(d.PrincipalsPath)
+	if err != nil {
+		return nil, err
+	}
+	if d.AuthorizedKeysPath != "" {
+		if err := ValidateAuthorizedKeys(d.AuthorizedKeysPath, principals); err != nil {
+			return nil, err
+		}
+	}
+	return principals, nil
 }
 
 func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
@@ -188,20 +226,26 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 			return errors.New("agent socket peer is not the restricted vamos account")
 		}
 	}
+	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	reader := bufio.NewReaderSize(conn, agentproto.MaxEnvelopeBytes+256)
 	line, err := reader.ReadString('\n')
+	_ = conn.SetReadDeadline(time.Time{})
 	if err != nil {
 		return err
 	}
 	const prefix = "VAMOS-BRIDGE "
 	principalID := ""
-	if len(line) > len(prefix)+1 && line[:len(prefix)] == prefix {
+	if len(line) > len(prefix)+1 && len(line) <= len(prefix)+129 && line[:len(prefix)] == prefix {
 		principalID = line[len(prefix) : len(line)-1]
 	}
 	if !bridgePrincipalRE.MatchString(principalID) || (d.BridgePrincipal != "" && principalID != d.BridgePrincipal) {
 		return errors.New("invalid bridge principal")
 	}
-	principal, ok := d.Principals[principalID]
+	principals, err := d.resolvePrincipals()
+	if err != nil {
+		return err
+	}
+	principal, ok := principals[principalID]
 	if !ok || principal.ID != principalID || principal.Validate() != nil {
 		return errors.New("unknown bridge principal")
 	}
@@ -229,14 +273,12 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 				return nil
 			}
 			var request agentproto.HelloRequest
-			if err := decodePayload(frame.Payload, &request); err != nil || request.APIMin < 1 || request.APIMax < request.APIMin {
-				_ = writeError(conn, "invalid_request", "invalid hello request")
-				return nil
+			if decodePayload(frame.Payload, &request) != nil || request.APIMin < 1 || request.APIMax < request.APIMin {
+				return writeError(conn, "invalid_request", "invalid hello request")
 			}
-			state, err := lifecycle.ReadState(d.StatePath)
-			if err != nil || state == nil {
-				_ = writeError(conn, "host_unavailable", "agent host ownership state is unavailable")
-				return nil
+			state, stateErr := lifecycle.ReadState(d.StatePath)
+			if stateErr != nil || state == nil {
+				return writeError(conn, "host_unavailable", "agent host ownership state is unavailable")
 			}
 			response := agentproto.HelloResponse{AgentVersion: d.Version, AgentBuildID: d.BuildID, APIMin: agentproto.MinSupportedAPI, APIMax: agentproto.MaxSupportedAPI, Capabilities: d.Capabilities, HostID: state.ID, HostName: state.Config.Name, Domain: state.Config.Domain, Concurrency: d.Queue.policy}
 			if err := writeOK(conn, response); err != nil {
@@ -257,19 +299,19 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 			if err := writeOK(conn, response); err != nil {
 				return err
 			}
-			if request.PayloadBytes != 0 {
-				// The fixed byte count is part of the accepted control frame, so
-				// the following frame remains aligned on a persistent connection.
-				if err := conn.SetReadDeadline(time.Now().Add(5 * time.Minute)); err != nil {
-					return err
-				}
-				err := d.Queue.StorePayload(response.OperationID, reader)
-				_ = conn.SetReadDeadline(time.Time{})
-				if err != nil {
-					return err
-				}
-			}
 			if !response.Deduplicated {
+				if request.PayloadBytes != 0 {
+					// The fixed byte count is part of the accepted control frame, so
+					// the following frame remains aligned on a persistent connection.
+					if err := conn.SetReadDeadline(time.Now().Add(5 * time.Minute)); err != nil {
+						return err
+					}
+					err := d.Queue.StorePayload(response.OperationID, reader)
+					_ = conn.SetReadDeadline(time.Time{})
+					if err != nil {
+						return err
+					}
+				}
 				d.workWG.Add(1)
 				go func() { defer d.workWG.Done(); d.execute(ctx, response.OperationID) }()
 			}
@@ -327,15 +369,20 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 				_ = writeError(conn, "invalid_request", "invalid operation query")
 				continue
 			}
-			var record agentproto.OperationRecord
-			if frame.Method == agentproto.MethodWait {
-				record, err = d.Queue.Wait(ctx, request.OperationID)
-			} else {
-				record, err = d.Queue.Get(request.OperationID)
-			}
+			record, err := d.Queue.Get(request.OperationID)
 			if err != nil || record.PrincipalID != principal.ID {
 				_ = writeError(conn, "not_found", "operation is not available to this principal")
 				continue
+			}
+			if frame.Method == agentproto.MethodWait {
+				record, err = d.Queue.Wait(ctx, request.OperationID)
+				if err != nil {
+					if ctx.Err() != nil {
+						return ctx.Err()
+					}
+					_ = writeError(conn, "not_found", "operation is not available to this principal")
+					continue
+				}
 			}
 			if err := writeOK(conn, record); err != nil {
 				return err
@@ -353,11 +400,7 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 func (d *Daemon) serveSession(ctx context.Context, conn net.Conn, reader *bufio.Reader, envelope agentproto.SessionEnvelope) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	executable, err := os.Executable()
-	if err != nil {
-		return writeError(conn, "session_failed", "agent executable is unavailable")
-	}
-	prepared, prepErr := d.Sessions.Prepare(ctx, envelope.Token, envelope.Request, executable)
+	prepared, prepErr := d.Sessions.Prepare(ctx, envelope.Token, envelope.Request, "")
 	if prepErr == nil && (prepared.Version != 1 || prepared.Token != envelope.Token || prepared.Error != "" || !session.ValidTarget(envelope.Request, prepared.Target)) {
 		_ = d.Sessions.Cleanup(envelope.Token)
 		prepErr = errors.New("invalid session preparation")
@@ -378,6 +421,7 @@ func (d *Daemon) serveSession(ctx context.Context, conn net.Conn, reader *bufio.
 		resizeCh = make(chan session.WindowSize, 4)
 	}
 	stdin, stdinWriter := io.Pipe()
+	defer stdin.Close()
 	var writeMu sync.Mutex
 	frame := func(kind byte) io.Writer { return chunkWriter{conn: conn, kind: kind, mu: &writeMu} }
 	type attachResult struct {
@@ -387,11 +431,10 @@ func (d *Daemon) serveSession(ctx context.Context, conn net.Conn, reader *bufio.
 	attached := make(chan attachResult, 1)
 	go func() {
 		code, err := d.Sessions.AttachAgent(ctx, envelope.Token, initial, resizeCh, stdin, frame(agentproto.StreamStdout), frame(agentproto.StreamStderr))
+		_ = stdin.Close()
 		attached <- attachResult{code, err}
 	}()
-	pumpDone := make(chan struct{})
 	go func() {
-		defer close(pumpDone)
 		defer stdinWriter.Close()
 		if resizeCh != nil {
 			defer close(resizeCh)
@@ -514,6 +557,9 @@ func (d *Daemon) execute(ctx context.Context, id string) {
 
 	request, payload, err := d.Queue.Start(id)
 	if err != nil {
+		if strings.Contains(err.Error(), "staged operation payload is unavailable") {
+			_ = d.Queue.Fence(id, err.Error())
+		}
 		return
 	}
 	if d.Execute == nil {
@@ -534,24 +580,60 @@ func (d *Daemon) acquireOperationSlots(ctx context.Context, request deploy.Reque
 	if !request.Mutating() {
 		return func() {}, nil
 	}
+	return d.tryAcquireOperationSlots(ctx, request, true)
+}
+
+func (d *Daemon) tryAcquireOperationSlots(ctx context.Context, request deploy.Request, wait bool) (func(), error) {
+	if !request.Mutating() {
+		return func() {}, nil
+	}
+	acquireSlot := func(sem chan struct{}) bool {
+		if !wait {
+			select {
+			case sem <- struct{}{}:
+				return true
+			default:
+				return false
+			}
+		}
+		return acquire(ctx, sem) == nil
+	}
+	lockMutex := func(mu *sync.Mutex) bool {
+		if !wait {
+			return mu.TryLock()
+		}
+		mu.Lock()
+		return true
+	}
 	exclusive := request.App == "" || request.Action == "destroy" || request.Action == "service-remove"
 	if exclusive {
-		d.exclusiveMu.Lock()
+		if !lockMutex(&d.exclusiveMu) {
+			return nil, errors.New("exclusive slot unavailable")
+		}
 		acquired := 0
 		for acquired < cap(d.deploys) {
-			if err := acquire(ctx, d.deploys); err != nil {
+			if !acquireSlot(d.deploys) {
 				for i := 0; i < acquired; i++ {
 					release(d.deploys)
 				}
 				d.exclusiveMu.Unlock()
-				return nil, err
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				return nil, errors.New("deploy slots unavailable")
 			}
 			acquired++
 		}
 		var appMu *sync.Mutex
 		if request.App != "" {
 			appMu = d.appLock(request.App)
-			appMu.Lock()
+			if !lockMutex(appMu) {
+				for i := 0; i < acquired; i++ {
+					release(d.deploys)
+				}
+				d.exclusiveMu.Unlock()
+				return nil, errors.New("app slot unavailable")
+			}
 		}
 		return func() {
 			if appMu != nil {
@@ -564,17 +646,26 @@ func (d *Daemon) acquireOperationSlots(ctx context.Context, request deploy.Reque
 		}, nil
 	}
 
-	if err := acquire(ctx, d.deploys); err != nil {
-		return nil, err
+	if !acquireSlot(d.deploys) {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, errors.New("deploy slot unavailable")
 	}
 	appMu := d.appLock(request.App)
-	appMu.Lock()
+	if !lockMutex(appMu) {
+		release(d.deploys)
+		return nil, errors.New("app slot unavailable")
+	}
 	hasBuild := false
-	if request.Action == "deploy" || request.Action == "run" {
-		if err := acquire(ctx, d.builds); err != nil {
+	if request.Action == "deploy" || request.Action == "run" || request.Action == "resume" {
+		if !acquireSlot(d.builds) {
 			appMu.Unlock()
 			release(d.deploys)
-			return nil, err
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, errors.New("build slot unavailable")
 		}
 		hasBuild = true
 	}

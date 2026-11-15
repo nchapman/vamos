@@ -69,7 +69,7 @@ func (s store) checkDir(create bool) error {
 			if e != nil || !outer.IsDir() || !owned(outer) || (runtime.GOOS != "windows" && outer.Mode().Perm()&0022 != 0) {
 				return errStore
 			}
-			if e = os.Mkdir(dir, 0700); e != nil {
+			if e = os.Mkdir(dir, 0700); e != nil && !errors.Is(e, os.ErrExist) {
 				return errStore
 			}
 			// New ancestor entries must survive a crash before remote init too.

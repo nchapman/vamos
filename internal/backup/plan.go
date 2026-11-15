@@ -68,7 +68,7 @@ func DecodePlan(r io.Reader) (Plan, error) {
 		return Plan{}, errors.New("invalid backup plan YAML")
 	}
 	var extra yaml.Node
-	if d.Decode(&extra) != io.EOF {
+	if !errors.Is(d.Decode(&extra), io.EOF) {
 		return Plan{}, errors.New("backup plan requires one document")
 	}
 	d = yaml.NewDecoder(bytes.NewReader(b))

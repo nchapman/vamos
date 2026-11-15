@@ -229,15 +229,28 @@ func (p Principal) Validate() error {
 	if p.Role != RoleAdmin && p.Role != RoleDeployer {
 		return fmt.Errorf("unsupported principal role %q", p.Role)
 	}
+	seenApps := make(map[string]bool, len(p.Apps))
 	for _, app := range p.Apps {
 		if app != "*" && (len(app) > 63 || !appLabelRE.MatchString(app)) {
 			return fmt.Errorf("invalid principal app scope %q", app)
 		}
+		if seenApps[app] {
+			return fmt.Errorf("duplicate principal app scope %q", app)
+		}
+		seenApps[app] = true
 	}
+	seenActions := make(map[string]bool, len(p.Actions))
 	for _, action := range p.Actions {
 		if !appActions[action] && !hostAdminActions[action] {
 			return fmt.Errorf("unknown principal action %q", action)
 		}
+		if p.Role != RoleAdmin && hostAdminActions[action] {
+			return fmt.Errorf("principal role %q cannot declare host administration action %q", p.Role, action)
+		}
+		if seenActions[action] {
+			return fmt.Errorf("duplicate principal action %q", action)
+		}
+		seenActions[action] = true
 	}
 	return nil
 }

@@ -35,7 +35,10 @@ func (m *Manager) live(c context.Context) ([]byte, error) {
 	if resp.StatusCode != 200 {
 		return nil, errors.New("Caddy admin API unavailable")
 	}
-	b, e := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	b, e := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
+	if e == nil && len(b) > 4<<20 {
+		return nil, errors.New("Caddy admin configuration exceeds 4 MiB")
+	}
 	return b, e
 }
 func (m *Manager) promote(c context.Context, j *journal) error {

@@ -103,9 +103,9 @@ func (m *Manager) checkMounts() error {
 	if err != nil {
 		return fmt.Errorf("cannot verify owned paths are not mounted: %w", err)
 	}
-	// Completed app receipts are also explicitly removed during host purge,
-	// but are not recursive dataPaths: each receipt is validated separately.
-	return checkMountInfo(data, append(append([]string{}, dataPaths...), "/var/lib/vamos/apps"))
+	// Completed app receipts and coordinator directories are also explicitly
+	// removed during host purge, so verify none of them overlap mount points.
+	return checkMountInfo(data, append(append([]string{}, dataPaths...), "/var/lib/vamos/apps", "/var/lib/vamos/queue", "/etc/vamos"))
 }
 
 func checkMountInfo(data []byte, paths []string) error {

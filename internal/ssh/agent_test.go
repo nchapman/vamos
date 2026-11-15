@@ -2,6 +2,8 @@ package ssh
 
 import (
 	"context"
+	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -34,33 +36,40 @@ func TestBridgeTargetDerivation(t *testing.T) {
 }
 
 func TestAgentRunAppValidatesBeforeDialing(t *testing.T) {
+	oldDial := dialAgentBridge
+	dialCalls := 0
+	dialAgentBridge = func(ctx context.Context, target string) (*bridgeConn, error) {
+		dialCalls++
+		return nil, errors.New("connect to \"vamos@home\" over SSH: stubbed bridge dial")
+	}
+	t.Cleanup(func() { dialAgentBridge = oldDial })
+
 	if _, err := AgentRunApp(context.Background(), "host;id", deploy.Request{}, nil); err == nil {
 		t.Fatal("invalid target accepted")
-	}
-	request := deploy.Request{Version: 1, Action: "status", App: "billing", Host: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}}
-	_, err := AgentRunApp(context.Background(), "root@home", request, nil)
-	if err == nil {
-		t.Fatal("expected bridge failure")
-	}
-	// ssh is unavailable in tests; the failure must surface as a connection or
-	// handshake error rather than a panic or silent success.
-	if !strings.Contains(err.Error(), "connect to") && !strings.Contains(err.Error(), "handshake failed") {
-		t.Fatalf("unexpected dial outcome: %v", err)
 	}
 	if _, err := AgentRunApp(context.Background(), "root@home", deploy.Request{Version: 2}, nil); err == nil {
 		t.Fatal("invalid request accepted")
 	}
+	if dialCalls != 0 {
+		t.Fatalf("dialed %d times before validation", dialCalls)
+	}
+	request := deploy.Request{Version: 1, Action: "status", App: "billing", Host: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}}
+	_, err := AgentRunApp(context.Background(), "root@home", request, nil)
+	if err == nil || !strings.Contains(err.Error(), "connect to") || dialCalls != 1 {
+		t.Fatalf("unexpected dial outcome: err=%v calls=%d", err, dialCalls)
+	}
 }
 
 func TestAgentStreamAppValidatesBeforeDialing(t *testing.T) {
+	oldDial := dialAgentBridge
+	dialCalls := 0
+	dialAgentBridge = func(ctx context.Context, target string) (*bridgeConn, error) {
+		dialCalls++
+		return nil, errors.New("connect to \"vamos@home\" over SSH: stubbed bridge dial")
+	}
+	t.Cleanup(func() { dialAgentBridge = oldDial })
+
 	request := deploy.SessionRequest{Version: 1, Action: "logs", App: "billing", Service: "web", Host: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Tail: 10}
-	_, err := AgentStreamApp(context.Background(), "root@home", request, nil, &strings.Builder{}, &strings.Builder{})
-	if err == nil {
-		t.Fatal("expected bridge connection failure")
-	}
-	if !strings.Contains(err.Error(), "connect to") && !strings.Contains(err.Error(), "handshake failed") {
-		t.Fatalf("unexpected dial outcome: %v", err)
-	}
 	invalid := request
 	invalid.Tail = 1001
 	if _, err := AgentStreamApp(context.Background(), "root@home", invalid, nil, &strings.Builder{}, &strings.Builder{}); err == nil {
@@ -68,6 +77,24 @@ func TestAgentStreamAppValidatesBeforeDialing(t *testing.T) {
 	}
 	if _, err := AgentStreamApp(context.Background(), "host;rm -rf", request, nil, &strings.Builder{}, &strings.Builder{}); err == nil {
 		t.Fatal("invalid target accepted")
+	}
+	if dialCalls != 0 {
+		t.Fatalf("dialed %d times before validation", dialCalls)
+	}
+	_, err := AgentStreamApp(context.Background(), "root@home", request, nil, &strings.Builder{}, &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "connect to") || dialCalls != 1 {
+		t.Fatalf("unexpected dial outcome: err=%v calls=%d", err, dialCalls)
+	}
+}
+
+func TestBridgeSSHArgumentsAcceptedByOpenSSH(t *testing.T) {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		t.Skip("ssh not installed")
+	}
+	args := append([]string{"-G", "-F", "/dev/null"}, bridgeSSHArguments("vamos@192.0.2.10")...)
+	cmd := exec.Command("ssh", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("ssh -G rejected bridge arguments: %v\n%s", err, out)
 	}
 }
 

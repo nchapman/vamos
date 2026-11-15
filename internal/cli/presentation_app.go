@@ -153,7 +153,7 @@ func (p *presentation) serviceSummary(s *deploy.Status, names []string) string {
 		}
 		// Available and Unavailable are independent facts, not inverses.
 		if fits {
-			b.WriteString(fmt.Sprintf("%-*s  %-*s  %-8s  %-10s  %s\n", nameWidth, displayText(name), kindWidth, displayText(ss.Kind), yesNo(ss.Running), yesNo(ss.Available), yesNo(ss.Unavailable)))
+			fmt.Fprintf(&b, "%-*s  %-*s  %-8s  %-10s  %s\n", nameWidth, displayText(name), kindWidth, displayText(ss.Kind), yesNo(ss.Running), yesNo(ss.Available), yesNo(ss.Unavailable))
 		} else {
 			b.WriteString(p.ink("", name, true) + "  " + p.ink("secondary", ss.Kind, false) + "\n")
 			b.WriteString(p.prose("Running " + yesNo(ss.Running) + " / Available " + yesNo(ss.Available) + " / Unavailable " + yesNo(ss.Unavailable)))

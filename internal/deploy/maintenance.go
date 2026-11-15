@@ -84,7 +84,13 @@ func (m *Manager) maintenanceFence(r Request) error {
 		if !entry.IsDir() {
 			return errors.New("unexpected app entry")
 		}
+		if m.MutationLock != nil && r.App != "" && entry.Name() != r.App {
+			continue
+		}
 		j, e := m.load(entry.Name())
+		if errors.Is(e, os.ErrNotExist) && m.MutationLock != nil && entry.Name() != r.App {
+			continue
+		}
 		if e != nil {
 			return e
 		}

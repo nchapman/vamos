@@ -20,12 +20,12 @@ func VersionFor(operation, name string) string {
 
 func batchNames(values map[string][]byte) ([]string, error) {
 	if len(values) < 1 || len(values) > MaxNames {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	names := make([]string, 0, len(values))
 	for name, value := range values {
 		if !ValidName(name) {
-			return nil, invalid
+			return nil, errInvalid
 		}
 		if err := ValidateValue(value); err != nil {
 			return nil, err
@@ -47,7 +47,7 @@ func EncodeBatch(values map[string][]byte) ([]byte, error) {
 	}
 	data, err := json.Marshal(strings)
 	if err != nil || len(data) > MaxBatchBytes {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	return data, nil
 }
@@ -55,26 +55,26 @@ func EncodeBatch(values map[string][]byte) ([]byte, error) {
 // DecodeBatch accepts only a bounded JSON object with exactly the requested names.
 func DecodeBatch(data []byte, names []string) (map[string][]byte, error) {
 	if len(data) > MaxBatchBytes || !utf8.Valid(data) || len(names) < 1 || len(names) > MaxNames {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	requested := make(map[string]bool, len(names))
 	for _, name := range names {
 		if !ValidName(name) || requested[name] {
-			return nil, invalid
+			return nil, errInvalid
 		}
 		requested[name] = true
 	}
 	if !uniqueJSON(data) {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	var values map[string]*string
 	if json.Unmarshal(data, &values) != nil || len(values) != len(names) {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	out := make(map[string][]byte, len(names))
 	for name, value := range values {
 		if !requested[name] || value == nil {
-			return nil, invalid
+			return nil, errInvalid
 		}
 		v := []byte(*value)
 		if err := ValidateValue(v); err != nil {

@@ -44,6 +44,9 @@ func (m Manager) existingReceipt(hostID string, allowEmpty bool) (*build, error)
 		return nil, os.Remove(dir)
 	}
 	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), ".receipt-") {
+			continue
+		}
 		if entry.Name() != "state.json" && entry.Name() != "buildx" {
 			return nil, errInfra
 		}

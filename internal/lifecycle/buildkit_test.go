@@ -24,9 +24,10 @@ func TestTeardownRefusesUnownedBuildServiceState(t *testing.T) {
 					t.Fatal(err)
 				}
 				filename := ""
-				if kind == "unknown" {
+				switch kind {
+				case "unknown":
 					filename = "precious"
-				} else if kind == "invalid-receipt" {
+				case "invalid-receipt":
 					filename = "state.json"
 				}
 				if filename != "" {

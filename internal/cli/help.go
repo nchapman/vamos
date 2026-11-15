@@ -67,11 +67,11 @@ func commandHelpArgs(path []string) ([]string, bool) {
 	var children []string
 	switch path[0] {
 	case "server":
-		children = []string{"inspect", "add", "connect", "status", "teardown"}
+		children = []string{"inspect", "add", "upgrade", "connect", "status", "teardown"}
 	case "service":
 		children = []string{"bind", "remove"}
 	case "secrets":
-		children = []string{"stage", "list"}
+		children = []string{"stage", "set", "list"}
 	case "apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "validate", "version":
 	default:
 		return nil, false

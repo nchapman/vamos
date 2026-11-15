@@ -135,7 +135,7 @@ func TestDomainsFlowReleasedAliasClaimBlocksRollbackBeforeMutation(t *testing.T)
 		t.Fatal("rollback conflict changed journal files")
 	}
 	for name, b := range before {
-		if string(after[name]) != string(b) {
+		if after[name] != b {
 			t.Fatalf("rollback conflict changed %s", name)
 		}
 	}

@@ -37,6 +37,10 @@ fi
 description = "Run go vet"
 run = "go vet ./..."
 
+[tasks.lint]
+description = "Run golangci-lint (requires golangci-lint)"
+run = "golangci-lint run ./..."
+
 [tasks.test]
 description = "Run all tests with race detection"
 run = "go test -race ./..."

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nchapman/vamos/internal/agentclient"
 	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
@@ -191,20 +192,16 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		}
 
 	}
-	inspectCtx, stopInspect := context.WithTimeout(ctx, 15*time.Second)
-	report, err := deps.Inspect(inspectCtx, server.Target)
-	stopInspect()
+	response, err := runAppTransport(ctx, server.Target, *artifact, r, value, deps)
 	if err != nil {
-		return lifecycleError(stderr, err)
+		var remote *agentclient.RemoteError
+		if errors.As(err, &remote) && (remote.Code == "forbidden" || remote.Code == "invalid_request" || remote.Code == "handshake_required" || remote.Code == "unsupported_version" || remote.Code == "host_unavailable" || remote.Code == "submission_refused" || remote.Code == "read_failed") {
+			return lifecycleError(stderr, err)
+		}
+		if strings.Contains(err.Error(), "requires root on a supported Ubuntu host") || strings.Contains(err.Error(), "--executor override requires") || strings.Contains(err.Error(), "server agent handshake failed") || strings.Contains(err.Error(), "server agent bridge rejected") || strings.Contains(err.Error(), "connect to ") || strings.Contains(err.Error(), "artifact:") || strings.Contains(err.Error(), "executor:") {
+			return lifecycleError(stderr, err)
+		}
 	}
-	if !report.Supported || !report.Root {
-		return lifecycleError(stderr, errors.New("requires root on a supported Ubuntu host"))
-	}
-	binary, err := deps.Artifact(*artifact, report.Architecture)
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
-	response, err := deps.Run(ctx, server.Target, r, binary, value)
 	if err != nil || response.Error != "" || response.ErrorCode != "" || response.Version != 1 || (action != "list" && !validSecretAck(r, response)) {
 		if action == "set" {
 			if response.Version == 1 && response.Error != "" {

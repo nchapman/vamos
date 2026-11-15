@@ -279,7 +279,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		request.Operation = hex.EncodeToString(id[:])
 	}
-	if action == "deploy" || action == "run" {
+	switch action {
+	case "deploy", "run":
 		request.Config = app
 		request.Supersede = *supersede
 		request.ReuseData = *reuseData
@@ -315,9 +316,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		if err != nil {
 			return lifecycleError(stderr, err)
 		}
-	} else if action == "resume" {
+	case "resume":
 		request.Operation = flags.Arg(0)
-	} else if action == "logs" {
+	case "logs":
 		request.Tail = *tail
 	}
 	if err := deploy.ValidateRequest(request); err != nil {

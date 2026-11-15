@@ -3,6 +3,7 @@ package buildcontext
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -28,7 +29,7 @@ func unpack(t *testing.T, b []byte) map[string]string {
 	r := tar.NewReader(bytes.NewReader(b))
 	for {
 		h, e := r.Next()
-		if e == io.EOF {
+		if errors.Is(e, io.EOF) {
 			break
 		}
 		if e != nil {

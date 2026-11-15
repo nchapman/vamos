@@ -168,8 +168,11 @@ func runLifecycle(ctx context.Context, target string, request executor.Request, 
 	if runErr != nil {
 		return nil, fmt.Errorf("operation outcome may be unknown; query server status before retrying: %w", connectionError(target, result, runErr))
 	}
-	if parseErr != nil || response.Version != executor.Version || response.HostState == nil {
-		return nil, fmt.Errorf("invalid lifecycle response; query server status before retrying (decode error: %v)", parseErr)
+	if parseErr != nil {
+		return nil, fmt.Errorf("invalid lifecycle response; query server status before retrying (decode error: %w)", parseErr)
+	}
+	if response.Version != executor.Version || response.HostState == nil {
+		return nil, errors.New("invalid lifecycle response; query server status before retrying")
 	}
 	return response.HostState, nil
 }
@@ -213,7 +216,7 @@ func decodeJSON(data []byte, value any) error {
 		return err
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return errors.New("expected exactly one JSON response")
 	}
 	return nil

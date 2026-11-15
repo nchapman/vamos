@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sync"
 	"time"
 )
 
@@ -52,8 +53,10 @@ func run(ctx context.Context, executable string, args []string, stdin []byte, ta
 	cmd.Stderr = stderr
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
-	result := Result{Stdout: stdout.buffer.Bytes(), Stderr: stderr.buffer.Bytes()}
-	if stdout.exceeded || stderr.exceeded {
+	outBytes, outExceeded := stdout.snapshot()
+	errBytes, errExceeded := stderr.snapshot()
+	result := Result{Stdout: outBytes, Stderr: errBytes}
+	if outExceeded || errExceeded {
 		return result, ErrOutputLimit
 	}
 	if ctx.Err() != nil {
@@ -66,6 +69,7 @@ func run(ctx context.Context, executable string, args []string, stdin []byte, ta
 }
 
 type boundedBuffer struct {
+	mu       sync.Mutex
 	limit    int
 	buffer   bytes.Buffer
 	cancel   context.CancelFunc
@@ -73,7 +77,18 @@ type boundedBuffer struct {
 	tail     bool
 }
 
+func (b *boundedBuffer) snapshot() ([]byte, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.buffer.Len() == 0 {
+		return nil, b.exceeded
+	}
+	return append([]byte(nil), b.buffer.Bytes()...), b.exceeded
+}
+
 func (b *boundedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	n := len(p)
 	if b.tail {
 		if n >= b.limit {

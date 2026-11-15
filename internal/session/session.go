@@ -157,6 +157,9 @@ func (m *Manager) Prepare(ctx context.Context, token string, req deploy.SessionR
 		return p, err
 	}
 	defer sessionLock.Close()
+	if err = lock.Close(); err != nil {
+		return p, err
+	}
 	if err = copyExecutable(dir, executable); err != nil {
 		return p, err
 	}
@@ -239,8 +242,10 @@ func (m *Manager) attach(ctx context.Context, token string, allocatePTY bool, in
 	if err = deploy.ValidateSessionRequest(rec.Request); err != nil {
 		return -1, err
 	}
-	if err = checkFile(dir, "executor", 0700); err != nil {
-		return -1, err
+	if !allocatePTY {
+		if err = checkFile(dir, "executor", 0700); err != nil {
+			return -1, err
+		}
 	}
 	if err = dir.Rename("prepared.json", "claimed.json"); err != nil {
 		return -1, err
@@ -424,6 +429,9 @@ func writeFile(dir *os.Root, name string, data []byte, mode os.FileMode) error {
 }
 
 func copyExecutable(dir *os.Root, source string) error {
+	if source == "" {
+		return nil
+	}
 	// Resolve os.Executable paths on platforms where the installed binary is a
 	// symlink. The source is trusted entrypoint input, not session metadata.
 	source, err := filepath.EvalSymlinks(source)
@@ -515,7 +523,7 @@ func entries(dir *os.Root) ([]string, error) {
 	}
 	defer f.Close()
 	names, err := f.Readdirnames(257)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	if len(names) > 256 {

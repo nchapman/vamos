@@ -226,7 +226,7 @@ func allocatePort() (string, error) {
 func NewManager() *Manager {
 	return &Manager{Root: "/", Run: func(c context.Context, n string, a []string, b []byte) (process.Result, error) {
 		dockerArgs := dockerCommandArgs(n, a)
-		if len(dockerArgs) > 1 && dockerArgs[0] == "buildx" && dockerArgs[1] == "build" {
+		if (len(dockerArgs) > 1 && dockerArgs[0] == "buildx" && dockerArgs[1] == "build") || (len(dockerArgs) > 0 && dockerArgs[0] == "logs") {
 			return process.RunTail(c, n, a, b)
 		}
 		// Full Docker inspection includes runtime values, which can be much larger
@@ -1040,7 +1040,7 @@ func validateJournal(j *journal, app string) error {
 	if isMulti(j) {
 		return validateMultiJournal(j, app)
 	}
-	if j.SecretUpdate != nil || j.Hook != nil || j.Status.Release != nil || len(j.Selected) != 0 || len(j.Removed) != 0 || j.Rollback != nil || j.Scope != "" || j.Status.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
+	if j.SecretUpdate != nil || j.Hook != nil || j.Release != nil || len(j.Selected) != 0 || len(j.Removed) != 0 || j.Rollback != nil || j.Scope != "" || j.Run != nil || j.ReuseData || len(j.Volumes) != 0 || len(j.ServiceStates) != 0 || len(j.BuildImages) != 0 || j.BundleSHA != "" || len(j.ServiceOrder) != 0 || j.ActiveService != "" || j.Completed != nil || j.PreviousCompleted != nil {
 		return errors.New("invalid legacy app journal")
 	}
 	bad := errors.New("invalid app journal")

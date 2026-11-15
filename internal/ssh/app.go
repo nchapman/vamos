@@ -144,8 +144,11 @@ func appOutcome(request deploy.Request, response deploy.Response, decodeErr, con
 		}
 		return response, err
 	}
-	if decodeErr != nil || response.Version != 1 || (request.Action == "apps" && response.Apps == nil) || (request.Action != "apps" && request.Action != "logs" && response.Status == nil && response.Plan == nil && response.Run == nil && response.DeployPreview == nil && response.RollbackPreview == nil) {
-		return response, fmt.Errorf("invalid app response; inspect status before retrying (decode error: %v)", decodeErr)
+	if decodeErr != nil {
+		return response, fmt.Errorf("invalid app response; inspect status before retrying (decode error: %w)", decodeErr)
+	}
+	if response.Version != 1 || (request.Action == "apps" && response.Apps == nil) || (request.Action != "apps" && request.Action != "logs" && response.Status == nil && response.Plan == nil && response.Run == nil && response.DeployPreview == nil && response.RollbackPreview == nil) {
+		return response, errors.New("invalid app response; inspect status before retrying")
 	}
 	return response, nil
 }

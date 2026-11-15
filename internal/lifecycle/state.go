@@ -53,6 +53,8 @@ type State struct {
 
 var (
 	labelRE   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+	hexIDRE   = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	sha256RE  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	packageRE = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(:[a-z0-9]+)?$`)
 	versionRE = regexp.MustCompile(`^[A-Za-z0-9.+:~_-]+$`)
 )
@@ -103,7 +105,7 @@ func ReadState(filename string) (*State, error) {
 		return nil, fmt.Errorf("read host state: %w", err)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, errors.New("trailing host state data")
 	}
 	if err := ValidateState(&s); err != nil {
@@ -115,11 +117,8 @@ func ReadState(filename string) (*State, error) {
 // ValidateState applies the same ownership checks to local journals and remote
 // observations used to recover a client registration. It does not inspect runtimes.
 func ValidateState(s *State) error {
-	if s == nil || s.Version != 1 || len(s.ID) != 32 {
+	if s == nil || s.Version != 1 || !hexIDRE.MatchString(s.ID) {
 		return errors.New("invalid host state version or identity")
-	}
-	if _, err := hex.DecodeString(s.ID); err != nil {
-		return errors.New("invalid installation identity")
 	}
 	if err := ValidateConfig(s.Config); err != nil {
 		return err
@@ -155,19 +154,17 @@ func ValidateState(s *State) error {
 		if (!legacy && !current) || len(s.ExecutorSHA) != 64 {
 			return errors.New("missing configured resource ownership")
 		}
-		if _, err := hex.DecodeString(s.ExecutorSHA); err != nil {
+		if !sha256RE.MatchString(s.ExecutorSHA) {
 			return errors.New("invalid executor digest")
 		}
 		if current {
-			if _, err := hex.DecodeString(s.AgentSHA); err != nil {
+			if !sha256RE.MatchString(s.AgentSHA) {
 				return errors.New("invalid agent digest")
 			}
 		}
 	}
-	if s.ContainerdConfigSHA != "" {
-		if digest, err := hex.DecodeString(s.ContainerdConfigSHA); err != nil || len(digest) != 32 {
-			return errors.New("invalid containerd config digest")
-		}
+	if s.ContainerdConfigSHA != "" && !sha256RE.MatchString(s.ContainerdConfigSHA) {
+		return errors.New("invalid containerd config digest")
 	}
 	seen := map[string]bool{}
 	for _, p := range s.Packages {

@@ -109,6 +109,8 @@ type Volume struct {
 	Mount string `yaml:"mount"`
 }
 
+const maxConfigBytes = 1 << 20
+
 // Load reads a local file. It does not contact a server or inspect build contexts.
 func Load(filename string) (*App, error) {
 	file, err := os.Open(filename)
@@ -116,6 +118,16 @@ func Load(filename string) (*App, error) {
 		return nil, fmt.Errorf("open config: %w", err)
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", filename, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: configuration must be a regular file", filename)
+	}
+	if info.Size() > maxConfigBytes {
+		return nil, fmt.Errorf("%s: configuration exceeds %d bytes", filename, maxConfigBytes)
+	}
 
 	app, err := Decode(file)
 	if err != nil {
@@ -126,7 +138,14 @@ func Load(filename string) (*App, error) {
 
 // Decode accepts exactly one YAML document and rejects unknown fields.
 func Decode(r io.Reader) (*App, error) {
-	decoder := yaml.NewDecoder(r)
+	data, err := io.ReadAll(io.LimitReader(r, maxConfigBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("decode YAML: %w", err)
+	}
+	if len(data) > maxConfigBytes {
+		return nil, fmt.Errorf("configuration exceeds %d bytes", maxConfigBytes)
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 
 	var app App

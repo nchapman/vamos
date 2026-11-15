@@ -141,12 +141,12 @@ func (m *Manager) executeServiceRemoval(ctx context.Context, r Request, j *journ
 			if e != nil {
 				return resp, e
 			}
-			var copy journal
-			if e = json.Unmarshal(b, &copy); e != nil {
+			var cp journal
+			if e = json.Unmarshal(b, &cp); e != nil {
 				return resp, e
 			}
-			copy.Phase = "ready"
-			planSource = &copy
+			cp.Phase = "ready"
+			planSource = &cp
 		}
 		w, e := m.preparedMaintenance(j, "service-remove", r.Operation)
 		if e != nil {

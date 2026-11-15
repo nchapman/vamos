@@ -29,8 +29,24 @@ type Conn interface {
 }
 
 type Client struct {
-	conn  Conn
-	hello agentproto.HelloResponse
+	conn   Conn
+	reader *bufio.Reader
+	hello  agentproto.HelloResponse
+}
+
+func withConnContext(ctx context.Context, conn Conn, fn func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if closer, ok := conn.(io.Closer); ok {
+		stop := context.AfterFunc(ctx, func() { _ = closer.Close() })
+		defer stop()
+	}
+	err := fn()
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 // Handshake completes hello before any payload can be submitted. Unversioned
@@ -44,18 +60,22 @@ func Handshake(ctx context.Context, conn Conn, required []string) (*Client, erro
 	if err != nil {
 		return nil, fmt.Errorf("agent connection requires a versioned local bundle: %w", err)
 	}
+	reader := bufio.NewReaderSize(conn, 32*1024)
 	request := agentproto.HelloRequest{ClientVersion: info.Label, ClientBuildID: info.ID, APIMin: agentproto.MinSupportedAPI, APIMax: agentproto.MaxSupportedAPI}
-	if err := writeRequest(conn, agentproto.MethodHello, request); err != nil {
-		return nil, err
-	}
 	var hello agentproto.HelloResponse
-	if err := readResponse(conn, &hello); err != nil {
+	err = withConnContext(ctx, conn, func() error {
+		if err := writeRequest(conn, agentproto.MethodHello, request); err != nil {
+			return err
+		}
+		return readResponse(reader, &hello)
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := agentproto.CheckCompatibility(request.APIMin, request.APIMax, required, hello); err != nil {
 		return nil, err
 	}
-	return &Client{conn: conn, hello: hello}, nil
+	return &Client{conn: conn, reader: reader, hello: hello}, nil
 }
 
 func (c *Client) Hello() agentproto.HelloResponse { return c.hello }
@@ -73,17 +93,23 @@ func (c *Client) Submit(ctx context.Context, request deploy.Request, idempotency
 		submit.PayloadBytes = int64(len(payload))
 		submit.PayloadSHA256 = hex.EncodeToString(hash[:])
 	}
-	if err := writeRequest(c.conn, agentproto.MethodSubmit, submit); err != nil {
-		return agentproto.SubmitResponse{}, err
-	}
 	var response agentproto.SubmitResponse
-	if err := readResponse(c.conn, &response); err != nil {
-		return agentproto.SubmitResponse{}, err
-	}
-	if !response.Deduplicated && len(payload) != 0 {
-		if err := writeAll(ctx, c.conn, payload); err != nil {
-			return agentproto.SubmitResponse{}, fmt.Errorf("send admitted payload: %w", err)
+	err := withConnContext(ctx, c.conn, func() error {
+		if err := writeRequest(c.conn, agentproto.MethodSubmit, submit); err != nil {
+			return err
 		}
+		if err := readResponse(c.reader, &response); err != nil {
+			return err
+		}
+		if !response.Deduplicated && len(payload) != 0 {
+			if err := writeAll(ctx, c.conn, payload); err != nil {
+				return fmt.Errorf("send admitted payload: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return agentproto.SubmitResponse{}, err
 	}
 	return response, nil
 }
@@ -101,11 +127,14 @@ func (c *Client) Read(ctx context.Context, request deploy.Request) (deploy.Respo
 	if err := agentproto.ValidateReadRequest(agentproto.ReadRequest{Request: request}); err != nil {
 		return deploy.Response{}, err
 	}
-	if err := writeRequest(c.conn, agentproto.MethodRead, agentproto.ReadRequest{Request: request}); err != nil {
-		return deploy.Response{}, err
-	}
 	var response deploy.Response
-	if err := readResponse(c.conn, &response); err != nil {
+	err := withConnContext(ctx, c.conn, func() error {
+		if err := writeRequest(c.conn, agentproto.MethodRead, agentproto.ReadRequest{Request: request}); err != nil {
+			return err
+		}
+		return readResponse(c.reader, &response)
+	})
+	if err != nil {
 		return deploy.Response{}, err
 	}
 	return response, nil
@@ -127,14 +156,17 @@ func (c *Client) Session(ctx context.Context, envelope agentproto.SessionEnvelop
 	if err := agentproto.ValidateSessionEnvelope(envelope); err != nil {
 		return session.Preparation{}, nil, err
 	}
-	if err := writeRequest(c.conn, agentproto.MethodSession, envelope); err != nil {
-		return session.Preparation{}, nil, err
-	}
 	var prepared session.Preparation
-	if err := readResponse(c.conn, &prepared); err != nil {
+	err := withConnContext(ctx, c.conn, func() error {
+		if err := writeRequest(c.conn, agentproto.MethodSession, envelope); err != nil {
+			return err
+		}
+		return readResponse(c.reader, &prepared)
+	})
+	if err != nil {
 		return session.Preparation{}, nil, err
 	}
-	return prepared, &Stream{conn: c.conn, reader: bufio.NewReaderSize(c.conn, 32*1024), writer: c.conn}, nil
+	return prepared, &Stream{conn: c.conn, reader: c.reader, writer: c.conn}, nil
 }
 
 // Stream is the typed relay half of an attached session.
@@ -253,13 +285,16 @@ func (c *Client) operation(ctx context.Context, method agentproto.Method, operat
 	if err := ctx.Err(); err != nil {
 		return agentproto.OperationRecord{}, err
 	}
-	if err := writeRequest(c.conn, method, struct {
-		OperationID string `json:"operation_id"`
-	}{operationID}); err != nil {
-		return agentproto.OperationRecord{}, err
-	}
 	var record agentproto.OperationRecord
-	if err := readResponse(c.conn, &record); err != nil {
+	err := withConnContext(ctx, c.conn, func() error {
+		if err := writeRequest(c.conn, method, struct {
+			OperationID string `json:"operation_id"`
+		}{operationID}); err != nil {
+			return err
+		}
+		return readResponse(c.reader, &record)
+	})
+	if err != nil {
 		return agentproto.OperationRecord{}, err
 	}
 	if err := agentproto.ValidateOperationRecord(record); err != nil {
@@ -347,9 +382,9 @@ func (e *RemoteError) Error() string {
 	return "agent " + e.Code
 }
 
-func readResponse(conn Conn, dst any) error {
+func readResponse(r io.Reader, dst any) error {
 	var frame agentproto.RPCResponse
-	if err := agentproto.DecodeFrame(conn, &frame); err != nil {
+	if err := agentproto.DecodeFrame(r, &frame); err != nil {
 		return err
 	}
 	if frame.Version != agentproto.APIVersion {

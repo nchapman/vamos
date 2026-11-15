@@ -116,6 +116,11 @@ func writePrivateStageFile(path string, data []byte) error {
 	return f.Close()
 }
 
+var (
+	startWorkerUnit       = startSupervisedUnit
+	queryWorkerUnitActive = isWorkerUnitActive
+)
+
 func startSupervisedUnit(ctx context.Context, id, dir string) error {
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -125,6 +130,9 @@ func startSupervisedUnit(ctx context.Context, id, dir string) error {
 		"--unit=vamos-op-" + id,
 		"--property=RuntimeMaxSec=21min",
 		"--property=KillMode=control-group",
+		"--property=UMask=0077",
+		"--property=NoNewPrivileges=yes",
+		"--property=PrivateTmp=yes",
 		"--working-directory=" + dir,
 		lifecycle.ExecutorPath,
 		"internal-agent",
@@ -169,11 +177,11 @@ func (d *Daemon) runSupervisedWorker(ctx context.Context, id string, request dep
 		_ = d.Queue.Finish(id, deploy.Response{}, fmt.Errorf("stage worker: %w", err))
 		return
 	}
-	if err := startSupervisedUnit(ctx, id, dir); err != nil {
+	if err := startWorkerUnit(ctx, id, dir); err != nil {
 		// systemd-run may fail before or during unit creation; check whether a
 		// unit is active before deciding between clean failure and fencing.
-		checkCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		active, activeErr := isWorkerUnitActive(checkCtx, workerUnitName(id))
+		checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		active, activeErr := queryWorkerUnitActive(checkCtx, workerUnitName(id))
 		cancel()
 		if activeErr != nil || active {
 			_ = d.Queue.Fence(id, "worker launch outcome was indeterminate")
@@ -191,7 +199,7 @@ func (d *Daemon) monitorSupervisedUnit(ctx context.Context, id, dir string) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		active, err := isWorkerUnitActive(ctx, unit)
+		active, err := queryWorkerUnitActive(ctx, unit)
 		if err == nil && !active {
 			resp, ok, readErr := executor.ReadWorkerResponse(dir)
 			_ = os.RemoveAll(dir)
@@ -221,29 +229,31 @@ func (d *Daemon) reconcileSupervisedWorkers(ctx context.Context) (map[string]boo
 	if err != nil {
 		return nil, err
 	}
+	type activeWorker struct {
+		id      string
+		dir     string
+		req     deploy.Request
+		release func()
+	}
+	var workers []activeWorker
 	for id, req := range running {
 		dir := workerStageDir(id)
-		active, activeErr := isWorkerUnitActive(ctx, workerUnitName(id))
+		active, activeErr := queryWorkerUnitActive(ctx, workerUnitName(id))
 		if activeErr == nil && active {
 			readopted[id] = true
-			reqCopy := req
-			idCopy := id
-			d.workWG.Add(1)
-			go func() {
-				defer d.workWG.Done()
-				releaseSlots, err := d.acquireOperationSlots(ctx, reqCopy)
-				if err != nil {
-					return
-				}
-				defer releaseSlots()
-				d.monitorSupervisedUnit(ctx, idCopy, dir)
-			}()
+			releaseSlots, _ := d.tryAcquireOperationSlots(ctx, req, false)
+			workers = append(workers, activeWorker{id: id, dir: dir, req: req, release: releaseSlots})
 			continue
 		}
 		if activeErr == nil && !active {
 			if resp, ok, readErr := executor.ReadWorkerResponse(dir); readErr == nil && ok {
 				_ = os.RemoveAll(dir)
 				if err := d.Queue.Finish(id, resp, nil); err != nil {
+					for _, w := range workers {
+						if w.release != nil {
+							w.release()
+						}
+					}
 					return nil, err
 				}
 				readopted[id] = true
@@ -251,6 +261,22 @@ func (d *Daemon) reconcileSupervisedWorkers(ctx context.Context) (map[string]boo
 			}
 			_ = os.RemoveAll(dir)
 		}
+	}
+	for _, w := range workers {
+		d.workWG.Add(1)
+		go func() {
+			defer d.workWG.Done()
+			releaseSlots := w.release
+			if releaseSlots == nil {
+				var slotErr error
+				releaseSlots, slotErr = d.acquireOperationSlots(ctx, w.req)
+				if slotErr != nil {
+					return
+				}
+			}
+			defer releaseSlots()
+			d.monitorSupervisedUnit(ctx, w.id, w.dir)
+		}()
 	}
 	return readopted, nil
 }

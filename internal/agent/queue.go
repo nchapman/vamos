@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,12 +44,13 @@ type operation struct {
 // Queue instance; each operation is separately atomically published so a crash
 // cannot turn a partially-written request into an admitted mutation.
 type Queue struct {
-	root    string
-	now     func() time.Time
-	newID   func() (string, error)
-	mu      sync.Mutex
-	changed chan struct{}
-	policy  agentproto.ConcurrencyPolicy
+	root          string
+	now           func() time.Time
+	newID         func() (string, error)
+	mu            sync.Mutex
+	inFlightBytes int64
+	changed       chan struct{}
+	policy        agentproto.ConcurrencyPolicy
 }
 
 func NewQueue(root string, policy agentproto.ConcurrencyPolicy) (*Queue, error) {
@@ -94,6 +96,10 @@ func (q *Queue) payloadPath(id string) string {
 	return filepath.Join(q.root, recordsDirectory, id+".payload")
 }
 
+func isTempQueueEntry(name string) bool {
+	return strings.HasPrefix(name, ".record-") || strings.HasPrefix(name, ".payload-")
+}
+
 func (q *Queue) recordsLocked() ([]operation, error) {
 	entries, err := os.ReadDir(filepath.Join(q.root, recordsDirectory))
 	if err != nil {
@@ -101,7 +107,7 @@ func (q *Queue) recordsLocked() ([]operation, error) {
 	}
 	var ops []operation
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) == ".payload" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) == ".payload" || isTempQueueEntry(entry.Name()) {
 			continue
 		}
 		if filepath.Ext(entry.Name()) != ".json" {
@@ -153,8 +159,13 @@ func (q *Queue) saveLocked(op operation) error {
 	}
 	name := f.Name()
 	defer os.Remove(name)
-	if err := f.Chmod(0600); err == nil {
-		_, err = f.Write(append(data, '\n'))
+	if err = f.Chmod(0600); err == nil {
+		data = append(data, '\n')
+		var n int
+		n, err = f.Write(data)
+		if err == nil && n != len(data) {
+			err = io.ErrShortWrite
+		}
 	}
 	if err == nil {
 		err = f.Sync()
@@ -166,6 +177,9 @@ func (q *Queue) saveLocked(op operation) error {
 		return err
 	}
 	if err := os.Rename(name, q.recordPath(op.OperationID)); err != nil {
+		return err
+	}
+	if err := syncDir(dir); err != nil {
 		return err
 	}
 	close(q.changed)
@@ -198,15 +212,19 @@ func (q *Queue) Submit(_ context.Context, principal agentproto.Principal, reques
 		}
 	}
 	queued := 0
+	var stagedBytes int64
 	for _, op := range ops {
 		if op.Phase == agentproto.PhaseQueued {
 			queued++
+			if op.PayloadReady {
+				stagedBytes += op.PayloadBytes
+			}
 		}
 	}
 	if queued >= q.policy.MaxQueueDepth {
 		return agentproto.SubmitResponse{}, errors.New("agent queue is full")
 	}
-	if request.PayloadBytes > q.policy.MaxStagedBytes {
+	if request.PayloadBytes > q.policy.MaxStagedBytes || stagedBytes+q.inFlightBytes+request.PayloadBytes > q.policy.MaxStagedBytes {
 		return agentproto.SubmitResponse{}, errors.New("agent payload exceeds staged-byte limit")
 	}
 	id, err := q.newID()
@@ -223,35 +241,77 @@ func (q *Queue) Submit(_ context.Context, principal agentproto.Principal, reques
 // StorePayload atomically persists the exact staged bytes promised by submit.
 // A disconnected transfer is marked uncertain rather than guessed complete.
 func (q *Queue) StorePayload(id string, input io.Reader) error {
+	if !operationIDRE.MatchString(id) {
+		return errors.New("invalid operation ID")
+	}
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	data, err := os.ReadFile(q.recordPath(id))
 	if err != nil {
+		q.mu.Unlock()
 		return err
 	}
 	var op operation
 	if err := decode(data, &op); err != nil {
+		q.mu.Unlock()
 		return err
 	}
 	if op.PayloadReady {
+		q.mu.Unlock()
 		return nil
 	}
-	file, err := os.OpenFile(q.payloadPath(id), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if op.Phase != agentproto.PhaseQueued {
+		q.mu.Unlock()
+		return errors.New("operation is not awaiting payload")
+	}
+	expectedBytes := op.PayloadBytes
+	expectedSHA := op.PayloadSHA256
+	q.inFlightBytes += expectedBytes
+	q.mu.Unlock()
+
+	defer func() {
+		q.mu.Lock()
+		q.inFlightBytes -= expectedBytes
+		q.mu.Unlock()
+	}()
+
+	dir := filepath.Join(q.root, recordsDirectory)
+	file, err := os.CreateTemp(dir, ".payload-")
 	if err != nil {
 		return err
 	}
-	name := file.Name()
+	tempName := file.Name()
+	defer os.Remove(tempName)
+
 	hash := sha256.New()
-	written, copyErr := io.CopyN(io.MultiWriter(file, hash), input, op.PayloadBytes)
+	var written int64
+	copyErr := file.Chmod(0600)
+	if copyErr == nil {
+		written, copyErr = io.CopyN(io.MultiWriter(file, hash), input, expectedBytes)
+	}
+	if copyErr == nil {
+		copyErr = file.Sync()
+	}
 	if closeErr := file.Close(); copyErr == nil {
 		copyErr = closeErr
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	data, err = os.ReadFile(q.recordPath(id))
+	if err != nil {
+		return err
+	}
+	if err := decode(data, &op); err != nil {
+		return err
+	}
+	if op.Phase != agentproto.PhaseQueued {
+		return errors.New("operation state changed during payload transfer")
 	}
 	// The byte count is the payload boundary. Any additional bytes are the
 	// beginning of the following framed RPC; if they are not valid JSON the
 	// daemon closes that connection. Probing one byte here would consume an
 	// honest next frame and desynchronize a persistent connection.
-	if copyErr != nil || written != op.PayloadBytes || hex.EncodeToString(hash.Sum(nil)) != op.PayloadSHA256 {
-		_ = os.Remove(name)
+	if copyErr != nil || written != expectedBytes || hex.EncodeToString(hash.Sum(nil)) != expectedSHA {
 		now := q.now().UTC()
 		op.Phase = agentproto.PhaseUncertain
 		op.FinishedAt = &now
@@ -261,6 +321,12 @@ func (q *Queue) StorePayload(id string, input io.Reader) error {
 			return saveErr
 		}
 		return errors.New("agent payload transfer was incomplete or did not match its checksum")
+	}
+	if err := os.Rename(tempName, q.payloadPath(id)); err != nil {
+		return err
+	}
+	if err := syncDir(dir); err != nil {
+		return err
 	}
 	op.PayloadReady = true
 	return q.saveLocked(op)
@@ -351,7 +417,7 @@ func (q *Queue) Finish(id string, response deploy.Response, runErr error) error 
 		return err
 	}
 	_ = os.Remove(q.payloadPath(id))
-	if op.Phase == agentproto.PhaseSucceeded && resolvesUncertain(op.Action) {
+	if op.Phase == agentproto.PhaseSucceeded && resolvesUncertain(op.Request) {
 		if err := q.resolveUncertainLocked(op.App, op.OperationID); err != nil {
 			return err
 		}
@@ -359,10 +425,12 @@ func (q *Queue) Finish(id string, response deploy.Response, runErr error) error 
 	return nil
 }
 
-func resolvesUncertain(action string) bool {
-	switch action {
-	case "deploy", "resume", "rollback", "destroy", "service-remove", "cleanup", "secrets-set", "backup-repository":
+func resolvesUncertain(req deploy.Request) bool {
+	switch req.Action {
+	case "deploy", "resume", "service-remove", "secrets-set", "backup-repository":
 		return true
+	case "rollback", "destroy", "cleanup":
+		return req.Apply
 	default:
 		return false
 	}
@@ -399,7 +467,7 @@ func (q *Queue) Fence(id, message string) error {
 	if err := decode(data, &op); err != nil {
 		return err
 	}
-	if op.Phase != agentproto.PhaseRunning {
+	if op.Phase != agentproto.PhaseRunning && op.Phase != agentproto.PhaseQueued {
 		return nil
 	}
 	now := q.now().UTC()
@@ -493,6 +561,19 @@ func (q *Queue) Recover() error {
 func (q *Queue) RecoverReady(readopted map[string]bool) ([]string, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	dir := filepath.Join(q.root, recordsDirectory)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && isTempQueueEntry(entry.Name()) {
+			info, statErr := entry.Info()
+			if statErr == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+				_ = os.Remove(filepath.Join(dir, entry.Name()))
+			}
+		}
+	}
 	ops, err := q.recordsLocked()
 	if err != nil {
 		return nil, err

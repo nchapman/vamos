@@ -168,12 +168,12 @@ func writeAppResponse(stdout io.Writer, response deploy.Response) int {
 	return 0
 }
 
-func readPrivateSecretFile(path string, max int64) ([]byte, error) {
+func readPrivateSecretFile(path string, maxBytes int64) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > max {
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > maxBytes {
 		return nil, errors.New("invalid secret file")
 	}
 	f, err := os.Open(path)
@@ -181,11 +181,11 @@ func readPrivateSecretFile(path string, max int64) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, max+1))
+	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
 	if err != nil {
 		return nil, errors.New("cannot read secret file")
 	}
-	if int64(len(data)) > max {
+	if int64(len(data)) > maxBytes {
 		return nil, errors.New("invalid secret value")
 	}
 	return data, nil
@@ -263,11 +263,11 @@ func readSecretFile(path string) ([]byte, error) {
 	return data, nil
 }
 func readSecretsFile(path string, r deploy.Request) ([]byte, error) {
-	max := int64(secrets.MaxValueBytes)
+	maxBytes := int64(secrets.MaxValueBytes)
 	if len(r.SecretNames) > 0 {
-		max = secrets.MaxBatchBytes
+		maxBytes = secrets.MaxBatchBytes
 	}
-	data, err := readPrivateSecretFile(path, max)
+	data, err := readPrivateSecretFile(path, maxBytes)
 	if err != nil {
 		return nil, err
 	}

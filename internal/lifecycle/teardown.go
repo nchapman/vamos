@@ -94,7 +94,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 				}
 				if value != "" {
 					fields := strings.Split(value, ":")
-					if parts[0] == "passwd" && (len(fields) != 7 || fields[0] != "caddy" || fields[5] != "/var/lib/caddy" || (fields[6] != "/usr/sbin/nologin" && fields[6] != "/bin/false")) {
+					if parts[0] == "passwd" && parts[1] == "caddy" && (len(fields) != 7 || fields[0] != "caddy" || fields[5] != "/var/lib/caddy" || (fields[6] != "/usr/sbin/nologin" && fields[6] != "/bin/false")) {
 						return nil, errors.New("unexpected caddy account after interrupted setup")
 					}
 					if parts[0] == "group" && (len(fields) != 4 || fields[0] != parts[1] || fields[3] != "") {
@@ -275,8 +275,17 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 		return nil, err
 	}
 	if s.Accounts["passwd:vamos"] != "" {
-		if _, err := m.command(ctx, "userdel", "vamos"); err != nil {
+		value, err := m.account(ctx, "passwd", "vamos")
+		if err != nil {
 			return nil, err
+		}
+		if value != "" {
+			if value != s.Accounts["passwd:vamos"] {
+				return nil, errors.New("vamos account drifted during teardown")
+			}
+			if _, err := m.command(ctx, "userdel", "vamos"); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if s.Accounts["group:vamos"] != "" {
@@ -309,7 +318,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 }
 
 func (m *Manager) removeQueueHistory() error {
-	for _, transient := range []string{"/run/vamos", "/run/lock/vamos"} {
+	for _, transient := range []string{"/run/vamos", "/run/lock/vamos", "/run/vamos-sessions"} {
 		target := m.path(transient)
 		if err := rejectSymlink(target); err != nil {
 			return err

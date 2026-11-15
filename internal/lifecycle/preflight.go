@@ -64,8 +64,10 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 			return fmt.Errorf("pre-existing runtime package %s; refusing adoption", name)
 		}
 	}
-	if audit, err := m.command(ctx, "dpkg", "--audit"); err != nil || len(strings.TrimSpace(string(audit))) != 0 {
-		return fmt.Errorf("dpkg has pending or broken work; resolve it before setup (query error: %v)", err)
+	if audit, err := m.command(ctx, "dpkg", "--audit"); err != nil {
+		return fmt.Errorf("dpkg has pending or broken work; resolve it before setup (query error: %w)", err)
+	} else if len(strings.TrimSpace(string(audit))) != 0 {
+		return errors.New("dpkg has pending or broken work; resolve it before setup")
 	}
 	for _, port := range []string{"80", "443", "2019"} {
 		out, err := m.command(ctx, "ss", "-H", "-ltn", "sport = :"+port)
@@ -229,6 +231,9 @@ func (m *Manager) verifyQueueIdle() error {
 	var records []queueRecord
 	succeeded := make(map[string]bool)
 	for _, entry := range operationEntries {
+		if !entry.IsDir() && (strings.HasPrefix(entry.Name(), ".record-") || strings.HasPrefix(entry.Name(), ".payload-")) {
+			continue
+		}
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			return errors.New("agent queue has staged or unexpected entries; inspect or resolve operations before teardown")
 		}
@@ -246,7 +251,7 @@ func (m *Manager) verifyQueueIdle() error {
 			return errors.New("agent queue record is invalid; inspect or resolve recorded operations before teardown")
 		}
 		var trailing any
-		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) || record.OperationID == "" || record.OperationID+".json" != entry.Name() {
 			return errors.New("agent queue record is invalid; inspect or resolve recorded operations before teardown")
 		}
 		if record.Phase == "succeeded" && record.OperationID != "" {

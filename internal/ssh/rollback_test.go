@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -26,7 +27,7 @@ func TestRollbackTransportWithoutSource(t *testing.T) {
 			tr := tar.NewReader(bytes.NewReader(input))
 			for {
 				h, err := tr.Next()
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				if err != nil {

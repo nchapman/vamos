@@ -54,11 +54,11 @@ func (m *Manager) maintenanceManifestDir(app string) string {
 }
 func maintenancePageName(i int) string { return fmt.Sprintf("%016x.json", i) }
 func maintenanceDiskIntent(w *maintenance) maintenance {
-	copy := *w
-	copy.Containers = nil
-	copy.Images = nil
-	copy.Files = nil
-	return copy
+	cp := *w
+	cp.Containers = nil
+	cp.Images = nil
+	cp.Files = nil
+	return cp
 }
 func maintenanceBasis(j *journal) (string, error) {
 	b, e := json.Marshal(j)

@@ -26,7 +26,6 @@ func routeTestJournal(name string) *journal {
 	j.BuildImages = map[string]string{buildcontext.BuildKey(*public.Build): "sha256:" + strings.Repeat("d", 64)}
 	j.ServiceOrder = []string{"api", "web", "worker"}
 	for name, cfg := range j.Config.Services {
-		cfg := cfg
 		r := &release{Service: name, Config: &cfg, Operation: strings.Repeat("b", 32), Image: "sha256:" + strings.Repeat("d", 64), Port: "12001"}
 		r.Container = containerName(j.App, name, r.Operation)
 		if cfg.HTTP == nil {

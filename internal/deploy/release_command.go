@@ -52,7 +52,7 @@ func captureRelease(j *journal, directive *config.Release) error {
 
 func validateReleaseCapture(j *journal) error {
 	bad := errors.New("invalid captured release command")
-	if j.Status.Release != nil || j.Config.Release != nil {
+	if j.Release != nil || j.Config.Release != nil {
 		return bad
 	}
 	h := j.Hook

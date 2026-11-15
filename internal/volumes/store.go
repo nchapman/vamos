@@ -43,39 +43,39 @@ type Store struct{ Root string }
 
 var nameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 var idRE = regexp.MustCompile(`^[0-9a-f]{32}$`)
-var invalid = errors.New("invalid volume registry content or identity")
-var unsafe = errors.New("volume registry requires private executor-owned directories and regular files without symlinks")
+var ErrInvalidStore = errors.New("invalid volume registry content or identity")
+var ErrUnsafeStore = errors.New("volume registry requires private executor-owned directories and regular files without symlinks")
 
 func validName(s string) bool { return len(s) <= 63 && nameRE.MatchString(s) }
 func Validate(s *State) error {
 	if s == nil || s.Version != 1 || !validName(s.App) || !idRE.MatchString(s.HostID) || s.Records == nil || len(s.Records) > MaxRecords {
-		return invalid
+		return ErrInvalidStore
 	}
 	names, ids := map[string]bool{}, map[string]bool{}
 	for key, r := range s.Records {
 		if key != r.Service || !validName(r.Service) || !validName(r.Name) || !idRE.MatchString(r.ID) || !idRE.MatchString(r.Operation) || names[r.Name] || ids[r.ID] {
-			return invalid
+			return ErrInvalidStore
 		}
 		if !utf8.ValidString(r.Mount) || !path.IsAbs(r.Mount) || path.Clean(r.Mount) != r.Mount || r.Mount == "/" || strings.ContainsRune(r.Mount, 0) {
-			return invalid
+			return ErrInvalidStore
 		}
 		switch r.State {
 		case "planned":
 			if r.CreatedAt != "" {
-				return invalid
+				return ErrInvalidStore
 			}
 		case "created":
 			if _, err := time.Parse(time.RFC3339, r.CreatedAt); err != nil {
-				return invalid
+				return ErrInvalidStore
 			}
 		default:
-			return invalid
+			return ErrInvalidStore
 		}
 		names[r.Name], ids[r.ID] = true, true
 	}
 	data, err := json.Marshal(s)
 	if err != nil || len(data) > MaxStoreBytes {
-		return invalid
+		return ErrInvalidStore
 	}
 	return nil
 }
@@ -87,7 +87,7 @@ func (s Store) directory() string {
 }
 func (s Store) Load(app, hostID string) (*State, error) {
 	if !validName(app) || !idRE.MatchString(hostID) {
-		return nil, invalid
+		return nil, ErrInvalidStore
 	}
 	dir := s.directory()
 	if err := ancestors(dir); err != nil {
@@ -98,7 +98,7 @@ func (s Store) Load(app, hostID string) (*State, error) {
 		return nil, nil
 	}
 	if err != nil || !private(info, true) || !productionOwner(dir) || !privateParent(dir) {
-		return nil, unsafe
+		return nil, ErrUnsafeStore
 	}
 	file := filepath.Join(dir, app+".json")
 	info, err = os.Lstat(file)
@@ -106,10 +106,10 @@ func (s Store) Load(app, hostID string) (*State, error) {
 		return nil, nil
 	}
 	if err != nil || !private(info, false) {
-		return nil, unsafe
+		return nil, ErrUnsafeStore
 	}
 	if info.Size() > MaxStoreBytes {
-		return nil, invalid
+		return nil, ErrInvalidStore
 	}
 	f, err := os.Open(file)
 	if err != nil {
@@ -118,23 +118,26 @@ func (s Store) Load(app, hostID string) (*State, error) {
 	defer f.Close()
 	opened, err := f.Stat()
 	if err != nil || !private(opened, false) || !os.SameFile(info, opened) {
-		return nil, unsafe
+		return nil, ErrUnsafeStore
+	}
+	if opened.Size() > MaxStoreBytes {
+		return nil, ErrInvalidStore
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxStoreBytes+1))
 	if err != nil || len(data) > MaxStoreBytes || !utf8.Valid(data) || !uniqueJSON(data) {
-		return nil, invalid
+		return nil, ErrInvalidStore
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var state State
 	if dec.Decode(&state) != nil {
-		return nil, invalid
+		return nil, ErrInvalidStore
 	}
 	if err := Validate(&state); err != nil {
 		return nil, err
 	}
 	if state.App != app || state.HostID != hostID {
-		return nil, invalid
+		return nil, ErrInvalidStore
 	}
 	return &state, nil
 }
@@ -148,21 +151,21 @@ func (s Store) Save(state *State) error {
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
-		return invalid
+		return ErrInvalidStore
 	}
 	dir := s.directory()
 	if err := ancestors(dir); err != nil {
 		return err
 	}
 	if !productionOwner(dir) || !privateParent(dir) {
-		return unsafe
+		return ErrUnsafeStore
 	}
 	if err := os.Mkdir(dir, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
 	}
 	info, err := os.Lstat(dir)
 	if err != nil || !private(info, true) {
-		return unsafe
+		return ErrUnsafeStore
 	}
 	if err := syncDirectory(filepath.Dir(dir)); err != nil {
 		return err

@@ -130,8 +130,8 @@ func (s *State) List() []Entry {
 	return out
 }
 
-var invalid = errors.New("invalid secret store content or identity")
-var unsafe = errors.New("secret store requires private executor-owned directories and regular files without symlinks")
+var errInvalid = errors.New("invalid secret store content or identity")
+var errUnsafe = errors.New("secret store requires private executor-owned directories and regular files without symlinks")
 
 func (s Store) directory() string {
 	if s.Dir == "" {
@@ -143,10 +143,10 @@ func ancestors(path string) error {
 	for p := filepath.Clean(path); ; p = filepath.Dir(p) {
 		info, err := os.Lstat(p)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return unsafe
+			return errUnsafe
 		}
 		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-			return unsafe
+			return errUnsafe
 		}
 		if filepath.Dir(p) == p {
 			break
@@ -168,7 +168,7 @@ func privateParent(dir string) bool {
 
 func (s Store) Load(app, hostID string) (*State, error) {
 	if !ValidName(app) || !ValidVersion(hostID) {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	dir := s.directory()
 	if err := ancestors(dir); err != nil {
@@ -179,7 +179,7 @@ func (s Store) Load(app, hostID string) (*State, error) {
 		return nil, nil
 	}
 	if err != nil || !private(info, true) || !productionOwner(dir) || !privateParent(dir) {
-		return nil, unsafe
+		return nil, errUnsafe
 	}
 	path := filepath.Join(dir, app+".json")
 	info, err = os.Lstat(path)
@@ -187,10 +187,10 @@ func (s Store) Load(app, hostID string) (*State, error) {
 		return nil, nil
 	}
 	if err != nil || !private(info, false) {
-		return nil, unsafe
+		return nil, errUnsafe
 	}
 	if info.Size() > MaxStoreBytes {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -199,61 +199,64 @@ func (s Store) Load(app, hostID string) (*State, error) {
 	defer f.Close()
 	opened, err := f.Stat()
 	if err != nil || !private(opened, false) {
-		return nil, unsafe
+		return nil, errUnsafe
+	}
+	if opened.Size() > MaxStoreBytes {
+		return nil, errInvalid
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxStoreBytes+1))
 	if err != nil || len(data) > MaxStoreBytes || !utf8.Valid(data) {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	// Reject duplicate object keys as well as unknown fields and trailing data.
 	if !uniqueJSON(data) {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var d diskState
 	if dec.Decode(&d) != nil {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	var extra any
-	if dec.Decode(&extra) != io.EOF {
-		return nil, invalid
+	if !errors.Is(dec.Decode(&extra), io.EOF) {
+		return nil, errInvalid
 	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(data, &fields) != nil {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	_, hasBatches := fields["batches"]
 	if (d.Version != 1 && d.Version != 2) || (d.Version == 1 && hasBatches) || (d.Version == 2 && len(d.Batches) == 0) || len(d.Batches) > MaxVersions/2 || d.App != app || d.RootHostID != hostID || d.Latest == nil || d.Versions == nil || len(d.Latest) > MaxNames || len(d.Versions) > MaxVersions {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	for id, v := range d.Versions {
 		if !ValidVersion(id) || !ValidName(v.Name) || ValidateValue([]byte(v.Value)) != nil || d.Latest[v.Name] == "" {
-			return nil, invalid
+			return nil, errInvalid
 		}
 	}
 	for name, id := range d.Latest {
 		v, ok := d.Versions[id]
 		if !ValidName(name) || !ok || v.Name != name {
-			return nil, invalid
+			return nil, errInvalid
 		}
 	}
 	members := make(map[string]bool)
 	for op, names := range d.Batches {
 		if !ValidVersion(op) || len(names) < 2 || len(names) > MaxNames {
-			return nil, invalid
+			return nil, errInvalid
 		}
 		if _, ok := d.Versions[op]; ok {
-			return nil, invalid
+			return nil, errInvalid
 		}
 		for i, name := range names {
 			if !ValidName(name) || (i > 0 && names[i-1] >= name) {
-				return nil, invalid
+				return nil, errInvalid
 			}
 			version := VersionFor(op, name)
 			v, ok := d.Versions[version]
 			if !ok || v.Name != name || members[version] {
-				return nil, invalid
+				return nil, errInvalid
 			}
 			members[version] = true
 		}
@@ -309,7 +312,7 @@ func uniqueJSON(data []byte) bool {
 		return false
 	}
 	_, err := dec.Token()
-	return err == io.EOF
+	return errors.Is(err, io.EOF)
 }
 func (s Store) Stage(app, hostID, name, operation string, value []byte) (Entry, error) {
 	entries, err := s.StageBatch(app, hostID, operation, map[string][]byte{name: value})
@@ -322,7 +325,7 @@ func (s Store) Stage(app, hostID, name, operation string, value []byte) (Entry, 
 // StageBatch stages all values with a single atomic store replacement.
 func (s Store) StageBatch(app, hostID, operation string, values map[string][]byte) ([]Entry, error) {
 	if !ValidName(app) || !ValidVersion(hostID) || !ValidVersion(operation) {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	names, err := batchNames(values)
 	if err != nil {
@@ -399,7 +402,7 @@ func (s Store) StageBatch(app, hostID, operation string, values map[string][]byt
 	}
 	data, err := json.Marshal(d)
 	if err != nil {
-		return nil, invalid
+		return nil, errInvalid
 	}
 	if len(data) > MaxStoreBytes {
 		return nil, ErrSizeLimit
@@ -409,14 +412,14 @@ func (s Store) StageBatch(app, hostID, operation string, values map[string][]byt
 		return nil, err
 	}
 	if !productionOwner(dir) || !privateParent(dir) {
-		return nil, unsafe
+		return nil, errUnsafe
 	}
 	if err := os.Mkdir(dir, 0700); err != nil && !errors.Is(err, os.ErrExist) {
 		return nil, errors.New("cannot create secret directory")
 	}
 	info, err := os.Lstat(dir)
 	if err != nil || !private(info, true) {
-		return nil, unsafe
+		return nil, errUnsafe
 	}
 	// The first store directory must be durably linked before acknowledging data.
 	if err := syncDirectory(filepath.Dir(dir)); err != nil {
@@ -469,6 +472,6 @@ var (
 	ErrVersionLimit      = errors.New("secret store retained-version budget exhausted (256 versions; no automatic deletion)")
 	ErrNameLimit         = errors.New("secret store name budget exhausted (64 names)")
 	ErrSizeLimit         = errors.New("secret store serialized-size budget exhausted (1 MiB)")
-	ErrInvalidStore      = invalid
-	ErrUnsafeStore       = unsafe
+	ErrInvalidStore      = errInvalid
+	ErrUnsafeStore       = errUnsafe
 )

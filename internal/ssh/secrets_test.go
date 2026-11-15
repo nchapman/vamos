@@ -88,7 +88,7 @@ func TestSecretActionArchive(t *testing.T) {
 	seen := false
 	for {
 		h, e := tr.Next()
-		if e == io.EOF {
+		if errors.Is(e, io.EOF) {
 			break
 		}
 		if e != nil {

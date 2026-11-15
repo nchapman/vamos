@@ -1,4 +1,5 @@
 /bin/
+/vamos
 /.vamos/
 /.pi/
 .env

@@ -261,7 +261,7 @@ func TestLegacyJournalRejectsReleaseMetadata(t *testing.T) {
 			if field == "capture" {
 				j.Hook = &releaseCapture{Operation: strings.Repeat("1", 32), Directive: config.Release{Service: "web", Command: []string{"bin/release"}}}
 			} else {
-				j.Status.Release = &RunResult{Operation: strings.Repeat("1", 32), Service: "web", Phase: "complete"}
+				j.Release = &RunResult{Operation: strings.Repeat("1", 32), Service: "web", Phase: "complete"}
 			}
 			if err := validateJournal(j, j.App); err == nil {
 				t.Fatal("legacy journal silently accepted release metadata")

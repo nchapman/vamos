@@ -357,8 +357,8 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 		// building journal, rather than a mixture of pending and prepared slots.
 		planned := make(map[string]*serviceState, len(j.ServiceStates))
 		for _, name := range j.ServiceOrder {
-			copy := *j.ServiceStates[name]
-			s := &copy
+			cp := *j.ServiceStates[name]
+			s := &cp
 			planned[name] = s
 			cfg := j.Config.Services[name]
 			if s.Skipped {

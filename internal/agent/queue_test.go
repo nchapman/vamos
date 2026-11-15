@@ -260,4 +260,24 @@ func TestQueueFinishPreservesFailureResponseScrubsPayloadAndResolvesUncertain(t 
 	if err != nil || gotOther.ResolvedBy != "" {
 		t.Fatalf("other app uncertain record was unexpectedly resolved: %+v err=%v", gotOther, err)
 	}
+
+	// 3. Preview (Apply: false) maintenance/rollback must not clear an uncertain record.
+	subPreview := agentproto.SubmitRequest{
+		IdempotencyKey: strings.Repeat("5", 32),
+		Request:        deploy.Request{Version: 1, Action: "destroy", App: "other", Apply: false, Operation: strings.Repeat("5", 32), Host: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}},
+	}
+	previewOp, err := q.Submit(context.Background(), p, subPreview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := q.Start(previewOp.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Finish(previewOp.OperationID, deploy.Response{Version: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	gotOtherAfterPreview, err := q.Get(uOther.OperationID)
+	if err != nil || gotOtherAfterPreview.Phase != agentproto.PhaseUncertain || gotOtherAfterPreview.ResolvedBy != "" {
+		t.Fatalf("preview operation resolved uncertain record: %+v err=%v", gotOtherAfterPreview, err)
+	}
 }

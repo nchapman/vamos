@@ -149,7 +149,7 @@ func validateMultiJournal(j *journal, app string) error {
 	if (j.Version < 6 && domainConfig(j.Config)) || (j.Version < 8 && replicaConfig(j.Config)) {
 		return bad
 	}
-	if j.Status.Run != nil || len(j.Volumes) != 0 || (!supportsVolumes(j) && j.ReuseData) || (j.Version < 4 && (j.Scope != "" || workflowConfig(j.Config))) {
+	if j.Run != nil || len(j.Volumes) != 0 || (!supportsVolumes(j) && j.ReuseData) || (j.Version < 4 && (j.Scope != "" || workflowConfig(j.Config))) {
 		return bad
 	}
 	if j.Scope != "" {
