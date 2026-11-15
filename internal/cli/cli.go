@@ -36,12 +36,15 @@ Usage:
   vamos validate [-f vamos.yaml]           Validate local app configuration
   vamos server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   vamos server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
+  vamos server upgrade [flags] --yes NAME [TARGET]
+                                      Upgrade the coordinator and executor on a server
   vamos server connect --domain DOMAIN NAME TARGET
                                       Register an existing host without remote changes
   vamos server status NAME [TARGET]     Read the host lifecycle journal
   vamos server teardown [flags] NAME    Remove an unused owned installation
   vamos backup repository [COMMAND]      Register and inspect backup repositories
-  vamos update [--check] [--version VER] Update the CLI and Linux executor binaries
+  vamos upgrade [--check] [--version VER]
+                                        Upgrade the CLI and Linux executor binaries
   vamos version                          Print the build version
   vamos help [COMMAND [SUBCOMMAND [ACTION]]]      Show general or command-specific help
 
@@ -87,8 +90,8 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		}
 		fmt.Fprintf(stdout, "vamos %s\n", version)
 		return 0
-	case "update":
-		return updateCommand(ctx, args[1:], stdout, stderr, version, defaultUpdateDeps())
+	case "upgrade":
+		return upgradeCommand(ctx, args[1:], stdout, stderr, version, defaultUpgradeDeps())
 	case "backup":
 		return backupCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "apps":

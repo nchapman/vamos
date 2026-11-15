@@ -18,10 +18,10 @@ curl -fsSL https://raw.githubusercontent.com/nchapman/vamos/main/install.sh | sh
 
 Or download an archive from [GitHub Releases](https://github.com/nchapman/vamos/releases) (macOS, Linux, or Windows) and place all three binaries (`vamos`, `vamos-linux-amd64`, and `vamos-linux-arm64`) together in a directory on your `PATH`.
 
-To update later, run:
+To upgrade later, run:
 
 ```sh
-vamos update
+vamos upgrade
 ```
 
 ### 2. Inspect and bootstrap a server
@@ -95,8 +95,8 @@ vamos run --service web -- CMD...     # One-off noninteractive container run
 vamos secrets stage NAME              # Prompt (no-echo) and stage a secret
 vamos rollback                        # Preview rollback to a previous operation
 vamos apps                            # List apps and retained resources on the server
-vamos update                          # Update vamos and Linux executors from GitHub Releases
-vamos server upgrade prod             # Upgrade vamos-agent on a managed server
+vamos upgrade                         # Upgrade vamos and Linux executors from GitHub Releases
+vamos server upgrade --yes prod       # Upgrade vamos-agent on a managed server
 ```
 
 Run `vamos help` or `vamos <command> --help` for full options and flags.

@@ -18,8 +18,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 const (
@@ -30,34 +33,36 @@ const (
 	maxBinaryBytes             = 128 << 20
 )
 
-type updateDeps struct {
+type upgradeDeps struct {
 	httpClient   *http.Client
 	apiBase      string
 	downloadBase string
 	goos         string
 	goarch       string
 	executable   func() (string, error)
+	openRegistry func() (*registry.Store, error)
 }
 
-func defaultUpdateDeps() updateDeps {
-	return updateDeps{
+func defaultUpgradeDeps() upgradeDeps {
+	return upgradeDeps{
 		httpClient:   &http.Client{Timeout: 2 * time.Minute},
 		apiBase:      defaultReleaseAPIBase,
 		downloadBase: defaultReleaseDownloadBase,
 		goos:         runtime.GOOS,
 		goarch:       runtime.GOARCH,
 		executable:   os.Executable,
+		openRegistry: registry.Default,
 	}
 }
 
-func updateCommand(ctx context.Context, args []string, stdout, stderr io.Writer, currentVersion string, deps updateDeps) int {
-	flags := flag.NewFlagSet("update", flag.ContinueOnError)
+func upgradeCommand(ctx context.Context, args []string, stdout, stderr io.Writer, currentVersion string, deps upgradeDeps) int {
+	flags := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	checkOnly := flags.Bool("check", false, "Check whether a newer release is available without installing")
 	targetVer := flags.String("version", "", "Install a specific release version (for example 0.2.0 or v0.2.0)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: vamos update [--check] [--version VERSION]")
-		fmt.Fprintln(flags.Output(), "Update the vamos CLI and its sibling Linux executor binaries from GitHub Releases.")
+		fmt.Fprintln(flags.Output(), "Usage: vamos upgrade [--check] [--version VERSION]")
+		fmt.Fprintln(flags.Output(), "Upgrade the vamos CLI and its sibling Linux executor binaries from GitHub Releases.")
 		flags.PrintDefaults()
 	}
 	if err := parseFlags(flags, args, stdout, stderr); err != nil {
@@ -67,7 +72,7 @@ func updateCommand(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return 2
 	}
 	if flags.NArg() != 0 {
-		return usageError(stderr, "update does not accept positional arguments")
+		return usageError(stderr, "upgrade does not accept positional arguments")
 	}
 
 	explicitVersion := strings.TrimPrefix(strings.TrimSpace(*targetVer), "v")
@@ -90,7 +95,7 @@ func updateCommand(ctx context.Context, args []string, stdout, stderr io.Writer,
 		if current == version {
 			fmt.Fprintf(stdout, "vamos is already up to date (%s)\n", currentVersion)
 		} else {
-			fmt.Fprintf(stdout, "Update available: %s -> v%s\n", currentVersion, version)
+			fmt.Fprintf(stdout, "Upgrade available: %s -> v%s\n", currentVersion, version)
 		}
 		return 0
 	}
@@ -104,12 +109,36 @@ func updateCommand(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return lifecycleError(stderr, err)
 	}
 
-	fmt.Fprintf(stdout, "Updated vamos to v%s in %s\n", version, installDir)
-	fmt.Fprintln(stdout, "Run 'vamos server upgrade <server>' if you also want to update an existing server.")
+	fmt.Fprintf(stdout, "Upgraded vamos to v%s in %s\n", version, installDir)
+	writeServerUpgradeHint(stdout, deps.openRegistry)
 	return 0
 }
 
-func fetchLatestVersion(ctx context.Context, deps updateDeps, currentVersion string) (string, error) {
+func writeServerUpgradeHint(w io.Writer, openRegistry func() (*registry.Store, error)) {
+	if openRegistry == nil {
+		return
+	}
+	store, err := openRegistry()
+	if err != nil {
+		return
+	}
+	state, err := store.Read()
+	if err != nil || len(state.Servers) == 0 {
+		return
+	}
+	names := make([]string, 0, len(state.Servers))
+	for name := range state.Servers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 1 {
+		fmt.Fprintf(w, "To upgrade your registered server: vamos server upgrade --yes %s\n", names[0])
+		return
+	}
+	fmt.Fprintf(w, "To upgrade a registered server (%s): vamos server upgrade --yes <name>\n", strings.Join(names, ", "))
+}
+
+func fetchLatestVersion(ctx context.Context, deps upgradeDeps, currentVersion string) (string, error) {
 	url := strings.TrimRight(deps.apiBase, "/") + "/releases/latest"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -170,7 +199,7 @@ func bundleArchiveName(version, goos, goarch string) (string, error) {
 	return fmt.Sprintf("vamos_%s_%s_%s.%s", version, goos, goarch, ext), nil
 }
 
-func installReleaseBundle(ctx context.Context, deps updateDeps, currentVersion, version, installDir string) error {
+func installReleaseBundle(ctx context.Context, deps upgradeDeps, currentVersion, version, installDir string) error {
 	archiveName, err := bundleArchiveName(version, deps.goos, deps.goarch)
 	if err != nil {
 		return err
@@ -219,7 +248,7 @@ func installReleaseBundle(ctx context.Context, deps updateDeps, currentVersion, 
 	return commitStagedBinaries(installDir, orderedNames, binaries)
 }
 
-func downloadBytes(ctx context.Context, deps updateDeps, currentVersion, url string, limit int64) ([]byte, error) {
+func downloadBytes(ctx context.Context, deps upgradeDeps, currentVersion, url string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

@@ -16,21 +16,23 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/nchapman/vamos/internal/registry"
 )
 
-func TestUpdateHelpSupported(t *testing.T) {
-	for _, args := range [][]string{{"update", "--help"}, {"help", "update"}} {
+func TestUpgradeHelpSupported(t *testing.T) {
+	for _, args := range [][]string{{"upgrade", "--help"}, {"help", "upgrade"}} {
 		var out, errOut bytes.Buffer
 		if code := Run(args, &out, &errOut, "0.1.0"); code != 0 || errOut.Len() != 0 {
 			t.Fatalf("args=%v code=%d stderr=%q", args, code, errOut.String())
 		}
-		if !strings.Contains(out.String(), "Usage: vamos update") {
+		if !strings.Contains(out.String(), "Usage: vamos upgrade") {
 			t.Fatalf("args=%v unexpected help: %q", args, out.String())
 		}
 	}
 }
 
-func TestUpdateCheckReportsAvailableAndUpToDate(t *testing.T) {
+func TestUpgradeCheckReportsAvailableAndUpToDate(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/releases/latest" {
 			http.NotFound(w, r)
@@ -40,22 +42,22 @@ func TestUpdateCheckReportsAvailableAndUpToDate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	deps := updateDeps{
+	deps := upgradeDeps{
 		httpClient: srv.Client(),
 		apiBase:    srv.URL,
 	}
 
 	var out, errOut bytes.Buffer
-	if code := updateCommand(context.Background(), []string{"--check"}, &out, &errOut, "0.1.0", deps); code != 0 || errOut.Len() != 0 {
+	if code := upgradeCommand(context.Background(), []string{"--check"}, &out, &errOut, "0.1.0", deps); code != 0 || errOut.Len() != 0 {
 		t.Fatalf("code=%d stderr=%q", code, errOut.String())
 	}
-	if !strings.Contains(out.String(), "Update available: 0.1.0 -> v0.2.0") {
+	if !strings.Contains(out.String(), "Upgrade available: 0.1.0 -> v0.2.0") {
 		t.Fatalf("stdout=%q", out.String())
 	}
 
 	out.Reset()
 	errOut.Reset()
-	if code := updateCommand(context.Background(), []string{"--check"}, &out, &errOut, "0.2.0", deps); code != 0 || errOut.Len() != 0 {
+	if code := upgradeCommand(context.Background(), []string{"--check"}, &out, &errOut, "0.2.0", deps); code != 0 || errOut.Len() != 0 {
 		t.Fatalf("code=%d stderr=%q", code, errOut.String())
 	}
 	if !strings.Contains(out.String(), "already up to date") {
@@ -63,7 +65,7 @@ func TestUpdateCheckReportsAvailableAndUpToDate(t *testing.T) {
 	}
 }
 
-func TestUpdateInstallsTarGzBundleAndResolvesSymlink(t *testing.T) {
+func TestUpgradeInstallsTarGzBundleAndResolvesSymlink(t *testing.T) {
 	installDir := filepath.Join(t.TempDir(), "real-bin")
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -108,21 +110,31 @@ func TestUpdateInstallsTarGzBundleAndResolvesSymlink(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	deps := updateDeps{
+	regDir := t.TempDir()
+	regStore := registry.New(regDir)
+	if err := regStore.Put(registry.Server{Name: "prod", Target: "root@example.com", Domain: "apps.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+
+	deps := upgradeDeps{
 		httpClient:   srv.Client(),
 		apiBase:      srv.URL,
 		downloadBase: srv.URL + "/download",
 		goos:         "darwin",
 		goarch:       "arm64",
 		executable:   func() (string, error) { return symlinkPath, nil },
+		openRegistry: func() (*registry.Store, error) { return regStore, nil },
 	}
 
 	var out, errOut bytes.Buffer
-	if code := updateCommand(context.Background(), nil, &out, &errOut, "0.1.0", deps); code != 0 || errOut.Len() != 0 {
+	if code := upgradeCommand(context.Background(), nil, &out, &errOut, "0.1.0", deps); code != 0 || errOut.Len() != 0 {
 		t.Fatalf("code=%d stderr=%q", code, errOut.String())
 	}
-	if !strings.Contains(out.String(), "Updated vamos to v0.2.0") {
+	if !strings.Contains(out.String(), "Upgraded vamos to v0.2.0") {
 		t.Fatalf("stdout=%q", out.String())
+	}
+	if !strings.Contains(out.String(), "vamos server upgrade --yes prod") {
+		t.Fatalf("expected server upgrade hint for prod, got stdout=%q", out.String())
 	}
 
 	for name, want := range map[string]string{
@@ -143,7 +155,7 @@ func TestUpdateInstallsTarGzBundleAndResolvesSymlink(t *testing.T) {
 	}
 }
 
-func TestUpdateInstallsZipBundle(t *testing.T) {
+func TestUpgradeInstallsZipBundle(t *testing.T) {
 	installDir := t.TempDir()
 	archiveName := "vamos_0.2.0_windows_amd64.zip"
 	archiveBytes := buildTestZip(t, map[string]string{
@@ -166,7 +178,7 @@ func TestUpdateInstallsZipBundle(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	deps := updateDeps{
+	deps := upgradeDeps{
 		httpClient:   srv.Client(),
 		apiBase:      srv.URL,
 		downloadBase: srv.URL + "/download",
@@ -176,7 +188,7 @@ func TestUpdateInstallsZipBundle(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	if code := updateCommand(context.Background(), []string{"--version", "v0.2.0"}, &out, &errOut, "0.1.0", deps); code != 0 || errOut.Len() != 0 {
+	if code := upgradeCommand(context.Background(), []string{"--version", "v0.2.0"}, &out, &errOut, "0.1.0", deps); code != 0 || errOut.Len() != 0 {
 		t.Fatalf("code=%d stderr=%q", code, errOut.String())
 	}
 	for name, want := range map[string]string{
@@ -194,7 +206,7 @@ func TestUpdateInstallsZipBundle(t *testing.T) {
 	}
 }
 
-func TestUpdateRejectsChecksumMismatch(t *testing.T) {
+func TestUpgradeRejectsChecksumMismatch(t *testing.T) {
 	installDir := t.TempDir()
 	exePath := filepath.Join(installDir, "vamos")
 	if err := os.WriteFile(exePath, []byte("keep-me"), 0o755); err != nil {
@@ -221,7 +233,7 @@ func TestUpdateRejectsChecksumMismatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	deps := updateDeps{
+	deps := upgradeDeps{
 		httpClient:   srv.Client(),
 		apiBase:      srv.URL,
 		downloadBase: srv.URL + "/download",
@@ -231,7 +243,7 @@ func TestUpdateRejectsChecksumMismatch(t *testing.T) {
 	}
 
 	var out, errOut bytes.Buffer
-	if code := updateCommand(context.Background(), []string{"--version", "0.2.0"}, &out, &errOut, "0.1.0", deps); code != 1 {
+	if code := upgradeCommand(context.Background(), []string{"--version", "0.2.0"}, &out, &errOut, "0.1.0", deps); code != 1 {
 		t.Fatalf("code=%d, want 1; stderr=%q", code, errOut.String())
 	}
 	if !strings.Contains(errOut.String(), "checksum mismatch") {
