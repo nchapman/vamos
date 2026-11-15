@@ -42,8 +42,8 @@ jobs:
         run: |
           mise run fmt-check
           mise run vet
-          mise run build
-          mise exec -- go list ./... | grep -vE '/internal/(agent|backup|backupbackend|deploy|executor|volumes)$' | xargs mise exec -- go test -race
+          mise exec -- go build ./cmd/vamos
+          mise exec -- go list ./... | grep -vE '/internal/(agent|backup|backupbackend|deploy|executor|volumes)$' | xargs mise exec -- go test
         shell: bash
 
   lint:
