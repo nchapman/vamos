@@ -114,6 +114,13 @@ are never stopped, and an unavailable Docker daemon cannot be forced to stop;
 those cases fail closed and require operator recovery. A runner that ignores
 its context defeats the cleanup time bound.
 
+A failed build whose verified builder is no longer running was interrupted,
+typically by a Docker daemon restart (buildkitd has restart=no and never exits
+on its own for a build error). The build waits up to a minute for the daemon to
+answer, then retries once through the full verified startup path, including
+guard repair. A builder that is still running means the build itself failed and
+it is not retried; a second interruption is reported as such.
+
 Root firewall changes while a build is active are outside supported
 coordination. Reboot safety relies on restart=no and no Docker live restore;
 there is no persistent in-progress-build watchdog. Builds retain general

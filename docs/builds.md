@@ -51,7 +51,10 @@ The global host operation lock serializes setup and builds. The builder uses
 the exact builder afterward, including on ordinary failure or cancellation.
 A hard worker kill may leave it running. The next build reconciles that exact
 recorded builder before repairing guard state. No uncertain build is silently
-converted into a successful deployment.
+converted into a successful deployment. If a Docker daemon restart stops the
+builder mid-build, the build waits for Docker to return and retries once from
+the start, with guards re-verified; a second interruption fails the deployment,
+which `vamos resume` can continue.
 
 Cache stays in the builder's dedicated volume between builds. App cleanup and
 app destruction do not delete it. Monitor its disk usage separately from captured

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/nchapman/vamos/internal/process"
 )
 
 type inventoryEntry struct{ ID, Name, Names string }
@@ -60,6 +62,9 @@ func (b *build) inspect(ctx context.Context, kind, id string, out any) error {
 	if err != nil {
 		return errInfra
 	}
+	return decodeInspect(r, out)
+}
+func decodeInspect(r process.Result, out any) error {
 	var list []json.RawMessage
 	if json.Unmarshal(r.Stdout, &list) != nil || len(list) != 1 || json.Unmarshal(list[0], out) != nil {
 		return errInfra

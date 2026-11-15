@@ -246,9 +246,14 @@ not an Ubuntu package: it runs from an image pinned by each Vamos release, so
 What remains an operator responsibility:
 
 1. A Docker package update restarts the daemon and every container with it.
-   Caddy and apps return through their `unless-stopped` policy after a brief interruption,
-   and an in-progress deploy may fail and need a retry. If that interruption is
-   unacceptable, schedule the host's unattended-upgrade window accordingly.
+   Caddy and apps return through their `unless-stopped` policy after a brief interruption.
+   An in-progress deploy re-inspects Docker state at each step and normally
+   completes; a build whose builder was stopped waits for Docker and retries once.
+   If the daemon stays down too long the operation fails and `vamos resume`
+   continues it. A release command killed by the restart is recorded as failed
+   and never retried: check the database, then deploy with `--supersede`. If
+   that interruption is unacceptable, schedule the host's unattended-upgrade
+   window accordingly.
 2. Kernel and other reboot-requiring updates are not rebooted automatically by
    default. Plan reboots, then verify Docker, intended containers and restart
    behaviour, loopback ports, volume mounts, durable/live route agreement, public

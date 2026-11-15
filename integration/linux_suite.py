@@ -228,6 +228,8 @@ def main():
             cli_scenarios.run(h)
             import runtime_scenarios
             runtime_scenarios.run(h)
+            import daemon_restart
+            daemon_restart.run(h)
             recovery.prepare(h, args.owner)
             result['prepare_passed'] = True
             result['restart_required'] = True
