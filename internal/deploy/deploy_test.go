@@ -34,7 +34,7 @@ func setup(t *testing.T) (*Manager, Request) {
 	}
 	m.Drain = 0
 	m.HealthTimeout = time.Millisecond
-	h := lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "host", Domain: "example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), Packages: []string{"docker.io"}, Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x"}}
+	h := lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "host", Domain: "example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), Packages: []string{"docker.io"}, AgentSHA: strings.Repeat("c", 64), CaddyContainerID: strings.Repeat("d", 64), Accounts: map[string]string{"group:docker": "x", "passwd:vamos": "x", "group:vamos": "x"}}
 	b, _ := json.Marshal(h)
 	if e := atomic(m.path(lifecycle.StatePath), b, 0600); e != nil {
 		t.Fatal(e)
@@ -109,6 +109,9 @@ func TestPromotionCrashRecoveryAndDrift(t *testing.T) {
 			live := []byte(`{"text":` + strconvQuote(old) + `}`)
 			reloads := 0
 			m.Run = func(_ context.Context, n string, a []string, _ []byte) (process.Result, error) {
+				if ca, ok := caddyCall(m, n, a); ok {
+					n, a = "caddy", ca
+				}
 				if n == "caddy" {
 					switch a[0] {
 					case "adapt":

@@ -155,9 +155,11 @@ After timeout, disconnect, or an unexpected result:
    under the trusted root SSH workflow. For example, on the host:
 
    ```sh
-   systemctl status vamos-agent.service docker.service caddy.service --no-pager
+   systemctl status vamos-agent.service docker.service --no-pager
+   docker ps --filter name=vamos-caddy
    systemctl list-units 'vamos-op-*.service' vamos-host-operation.service --no-pager
-   journalctl -u vamos-agent.service -u docker.service -u caddy.service --since '1 hour ago' --no-pager
+   journalctl -u vamos-agent.service -u docker.service --since '1 hour ago' --no-pager
+   docker logs --since 1h vamos-caddy
    df -h
    df -i
    free -h
@@ -236,13 +238,15 @@ access to a surviving installation; it cannot recover a lost host or its data.
 Ubuntu's unattended upgrades keep the OS and the Docker runtime packages patched
 without operator action; Vamos deliberately does not pin or hold them, and a
 changed package version is not ownership drift. See
-[runtime package updates](host-lifecycle.md#runtime-package-updates). Vamos's own
-binaries are replaced with `vamos server upgrade`.
+[runtime package updates](host-lifecycle.md#runtime-package-updates). Caddy is
+not an Ubuntu package: it runs from an image pinned by each Vamos release, so
+`vamos server upgrade` updates Vamos's own binaries and Caddy together. See
+[Caddy ingress](host-lifecycle.md#caddy-ingress).
 
 What remains an operator responsibility:
 
 1. A Docker package update restarts the daemon and every container with it.
-   Apps return through their `unless-stopped` policy after a brief interruption,
+   Caddy and apps return through their `unless-stopped` policy after a brief interruption,
    and an in-progress deploy may fail and need a retry. If that interruption is
    unacceptable, schedule the host's unattended-upgrade window accordingly.
 2. Kernel and other reboot-requiring updates are not rebooted automatically by

@@ -4,26 +4,45 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 const baseCaddy = "{\n\tadmin 127.0.0.1:2019\n}\n"
+
+// caddy runs the Caddy CLI inside the managed ingress container. /etc/caddy is
+// mounted at the same path, so arguments use host paths without the test root.
+// Caddy's own diagnostics carry no secrets, unlike app container output.
+func (m *Manager) caddy(c context.Context, args ...string) ([]byte, error) {
+	name, argv := lifecycle.CaddyCommand(args...)
+	r, e := m.Run(c, name, argv, nil)
+	if e != nil {
+		if c.Err() != nil {
+			return nil, fmt.Errorf("caddy %s: %w", args[0], c.Err())
+		}
+		return nil, fmt.Errorf("caddy %s: %w: %s", args[0], e, diagnostic(string(r.Stderr)))
+	}
+	return r.Stdout, nil
+}
 
 func sameJSON(a, b []byte) bool {
 	var x, y any
 	return json.Unmarshal(a, &x) == nil && json.Unmarshal(b, &y) == nil && reflect.DeepEqual(x, y)
 }
 func (m *Manager) adapt(c context.Context, text string) ([]byte, error) {
-	p := m.path("/etc/caddy/.vamos-adapt.Caddyfile")
+	const name = "/etc/caddy/.vamos-adapt.Caddyfile"
+	p := m.path(name)
 	if e := atomic(p, []byte(text), 0600); e != nil {
 		return nil, e
 	}
 	defer os.Remove(p)
-	return m.cmd(c, "caddy", "adapt", "--config", p, "--adapter", "caddyfile")
+	return m.caddy(c, "adapt", "--config", name, "--adapter", "caddyfile")
 }
 func (m *Manager) live(c context.Context) ([]byte, error) {
 	r, _ := http.NewRequestWithContext(c, "GET", "http://127.0.0.1:2019/config/", nil)
@@ -106,7 +125,7 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 	if e = atomic(temp, []byte(next), 0644); e != nil {
 		return e
 	}
-	if _, e = m.cmd(c, "caddy", "validate", "--config", temp, "--adapter", "caddyfile"); e != nil {
+	if _, e = m.caddy(c, "validate", "--config", "/etc/caddy/.vamos-next.Caddyfile", "--adapter", "caddyfile"); e != nil {
 		return e
 	}
 	if e = m.routeCandidateHealthy(c, j); e != nil {
@@ -118,7 +137,7 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 		}
 	}
 	if !isNew {
-		_, reloadErr := m.cmd(c, "caddy", "reload", "--config", p, "--adapter", "caddyfile")
+		_, reloadErr := m.caddy(c, "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile")
 		live, e = m.live(c)
 		if e != nil {
 			return errors.Join(reloadErr, e)

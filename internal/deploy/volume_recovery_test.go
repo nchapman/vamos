@@ -113,6 +113,9 @@ func TestVolumeWithdrawalFailureCannotRetireWriter(t *testing.T) {
 	old := f.load().ServiceStates["web"].Current.Container
 	run := f.m.Run
 	f.m.Run = func(ctx context.Context, n string, a []string, b []byte) (process.Result, error) {
+		if ca, ok := caddyCall(f.m, n, a); ok {
+			n, a = "caddy", ca
+		}
 		if n == "caddy" && a[0] == "reload" {
 			return process.Result{}, errors.New("lost reload before apply")
 		}

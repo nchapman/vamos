@@ -327,6 +327,9 @@ func TestMultiMaintenanceDestroyAllServicesAndNewIID(t *testing.T) {
 	caddy.m = f.m
 	runDocker := f.m.Run
 	f.m.Run = func(ctx context.Context, name string, args []string, input []byte) (process.Result, error) {
+		if ca, ok := caddyCall(f.m, name, args); ok {
+			name, args = "caddy", ca
+		}
 		if name == "caddy" {
 			return caddy.run(ctx, name, args, input)
 		}

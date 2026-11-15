@@ -329,7 +329,7 @@ def rails(h, summary, done):
         for _ in range(32):
             marker, found = parse_http(h.command([
                 'curl', '--fail-with-body', '--silent', '--show-error', '--max-time', '30',
-                '--noproxy', '*', '--cacert', '/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt',
+                '--noproxy', '*', '--cacert', '/var/lib/caddy/data/caddy/pki/authorities/local/root.crt',
                 '--resolve', f'{p.host}:443:127.0.0.1', '--include', f'https://{p.host}{path}'
             ], user='root').stdout)
             require(found == processed and marker in markers, 'public route reached unexpected runtime/data')

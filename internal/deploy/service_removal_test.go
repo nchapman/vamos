@@ -77,6 +77,9 @@ func TestServiceRemovalFailureResumeIsolation(t *testing.T) {
 			docker := f.m.Run
 			fail := true
 			f.m.Run = func(ctx context.Context, n string, a []string, b []byte) (process.Result, error) {
+				if ca, ok := caddyCall(f.m, n, a); ok {
+					n, a = "caddy", ca
+				}
 				if n == "caddy" {
 					return caddy.run(ctx, n, a, b)
 				}

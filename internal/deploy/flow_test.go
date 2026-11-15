@@ -70,6 +70,9 @@ func (f *flowEngine) run(_ context.Context, n string, a []string, b []byte) (pro
 		}
 		return ""
 	}
+	if ca, ok := caddyCall(f.m, n, a); ok {
+		n, a = "caddy", ca
+	}
 	f.events = append(f.events, n+" "+strings.Join(a, " "))
 	if n == "caddy" {
 		switch a[0] {

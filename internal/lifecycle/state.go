@@ -37,14 +37,18 @@ type State struct {
 	Phase   string `json:"phase"`
 	Step    string `json:"step"`
 	// Packages are owned by name. Ubuntu's unattended upgrades own versions.
-	Packages      []string          `json:"packages"`
-	Configured    bool              `json:"configured"`
-	ExecutorSHA   string            `json:"executor_sha256,omitempty"`
-	AgentSHA      string            `json:"agent_sha256,omitempty"`
-	PurgeApproved bool              `json:"purge_approved"`
-	Accounts      map[string]string `json:"accounts,omitempty"`
-	LastError     string            `json:"last_error,omitempty"`
+	Packages         []string          `json:"packages"`
+	Configured       bool              `json:"configured"`
+	ExecutorSHA      string            `json:"executor_sha256,omitempty"`
+	AgentSHA         string            `json:"agent_sha256,omitempty"`
+	CaddyContainerID string            `json:"caddy_container_id,omitempty"`
+	PurgeApproved    bool              `json:"purge_approved"`
+	Accounts         map[string]string `json:"accounts,omitempty"`
+	LastError        string            `json:"last_error,omitempty"`
 }
+
+// ownedAccounts are the service identities setup creates and teardown removes.
+var ownedAccounts = []string{"group:docker", "passwd:vamos", "group:vamos"}
 
 var (
 	labelRE   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
@@ -136,27 +140,26 @@ func ValidateState(s *State) error {
 		return errors.New("invalid host lifecycle step")
 	}
 	for key := range s.Accounts {
-		if key != "passwd:caddy" && key != "group:caddy" && key != "group:docker" && key != "passwd:vamos" && key != "group:vamos" {
+		if !contains(ownedAccounts, key) {
 			return errors.New("invalid service account record")
 		}
 	}
 	if s.Configured {
-		// Version-1 receipts created before the coordinator have three service
-		// account records and no AgentSHA. They remain readable for recovery and
-		// connection, but bootstrap/upgrade refuse to overwrite that legacy host.
-		legacy := len(s.Accounts) == 3 && s.AgentSHA == ""
-		current := len(s.Accounts) == 5 && len(s.AgentSHA) == 64
-		if (!legacy && !current) || len(s.ExecutorSHA) != 64 {
+		if len(s.Accounts) != len(ownedAccounts) {
 			return errors.New("missing configured resource ownership")
 		}
 		if !sha256RE.MatchString(s.ExecutorSHA) {
 			return errors.New("invalid executor digest")
 		}
-		if current {
-			if !sha256RE.MatchString(s.AgentSHA) {
-				return errors.New("invalid agent digest")
-			}
+		if !sha256RE.MatchString(s.AgentSHA) {
+			return errors.New("invalid agent digest")
 		}
+	}
+	if s.CaddyContainerID != "" && !sha256RE.MatchString(s.CaddyContainerID) {
+		return errors.New("invalid Caddy container identity")
+	}
+	if s.Phase == "ready" && s.CaddyContainerID == "" {
+		return errors.New("ready host has no Caddy container identity")
 	}
 	seen := map[string]bool{}
 	for _, name := range s.Packages {

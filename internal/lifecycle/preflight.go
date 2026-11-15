@@ -41,18 +41,19 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 			return fmt.Errorf("pre-existing unit %s (load state: %q)", unit, strings.TrimSpace(string(out.Stdout)))
 		}
 	}
-	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/bin/caddy", "/usr/local/bin/caddy", "/usr/local/bin/vamos", "/etc/vamos", "/etc/ssh/sshd_config.d/vamos.conf", "/etc/systemd/system/" + agentUnit} {
+	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/local/bin/vamos", "/etc/vamos", "/etc/ssh/sshd_config.d/vamos.conf", "/etc/systemd/system/" + agentUnit} {
 		if _, err := os.Lstat(m.path(path)); !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("pre-existing executable %s", path)
 		}
 	}
-	for _, account := range [][2]string{{"passwd", "caddy"}, {"group", "caddy"}, {"group", "docker"}, {"passwd", "vamos"}, {"group", "vamos"}} {
-		value, err := m.account(ctx, account[0], account[1])
+	for _, key := range ownedAccounts {
+		kind, name, _ := strings.Cut(key, ":")
+		value, err := m.account(ctx, kind, name)
 		if err != nil {
 			return err
 		}
 		if value != "" {
-			return fmt.Errorf("pre-existing %s account %s", account[0], account[1])
+			return fmt.Errorf("pre-existing %s account %s", kind, name)
 		}
 	}
 	inventory, err := m.packages(ctx)
@@ -60,7 +61,7 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 		return err
 	}
 	for name := range inventory {
-		if name == "caddy" || name == "runc" || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "containerd") || name == "moby-engine" {
+		if name == "runc" || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "containerd") || name == "moby-engine" {
 			return fmt.Errorf("pre-existing runtime package %s; refusing adoption", name)
 		}
 	}
@@ -109,14 +110,31 @@ func (m *Manager) account(ctx context.Context, kind, name string) (string, error
 	return strings.TrimSpace(string(result.Stdout)), nil
 }
 
-func (m *Manager) workloads(ctx context.Context) error {
-	for _, args := range [][]string{{"container", "ls", "-aq"}, {"image", "ls", "-aq"}, {"volume", "ls", "-q"}} {
+// workloads proves Docker holds nothing but Vamos's own resources. Before purge
+// approval the owned Caddy container and image are still in service, so they
+// are excluded and containerd's moby content (which includes them) is checked
+// again after their removal.
+func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
+	allowed := map[string]bool{}
+	if caddy != nil {
+		allowed[caddy.ID] = true
+		images, err := m.caddyImageIDs(ctx)
+		if err != nil {
+			return fmt.Errorf("cannot verify Docker is unused; restore daemon health before teardown: %w", err)
+		}
+		for _, id := range images {
+			allowed[id] = true
+		}
+	}
+	for _, args := range [][]string{{"container", "ls", "-aq", "--no-trunc"}, {"image", "ls", "-aq", "--no-trunc"}, {"volume", "ls", "-q"}} {
 		out, err := m.command(ctx, "docker", args...)
 		if err != nil {
 			return fmt.Errorf("cannot verify Docker is unused; restore daemon health before teardown: %w", err)
 		}
-		if len(strings.TrimSpace(string(out))) != 0 {
-			return fmt.Errorf("Docker has %s resources; remove workloads explicitly before host teardown", args[0])
+		for _, id := range strings.Fields(string(out)) {
+			if !allowed[id] {
+				return fmt.Errorf("Docker has %s resources; remove workloads explicitly before host teardown", args[0])
+			}
 		}
 	}
 	out, err := m.command(ctx, "docker", "network", "ls", "--format", "{{.Name}}")
@@ -144,6 +162,9 @@ func (m *Manager) workloads(ctx context.Context) error {
 	for _, namespace := range strings.Fields(string(namespaces)) {
 		if namespace != "moby" && namespace != "plugins.moby" {
 			return fmt.Errorf("containerd has unmanaged namespace %q; refusing teardown", namespace)
+		}
+		if caddy != nil {
+			continue
 		}
 		for _, resource := range []string{"containers", "images", "content"} {
 			out, err := m.command(ctx, "ctr", "--namespace", namespace, resource, "ls", "-q")

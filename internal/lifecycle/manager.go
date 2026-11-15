@@ -48,13 +48,13 @@ func (m *Manager) bridgeKeyLine() []byte {
 	return []byte(line + "\n")
 }
 
-var units = []string{"caddy.service", "docker.service", "docker.socket", "containerd.service"}
+var units = []string{"docker.service", "docker.socket", "containerd.service"}
 
 const agentUnit = "vamos-agent.service"
 
 const agentServiceConfig = `[Unit]
 Description=Vamos coordinator agent
-After=docker.service caddy.service
+After=docker.service
 
 [Service]
 Type=simple
@@ -99,7 +99,7 @@ const defaultAgentConfig = `{
 }
 `
 
-var dataPaths = []string{"/etc/caddy", "/etc/docker", "/etc/containerd", "/var/lib/caddy", "/var/lib/docker", "/var/lib/containerd", "/var/log/caddy", "/usr/local/lib/vamos"}
+var dataPaths = []string{"/etc/caddy", "/etc/docker", "/etc/containerd", "/var/lib/caddy", "/var/lib/docker", "/var/lib/containerd", "/usr/local/lib/vamos"}
 
 type Runner func(context.Context, string, []string) (process.Result, error)
 
@@ -247,7 +247,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			if err := checkPackages(s, installed, true); err != nil {
 				return nil, err
 			}
-			if err := m.health(ctx); err != nil {
+			if err := m.health(ctx, s); err != nil {
 				return nil, err
 			}
 			return s, nil
@@ -282,7 +282,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if _, err := m.command(ctx, "apt-get", "update", "-qq"); err != nil {
 			return nil, err
 		}
-		plan, err := m.command(ctx, "apt-get", "--simulate", "--no-install-recommends", "--no-remove", "install", "docker.io", "docker-buildx", "caddy")
+		plan, err := m.command(ctx, "apt-get", "--simulate", "--no-install-recommends", "--no-remove", "install", "docker.io", "docker-buildx")
 		if err != nil {
 			return nil, err
 		}
@@ -290,7 +290,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err != nil {
 			return nil, err
 		}
-		for _, required := range []string{"docker.io", "docker-buildx", "caddy"} {
+		for _, required := range []string{"docker.io", "docker-buildx"} {
 			if !contains(packages, required) {
 				return nil, fmt.Errorf("APT did not plan a fresh %s installation", required)
 			}
@@ -314,7 +314,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		return nil, err
 	}
 	if !s.Configured {
-		if err := atomicWrite(m.path("/etc/caddy/Caddyfile"), []byte(caddyConfig), 0644); err != nil {
+		if err := atomicWrite(m.path(caddyfilePath), []byte(caddyConfig), 0644); err != nil {
 			return nil, err
 		}
 		if err := atomicWrite(m.path("/etc/docker/daemon.json"), []byte(dockerConfig), 0644); err != nil {
@@ -374,7 +374,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		hash = sha256.Sum256(m.Agent)
 		s.AgentSHA = hex.EncodeToString(hash[:])
 		s.Accounts = map[string]string{}
-		for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker", "passwd:vamos", "group:vamos"} {
+		for _, key := range ownedAccounts {
 			parts := strings.Split(key, ":")
 			value, err := m.account(ctx, parts[0], parts[1])
 			if err != nil {
@@ -387,9 +387,6 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			return nil, err
 		}
 	}
-	if _, err := m.command(ctx, "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"); err != nil {
-		return nil, err
-	}
 	if err := m.step(s, "start-services"); err != nil {
 		return nil, err
 	}
@@ -399,10 +396,16 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 	if _, err := m.command(ctx, "systemctl", "daemon-reload"); err != nil {
 		return nil, err
 	}
-	if _, err := m.command(ctx, "systemctl", "enable", "--now", "containerd.service", "docker.socket", "docker.service", "caddy.service", agentUnit); err != nil {
+	if _, err := m.command(ctx, "systemctl", "enable", "--now", "containerd.service", "docker.socket", "docker.service"); err != nil {
 		return nil, err
 	}
-	if err := m.health(ctx); err != nil {
+	if err := m.ensureCaddy(ctx, s); err != nil {
+		return nil, err
+	}
+	if _, err := m.command(ctx, "systemctl", "enable", "--now", agentUnit); err != nil {
+		return nil, err
+	}
+	if err := m.health(ctx, s); err != nil {
 		return nil, err
 	}
 	s.Phase = "ready"
@@ -412,9 +415,10 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 	return s, nil
 }
 
-// Upgrade replaces only the paired installed executor and coordinator after
-// proving every managed resource still matches the ownership receipt. It never
-// adopts drift or retries an uncertain previous replacement silently.
+// Upgrade replaces the paired installed executor and coordinator, and moves the
+// Caddy container to this release's pinned image, after proving every managed
+// resource still matches the ownership receipt. It never adopts drift or
+// retries an uncertain previous replacement silently.
 func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err error) {
 	if err := ValidateConfig(config); err != nil {
 		return nil, err
@@ -482,6 +486,11 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	if err = m.verifyQueueIdle(); err != nil {
 		return nil, err
 	}
+	// Routes and certificates live on the host, so replacing the container to
+	// adopt a new pinned image keeps them; only in-flight requests are cut.
+	if err = m.ensureCaddy(ctx, s); err != nil {
+		return nil, err
+	}
 	binariesUpdated = true
 	if err = atomicWrite(m.path(ExecutorPath), m.Executor, 0755); err != nil {
 		return nil, err
@@ -503,7 +512,7 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 		return nil, err
 	}
 	agentStopped = false
-	if err = m.health(ctx); err != nil {
+	if err = m.health(ctx, s); err != nil {
 		agentStopped = true
 		return nil, err
 	}
@@ -514,8 +523,8 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	return s, nil
 }
 
-func (m *Manager) health(ctx context.Context) error {
-	if _, err := m.command(ctx, "systemctl", "is-active", "docker.service", "caddy.service", agentUnit); err != nil {
+func (m *Manager) health(ctx context.Context, s *State) error {
+	if _, err := m.command(ctx, "systemctl", "is-active", "docker.service", agentUnit); err != nil {
 		return err
 	}
 	if _, err := m.command(ctx, "docker", "info", "--format", "{{.ServerVersion}}"); err != nil {
@@ -524,7 +533,11 @@ func (m *Manager) health(ctx context.Context) error {
 	if _, err := m.command(ctx, "docker", "buildx", "version"); err != nil {
 		return err
 	}
-	if _, err := m.command(ctx, "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"); err != nil {
+	if err := m.checkCaddy(ctx, s); err != nil {
+		return err
+	}
+	name, args := CaddyCommand("validate", "--config", caddyfilePath, "--adapter", "caddyfile")
+	if _, err := m.command(ctx, name, args...); err != nil {
 		return err
 	}
 	return m.checkCaddyRuntime(ctx)
@@ -585,7 +598,7 @@ func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
 			return fmt.Errorf("managed file %s is missing or changed; refusing to overwrite or remove it", path)
 		}
 	}
-	caddyPath := m.path("/etc/caddy/Caddyfile")
+	caddyPath := m.path(caddyfilePath)
 	if err := rejectSymlink(caddyPath); err != nil {
 		return err
 	}

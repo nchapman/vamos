@@ -55,6 +55,9 @@ func newMultiFlow(t *testing.T) *multiFlow {
 		return fmt.Sprintf("sha256:%x", sum)
 	}
 	m.Run = func(ctx context.Context, name string, args []string, input []byte) (process.Result, error) {
+		if ca, ok := caddyCall(m, name, args); ok {
+			name, args = "caddy", ca
+		}
 		if name == "caddy" {
 			switch args[0] {
 			case "adapt":

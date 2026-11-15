@@ -214,6 +214,9 @@ func TestMultiRoutesForeignAndMalformed(t *testing.T) {
 func routeTestCaddy(t *testing.T, m *Manager, live *string) {
 	t.Helper()
 	m.Run = func(_ context.Context, name string, args []string, _ []byte) (process.Result, error) {
+		if ca, ok := caddyCall(m, name, args); ok {
+			name, args = "caddy", ca
+		}
 		if name == "caddy" && args[0] == "adapt" {
 			b, e := os.ReadFile(args[2])
 			if e != nil {
@@ -439,6 +442,9 @@ func TestMultiRoutesPromoteResumesOnlyActiveService(t *testing.T) {
 				routeTestCaddy(t, m, &live)
 				baseRun := m.Run
 				m.Run = func(ctx context.Context, name string, args []string, input []byte) (process.Result, error) {
+					if ca, ok := caddyCall(m, name, args); ok {
+						name, args = "caddy", ca
+					}
 					if name == "caddy" && args[0] == "reload" {
 						reloads++
 						live = next

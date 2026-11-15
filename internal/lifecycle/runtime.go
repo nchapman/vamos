@@ -75,7 +75,8 @@ func (m *Manager) checkCaddyRuntime(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("cannot verify Caddy runtime config: %w", err)
 	}
-	expected, err := m.command(ctx, "caddy", "adapt", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile")
+	name, args := CaddyCommand("adapt", "--config", caddyfilePath, "--adapter", "caddyfile")
+	expected, err := m.command(ctx, name, args...)
 	if err != nil {
 		return err
 	}

@@ -24,7 +24,7 @@ def install(h):
             or not Path('/var/lib/vamos-integration-owner').is_file()
             or 'orbstack' not in Path('/proc/sys/kernel/osrelease').read_text().lower()):
         raise RuntimeError('gate installation requires the owned OrbStack root guest')
-    destinations = [Path('/usr/local/bin') / name for name in ('docker', 'caddy')]
+    destinations = [Path('/usr/local/bin/docker')]
     if any(os.path.lexists(p) for p in destinations):
         raise RuntimeError('refusing existing command wrapper destinations')
     directory = Path(CONFIG).parent
@@ -44,7 +44,7 @@ class Barrier:
     def __init__(self, command, prefix, contains=None, when='before', timeout=120,
                  *, configpath=CONFIG):
         if (type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 1200
-                or command not in ('docker', 'caddy') or when not in ('before', 'after')
+                or command != 'docker' or when not in ('before', 'after')
                 or not isinstance(prefix, list) or not prefix
                 or not all(isinstance(v, str) for v in prefix)
                 or (contains is not None and not isinstance(contains, str))):

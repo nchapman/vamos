@@ -96,6 +96,9 @@ func TestReplicaLostPromotionResponse(t *testing.T) {
 		return beforeHTTP.RoundTrip(req)
 	})
 	f.m.Run = func(c context.Context, n string, a []string, b []byte) (process.Result, error) {
+		if ca, ok := caddyCall(f.m, n, a); ok {
+			n, a = "caddy", ca
+		}
 		result, err := run(c, n, a, b)
 		if n == "caddy" && a[0] == "reload" && !failed && err == nil {
 			failed = true
@@ -174,6 +177,9 @@ func TestReplicaFinalReadinessAndCancellation(t *testing.T) {
 		return originalHTTP.RoundTrip(req)
 	})
 	f.m.Run = func(c context.Context, n string, a []string, b []byte) (process.Result, error) {
+		if ca, ok := caddyCall(f.m, n, a); ok {
+			n, a = "caddy", ca
+		}
 		if n == "caddy" && a[0] == "validate" {
 			badPort = f.load().ServiceStates["web"].Candidate.Instances[1].Port
 		}

@@ -86,7 +86,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 		// before configuration was recorded. Initial preflight proved them absent.
 		if s.Accounts == nil {
 			s.Accounts = map[string]string{}
-			for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker", "passwd:vamos", "group:vamos"} {
+			for _, key := range ownedAccounts {
 				parts := strings.Split(key, ":")
 				value, err := m.account(ctx, parts[0], parts[1])
 				if err != nil {
@@ -94,9 +94,6 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 				}
 				if value != "" {
 					fields := strings.Split(value, ":")
-					if parts[0] == "passwd" && parts[1] == "caddy" && (len(fields) != 7 || fields[0] != "caddy" || fields[5] != "/var/lib/caddy" || (fields[6] != "/usr/sbin/nologin" && fields[6] != "/bin/false")) {
-						return nil, errors.New("unexpected caddy account after interrupted setup")
-					}
 					if parts[0] == "group" && (len(fields) != 4 || fields[0] != parts[1] || fields[3] != "") {
 						return nil, errors.New("unexpected service group after interrupted setup")
 					}
@@ -125,13 +122,19 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 				return nil, fmt.Errorf("account %s changed; refusing removal", key)
 			}
 		}
-		active, err := m.serviceRunning(ctx, "caddy.service")
+		dockerActive, err := m.serviceRunning(ctx, "docker.service")
 		if err != nil {
 			return nil, err
 		}
-		if active {
-			if err := m.checkCaddyRuntime(ctx); err != nil {
+		var caddy *caddyContainer
+		if dockerActive {
+			if caddy, err = m.findCaddy(ctx, s); err != nil {
 				return nil, err
+			}
+			if caddy != nil && caddy.State.Running {
+				if err := m.checkCaddyRuntime(ctx); err != nil {
+					return nil, err
+				}
 			}
 		}
 		entries, statErr := os.ReadDir(m.path("/var/lib/docker"))
@@ -139,28 +142,8 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 			return nil, statErr
 		}
 		if len(entries) > 0 {
-			if err := m.workloads(ctx); err != nil {
+			if err := m.workloads(ctx, caddy); err != nil {
 				return nil, err
-			}
-		}
-	} else {
-		// A lost connection is not rollback. Recheck workloads if the daemon is
-		// still active; after it is stopped/masked we can resume package cleanup.
-		for _, unit := range []string{"docker.service", "caddy.service"} {
-			active, err := m.serviceRunning(ctx, unit)
-			if err != nil {
-				return nil, err
-			}
-			if active {
-				var err error
-				if unit == "docker.service" {
-					err = m.workloads(ctx)
-				} else {
-					err = m.checkCaddyRuntime(ctx)
-				}
-				if err != nil {
-					return nil, err
-				}
 			}
 		}
 	}
@@ -173,6 +156,21 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	s.PurgeApproved = true
 	if err := m.step(s, "stop-services"); err != nil {
 		return nil, err
+	}
+	// A lost connection is not rollback. While the daemon is still active,
+	// remove the owned ingress and prove Docker is otherwise empty; after it is
+	// stopped/masked, package cleanup can resume.
+	dockerActive, err := m.serviceRunning(ctx, "docker.service")
+	if err != nil {
+		return nil, err
+	}
+	if dockerActive {
+		if err := m.removeCaddy(ctx, s); err != nil {
+			return nil, err
+		}
+		if err := m.workloads(ctx, nil); err != nil {
+			return nil, err
+		}
 	}
 	if err := m.buildService().RemoveReceipt(ctx, s.ID); err != nil {
 		return nil, err
@@ -225,33 +223,16 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 			return nil, err
 		}
 	}
-	if s.Accounts["passwd:caddy"] != "" {
-		value, err := m.account(ctx, "passwd", "caddy")
+	if s.Accounts["group:docker"] != "" {
+		value, err := m.account(ctx, "group", "docker")
 		if err != nil {
 			return nil, err
 		}
 		if value != "" {
-			if value != s.Accounts["passwd:caddy"] {
-				return nil, errors.New("caddy account drifted during teardown")
+			if value != s.Accounts["group:docker"] {
+				return nil, errors.New("group docker drifted during teardown")
 			}
-			if _, err := m.command(ctx, "userdel", "caddy"); err != nil {
-				return nil, err
-			}
-		}
-	}
-	for _, group := range []string{"caddy", "docker"} {
-		if s.Accounts["group:"+group] == "" {
-			continue
-		}
-		value, err := m.account(ctx, "group", group)
-		if err != nil {
-			return nil, err
-		}
-		if value != "" {
-			if value != s.Accounts["group:"+group] {
-				return nil, fmt.Errorf("group %s drifted during teardown", group)
-			}
-			if _, err := m.command(ctx, "groupdel", group); err != nil {
+			if _, err := m.command(ctx, "groupdel", "docker"); err != nil {
 				return nil, err
 			}
 		}

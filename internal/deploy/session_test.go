@@ -456,7 +456,7 @@ func TestSessionMaintenanceAdmission(t *testing.T) {
 				inventory.add(slot.Current).State.Running = true
 			}
 			f.m.Run = func(ctx context.Context, name string, args []string, input []byte) (process.Result, error) {
-				if name == "docker" {
+				if _, caddy := caddyCall(f.m, name, args); name == "docker" && !caddy {
 					return inventory.m.Run(ctx, name, args, input)
 				}
 				return base(ctx, name, args, input)

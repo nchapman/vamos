@@ -17,7 +17,7 @@ import (
 )
 
 var testConfig = Config{Name: "test", Domain: "apps.example.com"}
-var testPackages = []string{"caddy", "containerd", "docker-buildx", "docker.io", "runc"}
+var testPackages = []string{"containerd", "docker-buildx", "docker.io", "runc"}
 
 type fakeExit int
 
@@ -38,6 +38,24 @@ type fakeSystem struct {
 	cache             int
 	unownedRemoval    bool
 	archiveVersion    string
+	caddy             *fakeCaddy
+	caddyImages       map[string]bool
+	created           int
+	agentStopped      bool
+}
+
+// fakeCaddy models only the inspect fields Vamos reads from the container.
+type fakeCaddy struct {
+	ID      string
+	Image   string
+	Labels  map[string]string
+	Running bool
+	Args    []string
+}
+
+func (c *fakeCaddy) inspect() string {
+	return fmt.Sprintf(`{"Id":%q,"Config":{"Image":%q,"Labels":{%q:%q},"Hostname":"ignored"},"State":{"Running":%t,"Status":"ignored"},"HostConfig":{"NetworkMode":"host","RestartPolicy":{"Name":"unless-stopped","MaximumRetryCount":0}}}`,
+		c.ID, c.Image, caddyHostLabel, c.Labels[caddyHostLabel], c.Running)
 }
 
 func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
@@ -50,11 +68,20 @@ func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 		t.Fatal(err)
 	}
 	m := &Manager{Root: root, Executor: []byte("test-executor"), Inspect: func(context.Context) (*host.Report, error) { return &host.Report{Supported: true, Root: true}, nil }}
-	f := &fakeSystem{t: t, m: m, installed: map[string]installedPackage{"base-files": {"installed", "1"}}, accounts: map[string]string{}}
+	f := &fakeSystem{t: t, m: m, installed: map[string]installedPackage{"base-files": {"installed", "1"}}, accounts: map[string]string{}, caddyImages: map[string]bool{}}
 	m.Run = f.run
 	m.MountInfo = func() ([]byte, error) { return nil, nil }
 	m.CaddyConfig = func(context.Context) ([]byte, error) { return []byte(`{"admin":{"listen":"127.0.0.1:2019"}}`), nil }
 	return m, f
+}
+
+func slicesIndex(values []string, wanted string) int {
+	for i, v := range values {
+		if v == wanted {
+			return i
+		}
+	}
+	return -1
 }
 
 func (f *fakeSystem) version() string {
@@ -120,16 +147,27 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 				return process.Result{}, fakeExit(1)
 			}
 			f.active = true
+			if contains(args, agentUnit) {
+				f.agentStopped = false
+			}
 			f.write("/var/lib/docker/engine-state", "owned runtime data")
 			return out("")
 		case "stop":
-			f.active = false
+			if args[1] == agentUnit {
+				f.agentStopped = true
+			} else {
+				f.active = false
+			}
 			return out("")
 		case "start", "restart":
-			f.active = true
+			if args[1] == agentUnit {
+				f.agentStopped = false
+			} else {
+				f.active = true
+			}
 			return out("")
 		case "is-active":
-			if f.active {
+			if f.active && !(f.agentStopped && contains(args, agentUnit)) {
 				return out("active\n")
 			}
 			return process.Result{Stdout: []byte("inactive\n")}, fakeExit(3)
@@ -161,19 +199,14 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			}
 			if f.failInstall {
 				f.failInstall = false
-				f.installed["caddy"] = installedPackage{"installed", f.version()}
-				f.accounts["passwd:caddy"] = "caddy:x:999:999:Caddy:/var/lib/caddy:/usr/sbin/nologin"
-				f.accounts["group:caddy"] = "caddy:x:999:"
-				f.write("/etc/caddy/Caddyfile", "package default")
+				f.installed["containerd"] = installedPackage{"installed", f.version()}
+				f.write("/etc/containerd/config.toml", "containerd default")
 				return process.Result{Stderr: []byte("simulated APT failure")}, fakeExit(1)
 			}
 			for _, p := range testPackages {
 				f.installed[p] = installedPackage{"installed", f.version()}
 			}
-			f.accounts["passwd:caddy"] = "caddy:x:999:999:Caddy:/var/lib/caddy:/usr/sbin/nologin"
-			f.accounts["group:caddy"] = "caddy:x:999:"
 			f.accounts["group:docker"] = "docker:x:998:"
-			f.write("/etc/caddy/Caddyfile", "package default")
 			f.write("/etc/containerd/config.toml", "containerd default")
 			return out("")
 		}
@@ -202,11 +235,6 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			return out("unowned-namespace\n")
 		}
 		return out("")
-	case "caddy":
-		if args[0] == "adapt" {
-			return out(`{"admin":{"listen":"127.0.0.1:2019"}}`)
-		}
-		return out("Valid configuration\n")
 	case "docker":
 		if !f.active {
 			return process.Result{}, fakeExit(1)
@@ -216,12 +244,65 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			return out("29.1\n")
 		case "buildx":
 			return out("v0.30\n")
-		case "container":
-			if f.foreign {
-				return out("foreign-container\n")
-			}
+		case "pull":
+			f.caddyImages[digestRef(args[len(args)-1])] = true
 			return out("")
-		case "image", "volume":
+		case "run":
+			image := args[len(args)-7]
+			if !f.caddyImages[digestRef(image)] {
+				return process.Result{Stderr: []byte("image not pulled")}, fakeExit(125)
+			}
+			f.created++
+			label, _ := strings.CutPrefix(args[slicesIndex(args, "--label")+1], caddyHostLabel+"=")
+			f.caddy = &fakeCaddy{ID: fmt.Sprintf("%064x", f.created), Image: image, Labels: map[string]string{caddyHostLabel: label}, Running: true, Args: args}
+			return out(f.caddy.ID + "\n")
+		case "exec":
+			if f.caddy == nil || !f.caddy.Running || args[1] != CaddyContainer || args[2] != "caddy" {
+				return process.Result{Stderr: []byte("container not running")}, fakeExit(1)
+			}
+			if args[3] == "adapt" {
+				return out(`{"admin":{"listen":"127.0.0.1:2019"}}`)
+			}
+			return out("Valid configuration\n")
+		case "container":
+			switch args[1] {
+			case "ls":
+				var ids []string
+				if f.caddy != nil {
+					ids = append(ids, f.caddy.ID)
+				}
+				if f.foreign && !contains(args, "--filter") {
+					ids = append(ids, "foreign-container")
+				}
+				return out(strings.Join(ids, "\n"))
+			case "inspect":
+				if f.caddy == nil || args[len(args)-1] != f.caddy.ID {
+					return process.Result{}, fakeExit(1)
+				}
+				return out(f.caddy.inspect())
+			case "rm":
+				f.caddy = nil
+				return out("")
+			case "start":
+				f.caddy.Running = true
+				return out("")
+			}
+		case "image":
+			switch args[1] {
+			case "ls":
+				var ids []string
+				for ref := range f.caddyImages {
+					if ref == args[len(args)-1] || !strings.Contains(args[len(args)-1], "@") {
+						ids = append(ids, "sha256:"+strings.TrimPrefix(ref, "caddy@sha256:"))
+					}
+				}
+				sort.Strings(ids)
+				return out(strings.Join(ids, "\n"))
+			case "rm":
+				delete(f.caddyImages, args[2])
+				return out("")
+			}
+		case "volume":
 			return out("")
 		case "network":
 			return out("host\nnone\n")
@@ -369,7 +450,7 @@ func TestTeardownRefusesUnsafeConditions(t *testing.T) {
 			if _, err := m.Teardown(context.Background(), testConfig.Name, true); err == nil {
 				t.Fatal("unsafe teardown succeeded")
 			}
-			if !f.active {
+			if !f.active || f.caddy == nil || !f.caddy.Running {
 				t.Fatal("refusal stopped existing services")
 			}
 			for _, call := range f.calls[before:] {

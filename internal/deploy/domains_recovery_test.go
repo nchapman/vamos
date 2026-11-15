@@ -17,6 +17,9 @@ func TestDomainPendingReloadIsNotReportedAsConfiguredAndResumes(t *testing.T) {
 	base := f.m.Run
 	fail := true
 	f.m.Run = func(ctx context.Context, n string, a []string, b []byte) (process.Result, error) {
+		if ca, ok := caddyCall(f.m, n, a); ok {
+			n, a = "caddy", ca
+		}
 		if n == "caddy" && len(a) > 0 && a[0] == "reload" && fail {
 			return process.Result{}, errors.New("injected reload outage")
 		}

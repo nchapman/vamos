@@ -209,7 +209,7 @@ def prepare(h, owner):
     before = identities(h.status(app))
     am['services']['api']['env']['RELEASE'] = 'promoted'
     save(h, api, am, 'promoted')
-    with Barrier('caddy', ['reload'], when='after', timeout=180) as gate:
+    with Barrier('docker', ['exec', 'vamos-caddy', 'caddy', 'reload'], when='after', timeout=180) as gate:
         with Client(h, ['deploy', '--server', 'local'], api) as client:
             gate.wait()
             with Worker(h) as remote:
@@ -332,7 +332,9 @@ def verify_restart(h, owner):
     require(checkpoint['init'] != init_identity(), 'machine init was not restarted')
     boot = h.command(['systemctl', 'is-system-running', '--wait'], user='root', check=False, timeout=180)
     require(boot.stdout.strip() in (b'running', b'degraded'), 'machine did not finish boot')
-    h.command(['systemctl', 'is-active', '--quiet', 'ssh', 'docker', 'caddy', 'vamos-agent'], user='root')
+    h.command(['systemctl', 'is-active', '--quiet', 'ssh', 'docker', 'vamos-agent'], user='root')
+    require(h.command(['docker', 'container', 'inspect', '--format', '{{.State.Running}}', 'vamos-caddy'],
+                      user='root').stdout.strip() == b'true', 'Caddy container did not restart with Docker')
     app, host = checkpoint['app'], checkpoint['host']
     no_restart(h, checkpoint['old_worker'])
     wait_database(h, checkpoint['before']['database'][0])

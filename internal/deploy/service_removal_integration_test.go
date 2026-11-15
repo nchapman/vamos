@@ -104,7 +104,7 @@ func TestRemovalIntegratedAbandonAndSettledRollback(t *testing.T) {
 			}
 			originalRun := f.m.Run
 			f.m.Run = func(ctx context.Context, n string, a []string, b []byte) (process.Result, error) {
-				if n == "docker" {
+				if _, caddy := caddyCall(f.m, n, a); n == "docker" && !caddy {
 					return inventory.m.Run(ctx, n, a, b)
 				}
 				return originalRun(ctx, n, a, b)

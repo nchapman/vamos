@@ -102,7 +102,7 @@ it is not evidence of execution on native hardware of that architecture.
   SSH server bound to guest loopback. The guest generates its own keys and pins
   its SSH host key using the trusted VM control channel. Mac SSH configuration,
   keys, Vamos registry, service bindings and Docker context are not used.
-- Vamos's real bootstrap installs and manages Docker and Caddy inside the guest.
+- Vamos's real bootstrap installs Docker and runs its pinned Caddy container inside the guest.
   HTTPS uses `.localhost` names and Caddy's internal CA. Trust installation is
   confined to the guest; curl verifies the certificate and hostname. No public
   DNS, public ACME issuer, or Mac trust-store modification is needed.
@@ -195,7 +195,7 @@ A second app exercises recovery and diagnostics:
   staged database credentials remain pending, and explicit resume completes the
   captured replacement.
 
-Checkpoints use guest-only Docker/Caddy wrappers, private Unix sockets and Linux
+Checkpoints use a guest-only Docker wrapper (Caddy runs through `docker exec`), private Unix sockets and Linux
 pidfds. They do not modify the production executor, inject timing-dependent sleeps,
 change Vamos journals, or disable machine isolation. Nonmatching commands execute
 the original binaries. A gate is one-shot and fails closed without its explicit

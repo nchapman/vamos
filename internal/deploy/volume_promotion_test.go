@@ -17,6 +17,9 @@ func TestVolumeSupersedeCancelsOnlyUnservedActivationFrom503(t *testing.T) {
 	run := f.m.Run
 	reloads := 0
 	f.m.Run = func(ctx context.Context, name string, args []string, input []byte) (process.Result, error) {
+		if ca, ok := caddyCall(f.m, name, args); ok {
+			name, args = "caddy", ca
+		}
 		if name == "caddy" && args[0] == "reload" {
 			reloads++
 			if reloads == 2 {

@@ -16,7 +16,7 @@ def matches(config, name, args):
     if name == 'docker' and args[:2] == ['--host', 'unix:///var/run/docker.sock']:
         args = args[2:]
     prefix = config.get('prefix')
-    return (name in ('docker', 'caddy') and config.get('command') == name
+    return (name == 'docker' and config.get('command') == name
             and isinstance(prefix, list) and bool(prefix)
             and all(isinstance(a, str) for a in prefix)
             and args[:len(prefix)] == prefix
@@ -62,7 +62,7 @@ def gate_execute(name, args, realpath, configpath):
 
 def main():
     name = os.path.basename(sys.argv[0])
-    if name not in ('docker', 'caddy'):
+    if name != 'docker':
         raise RuntimeError('unsupported wrapper name')
     return gate_execute(name, sys.argv[1:], '/usr/bin/' + name, CONFIG)
 

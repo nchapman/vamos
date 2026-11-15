@@ -17,7 +17,7 @@ import urllib.request
 
 ROOT = Path('/opt/vamos-test')
 OWNER = Path('/var/lib/vamos-integration-owner')
-CA = Path('/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt')
+CA = Path('/var/lib/caddy/data/caddy/pki/authorities/local/root.crt')
 
 
 def require_guest(owner):
@@ -115,8 +115,9 @@ class Harness:
 
     def diagnostics(self):
         for args in (['systemctl', '--failed', '--no-pager'],
-                     ['systemctl', 'status', 'docker', 'caddy', 'vamos-agent', '--no-pager'],
-                     ['journalctl', '-u', 'caddy', '-u', 'docker', '-u', 'vamos-agent', '--no-pager', '-n', '150'],
+                     ['systemctl', 'status', 'docker', 'vamos-agent', '--no-pager'],
+                     ['journalctl', '-u', 'docker', '-u', 'vamos-agent', '--no-pager', '-n', '150'],
+                     ['docker', 'logs', '--tail', '150', 'vamos-caddy'],
                      ['docker', 'ps', '-a', '--format', '{{.Names}}\t{{.Status}}'],
                      ['docker', 'volume', 'ls'], ['docker', 'network', 'ls']):
             try:

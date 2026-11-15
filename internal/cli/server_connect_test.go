@@ -14,7 +14,7 @@ import (
 )
 
 func connectState() *lifecycle.State {
-	return &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "home", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), Accounts: map[string]string{"passwd:caddy": "owned", "group:caddy": "owned", "group:docker": "owned"}, Packages: []string{"docker.io"}}
+	return &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "home", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), CaddyContainerID: strings.Repeat("d", 64), Accounts: map[string]string{"group:docker": "owned", "passwd:vamos": "owned", "group:vamos": "owned"}, Packages: []string{"docker.io"}}
 }
 
 func TestConnectExistingHostRegistersWithoutMutation(t *testing.T) {

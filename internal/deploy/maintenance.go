@@ -298,7 +298,7 @@ func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) e
 	if e = atomic(temp, []byte(next), 0644); e != nil {
 		return e
 	}
-	if _, e = m.cmd(c, "caddy", "validate", "--config", temp, "--adapter", "caddyfile"); e != nil {
+	if _, e = m.caddy(c, "validate", "--config", "/etc/caddy/.vamos-next.Caddyfile", "--adapter", "caddyfile"); e != nil {
 		return e
 	}
 	if string(b) != next {
@@ -307,7 +307,7 @@ func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) e
 		}
 	}
 	if !sameJSON(live, n) {
-		_, reloadErr := m.cmd(c, "caddy", "reload", "--config", p, "--adapter", "caddyfile")
+		_, reloadErr := m.caddy(c, "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile")
 		live, e = m.live(c)
 		if e != nil {
 			return errors.Join(reloadErr, e)
