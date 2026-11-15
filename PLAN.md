@@ -25,14 +25,21 @@ creation abandonment. Native Windows live acceptance remains unverified. The dis
 [OrbStack suite](docs/testing.md) adds native arm64-host, selected live worker
 interruptions and machine-restart coverage.
 
-### Next-generation coordinator and shared engine (proposed)
+### Coordinator agent and shared engine (Phases 1–3 implemented; Phase 4 deferred)
 
 [Server coordinator agent, non-root deploys, and shared engine boundary](docs/agent-proposal.md)
-captures the planned evolution from per-command `root` SSH executor uploads and
+captures the evolution from per-command `root` SSH executor uploads and
 immediate busy-refusal locking to an installed `soar-agent` coordinator with
-non-root CI deployment access, durable server-owned queueing and concurrency
-governance, explicit version handshakes + `soar server upgrade`, and a shared
-container engine boundary preserving room for a future local `soar dev` stack.
+non-root CI deployment access (`soar` SSH bridge), durable server-owned
+queueing, hierarchical host/app/ingress locking, supervised `soar-op-<id>.service`
+workers, explicit version handshakes + `soar server upgrade`, and a shared
+container engine boundary.
+
+Current gaps and deferred items:
+- **Phase 4 (`soar dev`)** is deferred; local development stacks are not implemented yet.
+- **Post-bootstrap ACL/key management CLI:** `/etc/soar/principals.json` and `/etc/soar/authorized_keys` are validated by `soar-agent` and preserved across `soar server upgrade`, and `soar server add` provisions the initial `default-deployer` key (`--deploy-key` or local SSH key), but there is not yet a CLI subcommand (`soar server principal ...`) to add, rotate, or revoke scoped CI keys after bootstrap.
+- **Pre-agent hosts:** Servers bootstrapped before the coordinator existed require a `root` `soar server upgrade` before ordinary CLI app commands can connect over the `soar` SSH bridge.
+- **Native Windows & distro package upgrades:** Native Windows live acceptance remains unverified, and unattended OS/Docker/Caddy package upgrades remain outside `soar server upgrade`.
 
 ## 1. The goal
 

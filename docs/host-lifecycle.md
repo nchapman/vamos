@@ -13,9 +13,9 @@ bin/soar server teardown --yes --purge test
 
 Flags precede positional arguments. Setup and connect require both name and target. Status and teardown resolve a registered name, or accept `NAME TARGET` for recovery when no registration exists. An explicit target cannot override a conflicting local registration. Names are lowercase DNS labels; the base domain is a lowercase hostname without a scheme, port, or wildcard.
 
-`mise run build` bundles `soar-linux-amd64` and `soar-linux-arm64` beside the native client. Keep a matching client/Linux executor bundle; on commands that stage an executor, `--executor FILE` overrides artifact selection and ELF architecture must match the inspected host. Artifacts are built locally, not downloaded from an unsigned release URL. Inspect, host status, and connect do not need an executor artifact. The root executor is installed at `/usr/local/lib/soar/executor`; repeat setup verifies its recorded digest rather than silently upgrading it. App commands stage their matching executor without replacing that installed binary.
+`mise run build` bundles `soar-linux-amd64` and `soar-linux-arm64` beside the native client. Keep a matching client/Linux bundle; on root lifecycle commands (or when `--executor FILE` overrides artifact selection), the ELF architecture must match the inspected host and its `buildmeta.Stamp` must match the client. Artifacts are built locally, not downloaded from an unsigned release URL. Inspect, host status, and connect do not need an executor artifact. Bootstrap installs `/usr/local/lib/soar/executor` and `/usr/local/lib/soar/soar-agent`, enables `soar-agent.service`, and provisions the restricted `soar` SSH bridge user; repeat `server add` verifies recorded digests rather than silently upgrading them. Use `soar server upgrade --yes NAME` to upgrade the installed binaries cleanly.
 
-See the [whole-system operations checklist](operations.md) for health monitoring, capacity, independent recovery custody, and the **unsupported host-upgrade/ownership-reconciliation gap**.
+See the [whole-system operations checklist](operations.md) for health monitoring, capacity, independent recovery custody, and the **unsupported distro package upgrade / post-bootstrap ACL CLI gaps**.
 
 ## Setup
 

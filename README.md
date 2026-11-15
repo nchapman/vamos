@@ -264,38 +264,40 @@ Use `--stdin` for automation, supplying values from a trusted secret producer—
 
 Cleanup keeps effective versions, per-service predecessors and the current/previous completed app snapshots and never prunes shared Docker resources or volumes. Destruction proves the app route is gone before removing verified owned containers/network and known captured inputs. Both have durable recovery and explicit confirmation. See [the app lifecycle contract](docs/app-lifecycle.md) for retention limits, reboot verification, and upgrade notes. **Legacy deployments need a replacement deploy to gain pinned ports.**
 
-App status/logs now stage a matching trusted executor temporarily, without replacing the bootstrap-owned installed binary; keep the Linux artifacts beside your client. This remains a root-SSH administration interface, not a restricted read-only account API.
+Ordinary app commands (`deploy`, `status`, `logs`, `exec`, `console`, `secrets`, `backup`, `apps`, etc.) connect over the restricted non-root `soar` SSH bridge to the installed `soar-agent` coordinator; `root` SSH is reserved for host lifecycle (`server add`, `server upgrade`, `server teardown`) and explicit `--executor` overrides.
 
 ## Layout
 
 ```text
-cmd/soar/           Process entry point and build version
+cmd/soar/           Process entry point, build version, and internal-agent bridge/worker dispatch
 cmd/build/          Deterministic bundle builder for client and Linux executors
 internal/cli/       Commands, output, and exit codes
 internal/transport/ Client-to-host transport interface seam
-internal/agentproto/ Versioned soar-agent RPC, handshake, queue, and ACL contracts
+internal/agent/     Coordinator daemon, durable operation queue, ACLs, and systemd worker supervision
+internal/agentclient/ Framed client RPC and session stream relay
+internal/agentproto/ Versioned soar-agent RPC, handshake, stream framing, queue, and ACL contracts
 internal/buildmeta/ Deterministic bundle build identity and pairing checks
 internal/buildbundle/ Snapshot-based cross-target bundle builder
 internal/engine/    Shared Docker container, network, resource, env-file, and probe primitives
 internal/config/    Typed configuration, strict loading, validation
 internal/host/      Shared read-only collector, parser, and Ubuntu policy
-internal/ssh/       System OpenSSH bootstrap transport
+internal/ssh/       System OpenSSH bootstrap and non-root agent bridge transport
 internal/process/   Bounded RPC subprocesses and direct streaming execution
-internal/session/   Private single-use, identity-pinned exec/log session staging
-internal/executor/  Versioned JSON stdin/stdout host-operation protocol
-internal/lifecycle/ Ubuntu setup/teardown, ownership journal, and safety checks
+internal/session/   Private single-use, identity-pinned exec/log session staging and Linux host PTYs
+internal/executor/  Versioned JSON stdin/stdout host-operation protocol and supervised worker entry point
+internal/lifecycle/ Ubuntu setup/upgrade/teardown, ownership journal, and safety checks
 internal/registry/  Private, atomically written local server registrations
 internal/buildcontext/ Bounded build-context capture with Docker ignore rules
 internal/deploy/    Deployment/maintenance journals, Docker lifecycle, Caddy routing
 internal/appstate/  Minimal completed-destruction receipt shared with host teardown
 internal/secrets/   Private immutable secret versions and metadata-only selection
 docs/               Implemented boundary and verification notes
-examples/          Three design fixtures plus runnable hello, journal, ledger and private-backend apps
+examples/          Three design fixtures plus runnable hello, journal, ledger, private-backend, and rails-ledger apps
 mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
 
-The Go module is `github.com/nchapman/soar`. No persistent Soar daemon or separate runtime framework is required. The SSH collector and host executor share one host-inspection implementation. Host operations use transient systemd workers, not a persistent Soar service.
+The Go module is `github.com/nchapman/soar`. `soar-agent.service` runs on managed Ubuntu hosts as the root-owned local socket coordinator, supervising app mutations in transient `soar-op-<id>.service` units while host lifecycle operations use `soar-host-operation.service`.
 
 ## Examples
 

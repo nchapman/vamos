@@ -1,11 +1,12 @@
-# Client and executor versioning
+# Client, executor, and coordinator versioning
 
-Soar currently brings a Linux executor with each app operation (as the Phase 1
-foundation toward an installed `soar-agent` coordinator; see
-[the agent architecture proposal](agent-proposal.md)). A **matching local bundle
-is enforced before uploading or launching that executor**, including when
-`--executor FILE` is supplied. Read-only SSH host inspection may happen first
-to discover the architecture.
+Ordinary CLI app commands route through the installed `soar-agent` coordinator
+over the restricted `soar` SSH bridge using a framed API/capability handshake
+([agent protocol](agent-protocol.md)). Host lifecycle operations (`server add`,
+`server upgrade`, `server teardown`) and explicit `--executor FILE` overrides
+connect as `root` and enforce an **exact matching local bundle** before
+uploading or installing the Linux binary. Read-only SSH host inspection may
+happen first to discover the host architecture.
 
 ## Build and update the whole bundle
 
@@ -74,10 +75,13 @@ does not guarantee an older bundle can read state written by a newer one. Do not
 downgrade clients against newer state. Coordinate operator/automation upgrades
 and retain the original bundle when diagnosing incomplete operations.
 
-This build identity supplies the deterministic `agent_build` / `agent_version`
-metadata used by the installed `soar-agent` API handshake. `soar server add`
-installs the paired executor and coordinator under `/usr/local/lib/soar/`;
-`soar server upgrade --yes NAME` replaces that pair only after strict ownership
-and health checks. Host inspect/status/connect still require no executor artifact.
+This build identity also supplies the deterministic `agent_build_id` /
+`agent_version` metadata used by the installed `soar-agent` API handshake.
+`soar server add` installs the paired `executor` and `soar-agent` under
+`/usr/local/lib/soar/`; `soar server upgrade --yes NAME` replaces that pair
+after strict ownership, idle-queue, and health checks. Host inspect/status/connect
+still require no executor artifact. Within a compatible API range and capability
+set, the CLI and `soar-agent` interoperate across patch builds; incompatible
+API ranges or missing capabilities fail fast with an explicit upgrade message.
 See [the agent protocol](agent-protocol.md) for compatibility and reattachment
 semantics.

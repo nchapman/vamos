@@ -1,11 +1,13 @@
 # Proposal: server coordinator agent, non-root deploys, and shared engine boundary
 
 **Status: implemented (Phases 1–3); local dev stack (Phase 4) deferred.**
-Current Soar commands still upload a Linux executor over `root` SSH per operation
-and serialize all host mutations with immediate busy refusal (`/run/lock/soar-host.lock`
-and a single `soar-host-operation.service` unit). Local development (`soar dev` /
-`soar.dev.yaml`) is intentionally deferred; it is included here only so component
-boundaries do not couple the core app engine to Ubuntu, systemd, Caddy, or root.
+Root host lifecycle (`server add`, `server upgrade`, `server teardown`) uses
+`soar-host-operation.service` over `root` SSH, while ordinary app operations
+route through the installed `soar-agent` coordinator over the restricted
+non-root `soar` SSH bridge with supervised `soar-op-<id>.service` workers. Local
+development (`soar dev` / `soar.dev.yaml`) is intentionally deferred; it is
+included here only so component boundaries do not couple the core app engine to
+Ubuntu, systemd, Caddy, or root.
 
 ## 1. Why evolve from the stateless-server model
 
@@ -91,15 +93,15 @@ publish `127.0.0.1` ports and write under `.soar/dev`. Remote CLI commands (`dep
 
 ### Layer 3: `soar-agent` coordinator and supervised workers
 
-On the server, `soar server add` installs both `soar-agent` and `soar-executor`
+On the server, `soar server add` installs both `soar-agent` and `executor`
 under `/usr/local/lib/soar/` (root-owned, recorded in `/var/lib/soar/host.json`)
 and enables `soar-agent.service`:
 
 - `soar-agent` is a small root-owned systemd daemon listening on a local Unix
   socket (`/run/soar/agent.sock`). It owns authentication, capability handshakes,
   admission control, durable queueing, concurrency semaphores, and observation.
-- Actual deployments and maintenance jobs still run in bounded transient systemd
-  worker units (`soar-op-<id>.service`) invoking the installed `soar-executor`.
+- Actual deployments and maintenance jobs run in bounded transient systemd
+  worker units (`soar-op-<id>.service`) invoking `/usr/local/lib/soar/executor internal-agent worker`.
   A hung build, OOM, or worker crash cannot corrupt or wedge the coordinator.
 
 ## 3. Privilege separation and authentication
@@ -197,15 +199,16 @@ With installed server binaries, synchronization uses three explicit layers rathe
 than per-command binary uploads:
 
 1. **Build identity (provenance & diagnostics):** Release and local build tasks
-   stamp `soar`, `soar-agent`, and `soar-executor` with a deterministic version
-   label and source/recipe build digest reported by `soar version` and `server status`.
+   stamp `soar` and the Linux `executor` / `soar-agent` bundle with a
+   deterministic version label and source/recipe build digest reported by
+   `soar version`.
 2. **Agent API handshake (wire compatibility):** Every client session begins with
-   a lightweight `hello` RPC returning `agent_build`, `api_min`, `api_max`, and
-   supported capability flags.
+   a lightweight `hello` RPC returning `agent_build_id`, `api_min`, `api_max`,
+   and supported capability flags.
    - If the client is older than `api_min`, it fails before sending payloads:
-     `upgrade local soar CLI to >= X`.
+     `local soar CLI ... is too old for server agent ...; upgrade local soar CLI`.
    - If the server is older than what the requested feature/API requires, it fails
-     before mutation: `server agent supports API vN; run 'soar server upgrade'`.
+     before mutation: `server agent ...; run 'soar server upgrade'`.
 3. **State schema versions (disk compatibility):** Journals, secret stores, volume
    registries, and queue records keep strict versioned schemas. Upgrades are
    forward-compatible (new `soar-agent` reads prior schema versions); downgrading
@@ -213,17 +216,19 @@ than per-command binary uploads:
 
 ### `soar server upgrade`
 
-Host upgrades become an explicit root administrative command:
+Host upgrades are an explicit root administrative command:
 
 1. Inspect the target architecture and verify the local matching Linux bundle
-   (`soar-agent` + `soar-executor` checksums and ELF architecture).
-2. Acquire the host lifecycle barrier: pause new queue admissions and wait for
-   active worker units to finish (bounded by `--timeout`; never kill running
-   deployments by default).
-3. Stage and atomically replace `/usr/local/lib/soar/soar-agent` and
-   `/usr/local/lib/soar/soar-executor`, update recorded digests in
-   `/var/lib/soar/host.json`, restart `soar-agent.service`, and verify the post-upgrade
-   handshake and health checks.
+   (`executor` + `soar-agent` checksums and ELF architecture).
+2. Acquire the host lifecycle barrier (`/run/lock/soar-host.lock`), verify an
+   idle coordinator queue (`verifyQueueIdle`), stop `soar-agent.service`, and
+   re-verify the queue is idle.
+3. Atomically replace `/usr/local/lib/soar/executor` and
+   `/usr/local/lib/soar/soar-agent` while preserving live Caddy routes and
+   operator-managed `/etc/soar/principals.json`, update recorded digests in
+   `/var/lib/soar/host.json`, reload systemd, restart `soar-agent.service`
+   (restoring the prior service on mid-upgrade failure), and verify post-upgrade
+   health checks.
 
 Distro APT / Docker / Caddy package upgrades remain a separate concern from Soar
 binary upgrades and can later build on the same drain-and-barrier primitive.

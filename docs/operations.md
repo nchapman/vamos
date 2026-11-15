@@ -155,8 +155,9 @@ After timeout, disconnect, or an unexpected result:
    under the trusted root SSH workflow. For example, on the host:
 
    ```sh
-   systemctl status soar-host-operation.service docker.service caddy.service --no-pager
-   journalctl -u soar-host-operation.service -u docker.service -u caddy.service --since '1 hour ago' --no-pager
+   systemctl status soar-agent.service docker.service caddy.service --no-pager
+   systemctl list-units 'soar-op-*.service' soar-host-operation.service --no-pager
+   journalctl -u soar-agent.service -u docker.service -u caddy.service --since '1 hour ago' --no-pager
    df -h
    df -i
    free -h
