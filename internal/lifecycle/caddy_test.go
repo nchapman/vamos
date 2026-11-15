@@ -165,8 +165,8 @@ func TestDigestRef(t *testing.T) {
 func TestTeardownAllowsOnlyTheRunningIngressMounts(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		foreign bool
-	}{{"ingress", false}, {"foreign", true}} {
+		foreign string
+	}{{"ingress", ""}, {"other rootfs", "/var/lib/docker/rootfs/overlayfs/" + strings.Repeat("f", 64)}, {"volume named like the container", "/var/lib/docker/volumes/%s/_data"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			m, f := newTestManager(t)
 			if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
@@ -177,13 +177,13 @@ func TestTeardownAllowsOnlyTheRunningIngressMounts(t *testing.T) {
 				if f.caddy != nil {
 					lines = append(lines, "40 25 0:40 / /var/lib/docker/rootfs/overlayfs/"+f.caddy.ID+" rw - overlay overlay rw")
 				}
-				if tc.foreign {
-					lines = append(lines, "41 25 0:41 / /var/lib/docker/rootfs/overlayfs/"+strings.Repeat("f", 64)+" rw - overlay overlay rw")
+				if tc.foreign != "" {
+					lines = append(lines, "41 25 0:41 / "+strings.ReplaceAll(tc.foreign, "%s", f.caddy.ID)+" rw - ext4 /dev/vdb rw")
 				}
 				return []byte(strings.Join(lines, "\n")), nil
 			}
 			_, err := m.Teardown(context.Background(), testConfig.Name, true)
-			if tc.foreign {
+			if tc.foreign != "" {
 				if err == nil || !strings.Contains(err.Error(), "overlaps owned data") || f.caddy == nil {
 					t.Fatalf("foreign Docker mount accepted or ingress removed: %v", err)
 				}
@@ -193,5 +193,39 @@ func TestTeardownAllowsOnlyTheRunningIngressMounts(t *testing.T) {
 				t.Fatalf("running ingress blocked teardown: %v", err)
 			}
 		})
+	}
+}
+
+func TestTeardownChecksContainerdBeforeRemovingIngress(t *testing.T) {
+	for _, resource := range []string{"containers", "images"} {
+		t.Run(resource, func(t *testing.T) {
+			m, f := newTestManager(t)
+			if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
+				t.Fatal(err)
+			}
+			f.foreignCtr = resource
+			if _, err := m.Teardown(context.Background(), testConfig.Name, true); err == nil || !strings.Contains(err.Error(), "containerd has "+resource) {
+				t.Fatalf("foreign containerd %s accepted: %v", resource, err)
+			}
+			if f.caddy == nil || !f.caddy.Running {
+				t.Fatal("ingress removed before refusal")
+			}
+		})
+	}
+}
+
+func TestTeardownRemovesOutdatedIngressImage(t *testing.T) {
+	m, f := newTestManager(t)
+	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
+		t.Fatal(err)
+	}
+	old := "caddy:2.10.0@sha256:" + strings.Repeat("0", 64)
+	f.caddy.Image = old
+	f.caddyImages[digestRef(old)] = true
+	if _, err := m.Teardown(context.Background(), testConfig.Name, true); err != nil {
+		t.Fatal(err)
+	}
+	if f.caddy != nil || len(f.caddyImages) != 0 {
+		t.Fatalf("ingress resources remain: %+v %v", f.caddy, f.caddyImages)
 	}
 }

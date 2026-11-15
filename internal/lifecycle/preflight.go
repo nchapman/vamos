@@ -112,18 +112,21 @@ func (m *Manager) account(ctx context.Context, kind, name string) (string, error
 
 // workloads proves Docker holds nothing but Vamos's own resources. Before purge
 // approval the owned Caddy container and image are still in service, so they
-// are excluded and containerd's moby content (which includes them) is checked
-// again after their removal.
+// are allowed by identity. containerd content blobs cannot be attributed to an
+// image without walking manifests, so content is checked only once the owned
+// ingress has been removed.
 func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
 	allowed := map[string]bool{}
 	if caddy != nil {
 		allowed[caddy.ID] = true
-		images, err := m.caddyImageIDs(ctx)
-		if err != nil {
-			return fmt.Errorf("cannot verify Docker is unused; restore daemon health before teardown: %w", err)
-		}
-		for _, id := range images {
-			allowed[id] = true
+		for _, ref := range caddy.imageRefs() {
+			images, err := m.caddyImageIDs(ctx, ref)
+			if err != nil {
+				return fmt.Errorf("cannot verify Docker is unused; restore daemon health before teardown: %w", err)
+			}
+			for _, id := range images {
+				allowed[id] = true
+			}
 		}
 	}
 	for _, args := range [][]string{{"container", "ls", "-aq", "--no-trunc"}, {"image", "ls", "-aq", "--no-trunc"}, {"volume", "ls", "-q"}} {
@@ -163,16 +166,18 @@ func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
 		if namespace != "moby" && namespace != "plugins.moby" {
 			return fmt.Errorf("containerd has unmanaged namespace %q; refusing teardown", namespace)
 		}
-		if caddy != nil {
-			continue
-		}
 		for _, resource := range []string{"containers", "images", "content"} {
+			if caddy != nil && resource == "content" {
+				continue
+			}
 			out, err := m.command(ctx, "ctr", "--namespace", namespace, resource, "ls", "-q")
 			if err != nil {
 				return err
 			}
-			if len(strings.TrimSpace(string(out))) != 0 {
-				return fmt.Errorf("containerd has %s in %s; refusing teardown", resource, namespace)
+			for _, item := range strings.Fields(string(out)) {
+				if caddy == nil || namespace != "moby" || !caddy.ownsContainerd(resource, item) {
+					return fmt.Errorf("containerd has %s in %s; refusing teardown", resource, namespace)
+				}
 			}
 		}
 	}

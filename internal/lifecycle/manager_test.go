@@ -42,6 +42,7 @@ type fakeSystem struct {
 	caddyImages       map[string]bool
 	created           int
 	agentStopped      bool
+	foreignCtr        string
 }
 
 // fakeCaddy models only the inspect fields Vamos reads from the container.
@@ -231,10 +232,32 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 	case "sshd":
 		return out("")
 	case "ctr":
-		if f.foreignContainerd {
-			return out("unowned-namespace\n")
+		if args[0] == "namespaces" {
+			if f.foreignContainerd {
+				return out("moby\nunowned-namespace\n")
+			}
+			return out("moby\n")
 		}
-		return out("")
+		var items []string
+		switch args[2] {
+		case "containers":
+			if f.caddy != nil {
+				items = append(items, f.caddy.ID)
+			}
+		case "images":
+			for ref := range f.caddyImages {
+				items = append(items, "docker.io/library/"+ref)
+			}
+		case "content":
+			if len(f.caddyImages) != 0 {
+				items = append(items, "sha256:"+strings.Repeat("e", 64))
+			}
+		}
+		if f.foreignCtr == args[2] {
+			items = append(items, "foreign")
+		}
+		sort.Strings(items)
+		return out(strings.Join(items, "\n"))
 	case "docker":
 		if !f.active {
 			return process.Result{}, fakeExit(1)

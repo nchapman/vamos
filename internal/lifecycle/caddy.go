@@ -81,21 +81,58 @@ type caddyContainer struct {
 	} `json:"HostConfig"`
 }
 
-// ownsMount reports whether a host mount point is one of this container's own
-// per-container mounts under Docker's data directory.
+// ownsMount reports whether a host mount point is this container's root
+// filesystem: the containerd image store mounts it at
+// /var/lib/docker/rootfs/<snapshotter>/<container ID>, while classic storage
+// drivers report it as the merged directory.
 func (c *caddyContainer) ownsMount(mount string) bool {
-	if !strings.HasPrefix(mount, "/var/lib/docker/") {
-		return false
-	}
 	if c.GraphDriver.Data.MergedDir != "" && mount == c.GraphDriver.Data.MergedDir {
 		return true
 	}
-	for _, part := range strings.Split(mount, "/") {
-		if part == c.ID {
-			return true
+	rest, ok := strings.CutPrefix(mount, "/var/lib/docker/rootfs/")
+	if !ok {
+		return false
+	}
+	snapshotter, id, ok := strings.Cut(rest, "/")
+	return ok && snapshotter != "" && !strings.Contains(snapshotter, ".") && id == c.ID
+}
+
+// ownsContainerd reports whether a containerd resource in Docker's moby
+// namespace is this container or its pinned image.
+func (c *caddyContainer) ownsContainerd(resource, item string) bool {
+	switch resource {
+	case "containers":
+		return item == c.ID
+	case "images":
+		name, digest, ok := strings.Cut(item, "@")
+		if !ok || (name != "docker.io/library/caddy" && !strings.HasPrefix(name, "docker.io/library/caddy:")) {
+			return false
+		}
+		for _, ref := range c.imageRefs() {
+			if strings.HasSuffix(ref, "@"+digest) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// imageRefs are the owned ingress images teardown may find: the pinned image
+// and, before server upgrade replaces the container, the image it still runs.
+func (c *caddyContainer) imageRefs() []string {
+	if ref := c.imageRef(); ref != caddyImageRef {
+		return []string{caddyImageRef, ref}
+	}
+	return []string{caddyImageRef}
+}
+
+// imageRef is the digest reference of the image this container runs, which
+// differs from the pinned image until server upgrade replaces the container.
+func (c *caddyContainer) imageRef() string {
+	if ref := digestRef(c.Config.Image); ref != "" {
+		return ref
+	}
+	return caddyImageRef
 }
 
 func (c *caddyContainer) current() bool {
@@ -210,33 +247,38 @@ func (m *Manager) checkCaddy(ctx context.Context, s *State) error {
 	return nil
 }
 
-// removeCaddy deletes the owned ingress container and its pinned image during
-// an approved teardown. Successful inventories establish absence.
+// removeCaddy deletes the owned ingress container, the image it ran and the
+// pinned image during an approved teardown. Successful inventories establish
+// absence.
 func (m *Manager) removeCaddy(ctx context.Context, s *State) error {
 	c, err := m.findCaddy(ctx, s)
 	if err != nil {
 		return err
 	}
+	refs := []string{caddyImageRef}
 	if c != nil {
+		refs = c.imageRefs()
 		if _, err := m.command(ctx, "docker", "container", "rm", "--force", c.ID); err != nil {
 			return err
 		}
 	}
-	images, err := m.caddyImageIDs(ctx)
-	if err != nil {
-		return err
-	}
-	if len(images) != 0 {
-		if _, err := m.command(ctx, "docker", "image", "rm", caddyImageRef); err != nil {
+	for _, ref := range refs {
+		images, err := m.caddyImageIDs(ctx, ref)
+		if err != nil {
 			return err
+		}
+		if len(images) != 0 {
+			if _, err := m.command(ctx, "docker", "image", "rm", ref); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// caddyImageIDs lists the pinned image's IDs; empty output proves it absent.
-func (m *Manager) caddyImageIDs(ctx context.Context) ([]string, error) {
-	out, err := m.command(ctx, "docker", "image", "ls", "--quiet", "--no-trunc", caddyImageRef)
+// caddyImageIDs lists an image's IDs; empty output proves it absent.
+func (m *Manager) caddyImageIDs(ctx context.Context, ref string) ([]string, error) {
+	out, err := m.command(ctx, "docker", "image", "ls", "--quiet", "--no-trunc", ref)
 	if err != nil {
 		return nil, err
 	}
