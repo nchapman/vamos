@@ -4,7 +4,6 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
-import subprocess
 
 spec = importlib.util.spec_from_file_location('repository_acceptance', Path(__file__).with_name('acceptance.py'))
 acceptance = importlib.util.module_from_spec(spec)
@@ -39,13 +38,19 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, 'private file mode'):
                 acceptance.private(path)
 
-    def test_timed_out_proxy_is_killed_and_container_is_removed(self):
-        harness, proc = Mock(), Mock()
-        proc.wait.side_effect = [subprocess.TimeoutExpired('caddy', 15), 0]
-        acceptance.cleanup_fixture(harness, proc, 'a' * 64)
-        proc.terminate.assert_called_once_with()
-        proc.kill.assert_called_once_with()
-        harness.command.assert_called_once_with(['docker', 'rm', '-f', '-v', 'a' * 64], user='root')
+    def test_container_is_removed_even_if_proxy_removal_fails(self):
+        harness = Mock()
+        harness.command.side_effect = [RuntimeError('proxy cleanup failed'), None]
+        with self.assertRaisesRegex(RuntimeError, 'proxy cleanup failed'):
+            acceptance.cleanup_fixture(harness, 'c' * 64, 'a' * 64)
+        self.assertEqual([c.args[0] for c in harness.command.call_args_list],
+                         [['docker', 'rm', '-f', 'c' * 64], ['docker', 'rm', '-f', '-v', 'a' * 64]])
+
+    def test_proxy_uses_host_loopback_and_read_only_fixture_files(self):
+        command = acceptance.fixture_proxy_command('caddy@sha256:' + 'd' * 64, Path('/work'), Path('/work/caddy.json'))
+        self.assertEqual(command[command.index('--network') + 1], 'host')
+        self.assertIn('type=bind,source=/work,target=/work,readonly', command)
+        self.assertEqual(command[-4:], ['caddy', 'run', '--config', '/work/caddy.json'])
 
     def test_network_cleanup_is_attempted_even_if_container_removal_fails(self):
         harness = Mock()
@@ -56,7 +61,7 @@ class SafetyTests(unittest.TestCase):
 
     def test_cleanup_never_uses_unvalidated_resource_ids(self):
         harness = Mock()
-        acceptance.cleanup_fixture(harness, None, 'fixture-name', 'network-name')
+        acceptance.cleanup_fixture(harness, 'proxy-name', 'fixture-name', 'network-name')
         harness.command.assert_not_called()
 
     def test_fixture_uses_explicit_network_not_disabled_default_bridge(self):

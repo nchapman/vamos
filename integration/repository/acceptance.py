@@ -8,7 +8,6 @@ from pathlib import Path
 import re
 import secrets
 import ssl
-import subprocess
 import sys
 import time
 import urllib.request
@@ -36,6 +35,14 @@ def fixture_container_command(container, envfile, network):
     return ['docker', 'run', '-d', '--name', container, '--label', 'vamos.integration.repository=true', '--env-file', envfile, '--network', network, '-p', '127.0.0.1:19000:9000', IMAGE, '/data']
 
 
+def fixture_proxy_command(image, work, config):
+    # Reuse the managed ingress image; the work directory is mounted at the same
+    # path so the config's certificate paths resolve unchanged.
+    return ['docker', 'run', '-d', '--label', 'vamos.integration.repository=true', '--network', 'host',
+            '--mount', f'type=bind,source={work},target={work},readonly',
+            image, 'caddy', 'run', '--config', str(config)]
+
+
 def fixture_proxy_config(cert, key):
     return {'admin': {'disabled': True}, 'apps': {
         'tls': {'certificates': {'load_files': [{'certificate': str(cert), 'key': str(key)}]}},
@@ -48,18 +55,10 @@ def fixture_proxy_config(cert, key):
         }}}}}
 
 
-def cleanup_fixture(h, proc, cid, network=None):
+def cleanup_fixture(h, proxy, cid, network=None):
     try:
-        if proc is not None:
-            try:
-                proc.terminate()
-            except ProcessLookupError:
-                pass
-            try:
-                proc.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=15)
+        if proxy is not None and re.fullmatch('[0-9a-f]{64}', proxy):
+            h.command(['docker', 'rm', '-f', proxy], user='root')
     finally:
         # Proxy cleanup must never suppress exact-container cleanup.
         try:
@@ -89,7 +88,7 @@ def run(h):
     container = 'vamos-repository-' + secrets.token_hex(8)
     cid = None
     network = None
-    proc = None
+    proxy_cid = None
     try:
         # Vamos deliberately disables Docker's default bridge. This fixture owns
         # a separate explicit network; never adopt an application network.
@@ -97,7 +96,9 @@ def run(h):
         require(re.fullmatch('[0-9a-f]{64}', network), 'invalid fixture network ID')
         cid = h.command(fixture_container_command(container, envfile, network), user='root').stdout.decode().strip()
         require(re.fullmatch('[0-9a-f]{64}', cid), 'invalid fixture container ID')
-        proc = subprocess.Popen(['caddy', 'run', '--config', str(proxy)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=h.env)
+        image = h.command(['docker', 'container', 'inspect', '--format', '{{.Config.Image}}', 'vamos-caddy'], user='root').stdout.decode().strip()
+        proxy_cid = h.command(fixture_proxy_command(image, work, proxy), user='root').stdout.decode().strip()
+        require(re.fullmatch('[0-9a-f]{64}', proxy_cid), 'invalid fixture proxy container ID')
         context = ssl.create_default_context(cafile=str(cert))
         deadline = time.monotonic() + 90
         while True:
@@ -198,7 +199,7 @@ def run(h):
         run_plan_acceptance(h, identity, credentials)
         unchanged()
     finally:
-        cleanup_fixture(h, proc, cid, network)
+        cleanup_fixture(h, proxy_cid, cid, network)
 
 
 def main():

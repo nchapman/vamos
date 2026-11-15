@@ -25,8 +25,9 @@ Fixture:
   Metadata source: `https://hub.docker.com/v2/repositories/rustfs/rustfs/tags/latest`,
   retrieved 2026-11-13. The tag is **not** used at execution time. MinIO's public
   image metadata was unavailable (401/404), so this uses RustFS instead.
-* Container port is bound only to guest loopback 19000. A separate Caddy process
-  (admin disabled, no mutation of the managed Caddy config) exposes HTTPS on
+* Container port is bound only to guest loopback 19000. A separate Caddy container
+  from the managed ingress image (host network, admin disabled, no mutation of
+  the managed Caddy config) exposes HTTPS on
   loopback 19001 using a generated one-day synthetic certificate.
 * AWS SDK v2 helper creates the bucket as fixture administrator, independently
   of the backend. Every comparison lists the entire bucket, paginated, including
