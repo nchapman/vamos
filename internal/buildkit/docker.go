@@ -137,7 +137,9 @@ func (b *build) network(ctx context.Context) error {
 			return errInfra
 		}
 	}
-	if s.NetworkID != "" && !reflect.DeepEqual(s.IPAM, n.IPAM) {
+	// The firewall guards key on the bridge name; the captured subnet and gateway
+	// pin the allocation without depending on how Docker renders empty fields.
+	if s.NetworkID != "" && (len(s.IPAM.Config) != 1 || s.IPAM.Config[0].Subnet != c.Subnet || s.IPAM.Config[0].Gateway != c.Gateway) {
 		return errInfra
 	}
 	s.NetworkID = id
@@ -181,7 +183,7 @@ func (b *build) volume(ctx context.Context) error {
 	if _, err = time.Parse(time.RFC3339Nano, v.CreatedAt); err != nil {
 		return errInfra
 	}
-	if s.VolumeCreated != "" && (v.CreatedAt != s.VolumeCreated || v.Mountpoint != s.VolumeMountpoint) {
+	if s.VolumeCreated != "" && (!sameInstant(v.CreatedAt, s.VolumeCreated) || v.Mountpoint != s.VolumeMountpoint) {
 		return errInfra
 	}
 	s.VolumeCreated = v.CreatedAt
@@ -339,36 +341,27 @@ func (b *build) validateContainer(c containerInfo, id string) error {
 			}
 		}
 	}
-	if s.ContainerID != "" && (s.ContainerID != id || !sameJSON(s.ContainerConfig, c.Config) || !sameContainerHost(s.ContainerHost, c.HostConfig)) {
+	// Config is immutable for a container ID, and the fields that matter for
+	// isolation are checked above. Comparing whole captured snapshots instead
+	// would turn every Docker update that renormalizes a default into drift.
+	if s.ContainerID != "" && s.ContainerID != id {
 		return errInfra
 	}
 	return nil
 }
 
-// Docker 29 normalizes default OOM policy from false to null at first start,
-// and empty DNS from null to [] after a daemon restart. Both settings are
-// independently constrained to their defaults in validateContainer above.
-func sameContainerHost(a, b []byte) bool {
-	var left, right map[string]json.RawMessage
-	if json.Unmarshal(a, &left) != nil || json.Unmarshal(b, &right) != nil {
-		return false
-	}
-	for _, host := range []map[string]json.RawMessage{left, right} {
-		if value := host["OomKillDisable"]; emptyJSON(value) || string(value) == "false" {
-			delete(host, "OomKillDisable")
-		}
-		if value := host["Dns"]; emptyJSON(value) || string(value) == "[]" {
-			delete(host, "Dns")
-		}
-	}
-	x, _ := json.Marshal(left)
-	y, _ := json.Marshal(right)
-	return sameJSON(x, y)
+// sameInstant compares Docker-rendered timestamps by instant at second
+// precision, so time zone or precision changes across Docker updates match.
+func sameInstant(a, b string) bool {
+	x, errX := time.Parse(time.RFC3339Nano, a)
+	y, errY := time.Parse(time.RFC3339Nano, b)
+	return errX == nil && errY == nil && x.Truncate(time.Second).Equal(y.Truncate(time.Second))
 }
 
 // Docker CLI may inject these proxy variables from root's trusted config.json
-// during create. Capture them in ContainerConfig, then require exact equality on
-// every reuse; arbitrary extra variables and changes still fail closed.
+// during create. A container's Config cannot change without replacing it, so the
+// captured container ID keeps them fixed on reuse; arbitrary extra variables
+// still fail closed.
 func validBuilderEnv(actual, image []string) bool {
 	expected := make(map[string]string, len(image))
 	for _, entry := range image {
@@ -424,8 +417,6 @@ func (b *build) existingContainer(ctx context.Context) error {
 		return errInfra
 	}
 	b.s.ContainerID = id
-	b.s.ContainerConfig = c.Config
-	b.s.ContainerHost = c.HostConfig
 	return save(b.dir, b.s)
 }
 func (b *build) createContainer(ctx context.Context) error {

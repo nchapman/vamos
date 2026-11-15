@@ -34,7 +34,7 @@ bounded runner without silently truncating infrastructure JSON inventories.
 * A private, atomically replaced and fsynced receipt lives at
   `/var/lib/vamos/buildkit/state.json`. It records a random creation nonce and
   intent **before** creating Docker resources, then captures immutable IDs,
-  image defaults, cache creation metadata and container configuration.
+  image defaults and cache creation metadata.
 * Receipt and namespace ownership, permissions, symlinks, unknown JSON fields,
   duplicate JSON keys, host identity and receipt version are checked. A
   pre-existing namespace without a valid receipt is never adopted. A crash
@@ -52,7 +52,7 @@ bounded runner without silently truncating infrastructure JSON inventories.
   volume. There are no insecure entitlements, published ports, socket mounts,
   host binds or host network mode.
 * The Docker network is an IPv4 bridge with automatic default IPAM, IPv6 disabled
-  and ICC disabled. Its exact allocated IPAM is captured. Foreign endpoints,
+  and ICC disabled. Its allocated subnet and gateway are captured. Foreign endpoints,
   altered bridge options and additional container network attachments fail
   validation. IPv6 firewall guards are nevertheless mandatory.
 * Buildx uses the **remote** driver, never `docker-container`, with the endpoint

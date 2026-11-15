@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 )
@@ -30,7 +29,6 @@ type receipt struct {
 	ImageLabels                                        map[string]string
 	IPAM                                               ipam
 	VolumeCreated, VolumeMountpoint                    string
-	ContainerConfig, ContainerHost                     json.RawMessage
 }
 
 func intent(host, snapshotter string) receipt {
@@ -202,7 +200,7 @@ func (m Manager) state(host string) (receipt, string, error) {
 	if (s.ContainerID != "" && !idPattern.MatchString(s.ContainerID)) || (s.NetworkID != "" && !idPattern.MatchString(s.NetworkID)) || (s.ImageID != "" && (!strings.HasPrefix(s.ImageID, "sha256:") || !idPattern.MatchString(strings.TrimPrefix(s.ImageID, "sha256:")))) {
 		return s, "", errInfra
 	}
-	if s.ContainerID != "" && (s.NetworkID == "" || s.VolumeCreated == "" || s.ImageID == "" || len(s.ContainerConfig) == 0 || len(s.ContainerHost) == 0) {
+	if s.ContainerID != "" && (s.NetworkID == "" || s.VolumeCreated == "" || s.ImageID == "") {
 		return s, "", errInfra
 	}
 	return s, dir, nil
@@ -240,8 +238,4 @@ func syncDir(dir string) error {
 		return errInfra
 	}
 	return nil
-}
-func sameJSON(a, b []byte) bool {
-	var x, y any
-	return json.Unmarshal(a, &x) == nil && json.Unmarshal(b, &y) == nil && reflect.DeepEqual(x, y)
 }

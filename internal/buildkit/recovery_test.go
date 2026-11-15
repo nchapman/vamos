@@ -97,7 +97,6 @@ func TestReplacementsAndForeignShapeRefused(t *testing.T) {
 		"restart policy": func(f *fakeEngine) {
 			f.container["HostConfig"].(map[string]any)["RestartPolicy"] = map[string]any{"Name": "always"}
 		},
-		"config captured default changed": func(f *fakeEngine) { f.container["Config"].(map[string]any)["Hostname"] = "replacement" },
 		"host config captured default changed": func(f *fakeEngine) {
 			f.container["HostConfig"].(map[string]any)["LogConfig"] = map[string]any{"Type": "json-file"}
 		},
@@ -107,6 +106,31 @@ func TestReplacementsAndForeignShapeRefused(t *testing.T) {
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) { m, f := newEngine(t); runBuild(t, m); mutate(f); failBuild(t, m, f) })
+	}
+}
+
+// Docker updates restart the daemon and can renormalize stored defaults Vamos
+// never sets. Those must not make every subsequent build fail.
+func TestDockerNormalizationIsNotDrift(t *testing.T) {
+	tests := map[string]func(*fakeEngine){
+		"unset host defaults": func(f *fakeEngine) {
+			host := f.container["HostConfig"].(map[string]any)
+			host["ShmSize"] = 67108864
+			host["ConsoleSize"] = []int{0, 0}
+			host["CgroupnsMode"] = "private"
+		},
+		"unset config defaults": func(f *fakeEngine) {
+			f.container["Config"].(map[string]any)["Hostname"] = containerID[:12]
+			f.container["Config"].(map[string]any)["StopTimeout"] = nil
+		},
+		"empty IPAM maps": func(f *fakeEngine) {
+			f.network["IPAM"] = map[string]any{"Driver": "default", "Options": map[string]string{}, "Config": []map[string]any{{"Subnet": "172.29.0.0/16", "Gateway": "172.29.0.1", "AuxiliaryAddresses": map[string]string{}}}}
+		},
+		"volume time zone": func(f *fakeEngine) { f.volume["CreatedAt"] = "2026-01-01T01:00:00+01:00" },
+		"volume precision": func(f *fakeEngine) { f.volume["CreatedAt"] = "2026-01-01T00:00:00.123456789Z" },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) { m, f := newEngine(t); runBuild(t, m); mutate(f); runBuild(t, m) })
 	}
 }
 func TestInventoriesFailClosed(t *testing.T) {

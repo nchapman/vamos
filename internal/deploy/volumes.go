@@ -127,11 +127,19 @@ func (m *Manager) inspectVolume(ctx context.Context, j *journal, r volumes.Recor
 		return "", true, errors.New("invalid volume inspection")
 	}
 	v := rows[0]
-	_, err = time.Parse(time.RFC3339, v.CreatedAt)
-	if err != nil || v.Name != r.DockerName() || v.Driver != "local" || v.Scope != "local" || len(v.Options) != 0 || !reflect.DeepEqual(v.Labels, volumeLabels(j, r)) || (r.State == "created" && v.CreatedAt != r.CreatedAt) {
+	created, err := time.Parse(time.RFC3339, v.CreatedAt)
+	if err != nil || v.Name != r.DockerName() || v.Driver != "local" || v.Scope != "local" || len(v.Options) != 0 || !reflect.DeepEqual(v.Labels, volumeLabels(j, r)) || (r.State == "created" && !sameInstant(created, r.CreatedAt)) {
 		return "", true, errors.New("foreign or replaced volume")
 	}
 	return v.CreatedAt, true, nil
+}
+
+// sameInstant compares Docker's rendered volume creation time by instant at
+// second precision, so a Docker update that changes its time zone or precision
+// does not make an owned volume look replaced.
+func sameInstant(created time.Time, recorded string) bool {
+	want, err := time.Parse(time.RFC3339, recorded)
+	return err == nil && created.Truncate(time.Second).Equal(want.Truncate(time.Second))
 }
 func desiredVolume(s *volumes.State, j *journal, name string) (volumes.Record, error) {
 	if s == nil || !supportsVolumes(j) || j.Config == nil {

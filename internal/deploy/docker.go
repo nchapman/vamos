@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -407,7 +408,7 @@ func (m *Manager) verifyCandidate(c context.Context, j *journal, r *release) (*i
 		cmd = im.Config.Cmd
 	}
 	ports := v.HostConfig.PortBindings[fmt.Sprint(s.HTTP.Port)+"/tcp"]
-	if !reflect.DeepEqual(env, actual) || !reflect.DeepEqual(cmd, v.Config.Cmd) || v.HostConfig.Privileged || len(v.HostConfig.Binds) != 0 || v.HostConfig.NetworkMode != network(j) || len(v.HostConfig.PortBindings) != 1 || len(ports) != 1 || ports[0].HostIP != "127.0.0.1" || (r.PublishPort != "" && ports[0].HostPort != r.PublishPort) {
+	if !reflect.DeepEqual(env, actual) || !slices.Equal(cmd, v.Config.Cmd) || v.HostConfig.Privileged || len(v.HostConfig.Binds) != 0 || v.HostConfig.NetworkMode != network(j) || len(v.HostConfig.PortBindings) != 1 || len(ports) != 1 || ports[0].HostIP != "127.0.0.1" || (r.PublishPort != "" && ports[0].HostPort != r.PublishPort) {
 		return nil, errors.New("candidate immutable configuration mismatch")
 	}
 	return v, nil

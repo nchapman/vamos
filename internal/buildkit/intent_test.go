@@ -15,8 +15,6 @@ func TestPendingIntentDoesNotAdoptWrongNonceOrShape(t *testing.T) {
 			// after creation. All prerequisites were persisted before docker create.
 			s := f.state()
 			s.ContainerID = ""
-			s.ContainerConfig = nil
-			s.ContainerHost = nil
 			if save(filepath.Join(f.root, "var/lib/vamos/buildkit"), s) != nil {
 				t.Fatal("save")
 			}

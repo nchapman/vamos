@@ -241,7 +241,7 @@ func (m *Manager) verifyRun(ctx context.Context, j *journal, r *runRecord, v *in
 		}
 		actual[k] = val
 	}
-	if !reflect.DeepEqual(labels, v.Config.Labels) || !reflect.DeepEqual(env, actual) || !reflect.DeepEqual(r.Config.Command, v.Config.Cmd) || !reflect.DeepEqual(im.Config.Entrypoint, v.Config.Entrypoint) || im.Config.User != v.Config.User || im.Config.WorkingDir != v.Config.WorkingDir {
+	if !reflect.DeepEqual(labels, v.Config.Labels) || !reflect.DeepEqual(env, actual) || !slices.Equal(r.Config.Command, v.Config.Cmd) || !slices.Equal(im.Config.Entrypoint, v.Config.Entrypoint) || im.Config.User != v.Config.User || im.Config.WorkingDir != v.Config.WorkingDir {
 		return bad
 	}
 	return nil

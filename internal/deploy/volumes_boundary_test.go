@@ -81,6 +81,36 @@ func TestVolumeLostCreateResponse(t *testing.T) {
 		}
 	}
 }
+
+// Docker renders CreatedAt itself; a daemon update that changes its time zone or
+// precision must not make a created volume look replaced.
+func TestVolumeCreationIdentityComparesInstants(t *testing.T) {
+	for _, tc := range []struct {
+		rendered string
+		owned    bool
+	}{{"2026-01-01T00:00:00Z", true}, {"2026-01-01T01:00:00+01:00", true}, {"2026-01-01T00:00:00.5Z", true}, {"2026-01-01T00:00:01Z", false}} {
+		t.Run(tc.rendered, func(t *testing.T) {
+			m, j, rec := volumeBoundaryFixture(t)
+			rec.State, rec.CreatedAt = "created", "2026-01-01T00:00:00Z"
+			m.Run = func(_ context.Context, _ string, a []string, _ []byte) (process.Result, error) {
+				var data []byte
+				switch strings.Join(a[:2], " ") {
+				case "volume ls":
+					data = []byte(`{"Name":"` + rec.DockerName() + `"}`)
+				case "volume inspect":
+					data, _ = json.Marshal([]any{map[string]any{"Name": rec.DockerName(), "Driver": "local", "Scope": "local", "Labels": volumeLabels(j, rec), "CreatedAt": tc.rendered}})
+				default:
+					t.Fatalf("unexpected command %v", a)
+				}
+				return process.Result{Stdout: data}, nil
+			}
+			_, _, err := m.inspectVolume(context.Background(), j, rec)
+			if (err == nil) != tc.owned {
+				t.Fatalf("owned=%v err=%v", tc.owned, err)
+			}
+		})
+	}
+}
 func TestVolumePlanImmutableAndReuse(t *testing.T) {
 	m, j, rec := volumeBoundaryFixture(t)
 	// A failed first deployment still reserves its service binding.

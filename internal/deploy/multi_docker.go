@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -337,7 +338,7 @@ func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef,
 	if len(cmd) == 0 {
 		cmd = im.Config.Cmd
 	}
-	if !reflect.DeepEqual(env, actual) || !reflect.DeepEqual(cmd, v.Config.Cmd) || !reflect.DeepEqual(im.Config.Entrypoint, v.Config.Entrypoint) || im.Config.User != v.Config.User || im.Config.WorkingDir != v.Config.WorkingDir || unsafeMultiHostConfig(v) || v.HostConfig.NetworkMode != network(j) {
+	if !reflect.DeepEqual(env, actual) || !slices.Equal(cmd, v.Config.Cmd) || !slices.Equal(im.Config.Entrypoint, v.Config.Entrypoint) || im.Config.User != v.Config.User || im.Config.WorkingDir != v.Config.WorkingDir || unsafeMultiHostConfig(v) || v.HostConfig.NetworkMode != network(j) {
 		return nil, errors.New("runtime immutable configuration mismatch")
 	}
 	if policy := v.HostConfig.RestartPolicy.Name; policy != "unless-stopped" && policy != "no" {
