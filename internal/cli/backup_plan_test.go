@@ -173,7 +173,7 @@ sets:
 			if mode == "apply" || mode == "apply-error" {
 				want = 2
 			}
-			if calls != want || inspects != 1 || artifacts != 1 {
+			if calls != want || inspects != want || artifacts != want {
 				t.Fatalf("calls %d inspect %d artifact %d", calls, inspects, artifacts)
 			}
 			if strings.Contains(out.String()+diagnostic.String(), "secret") {

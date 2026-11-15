@@ -115,8 +115,8 @@ class Harness:
 
     def diagnostics(self):
         for args in (['systemctl', '--failed', '--no-pager'],
-                     ['systemctl', 'status', 'docker', 'caddy', '--no-pager'],
-                     ['journalctl', '-u', 'caddy', '-u', 'docker', '--no-pager', '-n', '150'],
+                     ['systemctl', 'status', 'docker', 'caddy', 'soar-agent', '--no-pager'],
+                     ['journalctl', '-u', 'caddy', '-u', 'docker', '-u', 'soar-agent', '--no-pager', '-n', '150'],
                      ['docker', 'ps', '-a', '--format', '{{.Names}}\t{{.Status}}'],
                      ['docker', 'volume', 'ls'], ['docker', 'network', 'ls']):
             try:

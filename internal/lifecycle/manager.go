@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gofrs/flock"
 	"github.com/nchapman/soar/internal/host"
@@ -20,6 +22,31 @@ const caddyConfig = "{\n\tadmin 127.0.0.1:2019\n}\n"
 
 // Applications will get explicit private networks; no shared default bridge.
 const dockerConfig = "{\n  \"bridge\": \"none\",\n  \"log-driver\": \"local\"\n}\n"
+
+var deployKeyLine = regexp.MustCompile(`^ssh-(?:ed25519|rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
+
+// ValidateDeployKey accepts exactly one OpenSSH public key line with a
+// printable optional comment. Newlines, quoting, and options are rejected:
+// the restricted forced-command prefix is authored by the lifecycle itself.
+func ValidateDeployKey(line string) error {
+	if len(line) > 4096 || strings.ContainsAny(line, "\n\r\t\"") {
+		return errors.New("deploy key must be one printable public key line")
+	}
+	if !deployKeyLine.MatchString(line) {
+		return errors.New("deploy key must be an ssh-ed25519, ssh-rsa, or ecdsa public key line")
+	}
+	return nil
+}
+
+// bridgeKeyLine renders the initial restricted bridge key for the default
+// deployer principal, or empty when bootstrap runs without a deploy key.
+func (m *Manager) bridgeKeyLine() []byte {
+	if m.DeployKey == "" {
+		return nil
+	}
+	line := "restrict,command=\"" + AgentPath + " internal-agent bridge --principal default-deployer\" " + m.DeployKey
+	return []byte(line + "\n")
+}
 
 var units = []string{"caddy.service", "docker.service", "docker.socket", "containerd.service"}
 
@@ -57,7 +84,7 @@ const agentSSHConfig = `Match User soar
 `
 
 const defaultPrincipals = `[
-  {"id":"default-deployer","role":"deployer"}
+  {"id":"default-deployer","role":"deployer","apps":["*"]}
 ]
 `
 
@@ -83,7 +110,11 @@ type Manager struct {
 	Executor []byte
 	// Agent is the installed coordinator. During bootstrap it may deliberately
 	// match Executor: the bundle's internal-agent entry point dispatches it.
-	Agent       []byte
+	Agent []byte
+	// DeployKey is one validated SSH public key line installed as the initial
+	// restricted bridge key. Empty leaves the ACL file absent for administrators
+	// who provision keys out of band.
+	DeployKey   string
 	CaddyConfig func(context.Context) ([]byte, error)
 	MountInfo   func() ([]byte, error)
 }
@@ -297,13 +328,30 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err := atomicWrite(m.path(AgentPath), m.Agent, 0755); err != nil {
 			return nil, err
 		}
+		// The restricted account's shell and forced command live here; sshd must
+		// be able to traverse to them while the files stay root-owned.
+		if err := os.MkdirAll(m.path("/usr/local/lib/soar"), 0755); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(m.path("/usr/local/lib/soar"), 0755); err != nil {
+			return nil, err
+		}
 		if err := atomicWrite(m.path("/etc/soar/agent.json"), []byte(defaultAgentConfig), 0600); err != nil {
+			return nil, err
+		}
+		// sshd reads authorized_keys while checking the restricted account's
+		// credentials, so the directory is traversable and the public key file
+		// is world-readable. The private policy and principal files remain 0600.
+		if err := os.MkdirAll(m.path("/etc/soar"), 0755); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(m.path("/etc/soar"), 0755); err != nil {
 			return nil, err
 		}
 		if err := atomicWrite(m.path("/etc/soar/principals.json"), []byte(defaultPrincipals), 0600); err != nil {
 			return nil, err
 		}
-		if err := atomicWrite(m.path("/etc/soar/authorized_keys"), nil, 0600); err != nil {
+		if err := atomicWrite(m.path("/etc/soar/authorized_keys"), m.bridgeKeyLine(), 0644); err != nil {
 			return nil, err
 		}
 		if err := atomicWrite(m.path("/etc/ssh/sshd_config.d/soar.conf"), []byte(agentSSHConfig), 0600); err != nil {
@@ -312,11 +360,16 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err := atomicWrite(m.path("/etc/systemd/system/"+agentUnit), []byte(agentServiceConfig), 0644); err != nil {
 			return nil, err
 		}
-		if _, err := m.command(ctx, "useradd", "--system", "--user-group", "--home-dir", "/nonexistent", "--shell", AgentPath, "soar"); err != nil {
+		if _, err := m.command(ctx, "useradd", "--system", "--user-group", "--no-create-home", "--home-dir", "/", "--shell", AgentPath, "soar"); err != nil {
 			return nil, err
 		}
 		if _, err := m.command(ctx, "sshd", "-t"); err != nil {
 			return nil, fmt.Errorf("validate restricted soar SSH configuration: %w", err)
+		}
+		// The running daemon must adopt the Match block before the restricted
+		// account can authenticate; reload keeps existing sessions untouched.
+		if _, err := m.command(ctx, "systemctl", "reload", "ssh"); err != nil {
+			return nil, fmt.Errorf("reload ssh for the restricted soar account: %w", err)
 		}
 		hash := sha256.Sum256(m.Executor)
 		s.ExecutorSHA = hex.EncodeToString(hash[:])
@@ -392,30 +445,58 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	if s == nil || s.Phase != "ready" || s.Config != config {
 		return nil, errors.New("server is not a ready installation with the requested identity")
 	}
-	if err := m.verifyFiles(s); err != nil {
+	if err := m.verifyFilesFor(s, true); err != nil {
+		return nil, err
+	}
+	if err := m.verifyQueueIdle(); err != nil {
 		return nil, err
 	}
 	defer func() { m.recordError(s, err) }()
-	if err := atomicWrite(m.path(ExecutorPath), m.Executor, 0755); err != nil {
+	agentStopped := false
+	defer func() {
+		if !agentStopped || err == nil {
+			return
+		}
+		restartCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		if _, startErr := m.command(restartCtx, "systemctl", "start", agentUnit); startErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to restart %s after aborted upgrade: %w", agentUnit, startErr))
+		}
+	}()
+	if _, err = m.command(ctx, "systemctl", "stop", agentUnit); err != nil {
 		return nil, err
 	}
-	if err := atomicWrite(m.path(AgentPath), m.Agent, 0755); err != nil {
+	agentStopped = true
+	if err = m.verifyQueueIdle(); err != nil {
+		return nil, err
+	}
+	if err = atomicWrite(m.path(ExecutorPath), m.Executor, 0755); err != nil {
 		return nil, err
 	}
 	executorHash := sha256.Sum256(m.Executor)
-	agentHash := sha256.Sum256(m.Agent)
 	s.ExecutorSHA = hex.EncodeToString(executorHash[:])
+	if err = m.save(s); err != nil {
+		return nil, err
+	}
+	if err = atomicWrite(m.path(AgentPath), m.Agent, 0755); err != nil {
+		return nil, err
+	}
+	agentHash := sha256.Sum256(m.Agent)
 	s.AgentSHA = hex.EncodeToString(agentHash[:])
-	if _, err := m.command(ctx, "systemctl", "daemon-reload"); err != nil {
+	if err = m.save(s); err != nil {
 		return nil, err
 	}
-	if _, err := m.command(ctx, "systemctl", "restart", agentUnit); err != nil {
+	if _, err = m.command(ctx, "systemctl", "daemon-reload"); err != nil {
 		return nil, err
 	}
-	if err := m.health(ctx); err != nil {
+	if _, err = m.command(ctx, "systemctl", "start", agentUnit); err != nil {
 		return nil, err
 	}
-	if err := m.step(s, "complete"); err != nil {
+	agentStopped = false
+	if err = m.health(ctx); err != nil {
+		return nil, err
+	}
+	if err = m.step(s, "complete"); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -479,7 +560,11 @@ func (m *Manager) unmask(ctx context.Context) error {
 }
 
 func (m *Manager) verifyFiles(s *State) error {
-	for path, expected := range map[string]string{"/etc/caddy/Caddyfile": caddyConfig, "/etc/docker/daemon.json": dockerConfig, "/etc/ssh/sshd_config.d/soar.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
+	return m.verifyFilesFor(s, false)
+}
+
+func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
+	for path, expected := range map[string]string{"/etc/docker/daemon.json": dockerConfig, "/etc/ssh/sshd_config.d/soar.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
 		if err := rejectSymlink(m.path(path)); err != nil {
 			return err
 		}
@@ -488,14 +573,40 @@ func (m *Manager) verifyFiles(s *State) error {
 			return fmt.Errorf("managed file %s is missing or changed; refusing to overwrite or remove it", path)
 		}
 	}
+	caddyPath := m.path("/etc/caddy/Caddyfile")
+	if err := rejectSymlink(caddyPath); err != nil {
+		return err
+	}
+	caddyInfo, err := os.Lstat(caddyPath)
+	if err != nil || !caddyInfo.Mode().IsRegular() || caddyInfo.Size() > 1<<20 {
+		return errors.New("managed file /etc/caddy/Caddyfile is missing or unsafe")
+	}
+	caddyBytes, err := os.ReadFile(caddyPath)
+	if err != nil {
+		return err
+	}
+	if allowLiveRoutes {
+		if !strings.HasPrefix(string(caddyBytes), caddyConfig) {
+			return errors.New("managed file /etc/caddy/Caddyfile is missing or changed; refusing upgrade")
+		}
+	} else if string(caddyBytes) != caddyConfig {
+		return errors.New("managed file /etc/caddy/Caddyfile is missing or changed; refusing to overwrite or remove it")
+	}
 	// Principals and authorized keys are deliberately administrator-managed
 	// dynamic ACL inputs. They must remain private regular files, but their
 	// contents are not frozen into the lifecycle receipt.
-	for _, path := range []string{"/etc/soar/agent.json", "/etc/soar/principals.json", "/etc/soar/authorized_keys"} {
+	// Principals, policy, and the journal stay root-only. The authorized_keys
+	// file holds only public data and must be readable by sshd's credential
+	// check for the restricted account, so it is mode 0644.
+	for _, path := range []string{"/etc/soar/agent.json", "/etc/soar/principals.json"} {
 		info, err := os.Lstat(m.path(path))
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0600 {
 			return fmt.Errorf("managed ACL file %s is missing or unsafe", path)
 		}
+	}
+	keyInfo, err := os.Lstat(m.path("/etc/soar/authorized_keys"))
+	if err != nil || !keyInfo.Mode().IsRegular() || keyInfo.Mode()&os.ModeSymlink != 0 || keyInfo.Mode().Perm() != 0644 {
+		return errors.New("managed bridge key file /etc/soar/authorized_keys is missing or unsafe")
 	}
 	for path, digest := range map[string]string{ExecutorPath: s.ExecutorSHA, AgentPath: s.AgentSHA} {
 		if err := rejectSymlink(m.path(path)); err != nil {

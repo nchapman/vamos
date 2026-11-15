@@ -245,6 +245,11 @@ func (m *Manager) destroyRoutes(j *journal) (string, string, error) {
 // Check both durable and live configurations. A reload acknowledgement alone is
 // never authorization to stop a container.
 func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) error {
+	unlock, err := m.lockIngress(c)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	w := j.Maintenance
 	old, next, e := m.maintenanceRouteIntent(j)
 	if e != nil {

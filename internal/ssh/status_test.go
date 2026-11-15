@@ -81,3 +81,52 @@ exit "$FAKE_CODE"
 		}
 	}
 }
+
+func TestStatusScriptDetectsActiveCoordinatorWorker(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("remote POSIX shell behavior is exercised on Unix hosts")
+	}
+	dir := t.TempDir()
+	opID := strings.Repeat("a", 32)
+	fake := `#!/bin/sh
+set -eu
+[ "$1" = is-active ] || exit 99
+if [ "$2" = "soar-host-operation.service" ]; then
+  printf 'inactive\n'
+  exit 3
+fi
+if [ "$2" = "soar-op-` + opID + `.service" ]; then
+  printf 'active\n'
+  exit 0
+fi
+printf 'inactive\n'
+exit 4
+`
+	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(fake), 0700); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(dir, "host-state")
+	opsDir := filepath.Join(stateDir, "queue", "operations")
+	if err := os.MkdirAll(opsDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(opsDir, opID+".json"), []byte(`{"version":1,"operation_id":"`+opID+`","phase":"running"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(statusScript, "/var/lib/soar", stateDir)
+	cmd := exec.Command("/bin/sh", "-s")
+	cmd.Stdin = strings.NewReader(script)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil || stderr.Len() != 0 {
+		t.Fatalf("err=%v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+	}
+	var status Status
+	if err := decodeJSON(stdout.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Active {
+		t.Fatalf("expected active=true for running coordinator worker, got %+v", status)
+	}
+}

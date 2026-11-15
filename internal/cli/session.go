@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/nchapman/soar/internal/config"
 	"github.com/nchapman/soar/internal/deploy"
@@ -140,28 +139,8 @@ func sessionCommand(ctx context.Context, action string, args []string, stdin io.
 		ctx, cancel = context.WithTimeout(ctx, *timeout)
 		defer cancel()
 	}
-	inspectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	report, err := deps.Inspect(inspectCtx, server.Target)
-	cancel()
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
-	if report == nil || !report.Supported || !report.Root {
-		return lifecycleError(stderr, errors.New("sessions require root on a supported Ubuntu host"))
-	}
-	binary, err := deps.Artifact(*executorFile, report.Architecture)
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
 	fmt.Fprintf(stderr, "%s / %s: %s (live service access; no automatic retry)\n", server.Name, name, action)
-	return runSession(ctx, server.Target, request, binary, stdin, stdout, stderr, deps)
-}
-
-func runSession(ctx context.Context, target string, request deploy.SessionRequest, binary []byte, stdin io.Reader, stdout, stderr io.Writer, deps appDeps) int {
-	if deps.Stream == nil {
-		return lifecycleError(stderr, errors.New("session transport unavailable"))
-	}
-	code, err := deps.Stream(ctx, target, request, binary, stdin, stdout, stderr)
+	code, err := runSessionTransport(ctx, server.Target, *executorFile, request, stdin, stdout, stderr, deps)
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}

@@ -25,23 +25,47 @@ import (
 var bootstrapScript string
 
 const statusScript = `set -eu
-for p in /var/lib/soar /var/lib/soar/host.json; do
+for p in /var/lib/soar /var/lib/soar/host.json /var/lib/soar/queue /var/lib/soar/queue/operations; do
   if [ -L "$p" ]; then printf '%s\n' 'refusing symlinked host state' >&2; exit 1; fi
 done
 # A failed query is not evidence that the operation is at rest. Capture both
 # the state and exit code, suppressing systemctl's potentially sensitive errors.
-code=0
-service_state=$(systemctl is-active soar-host-operation.service 2>/dev/null) || code=$?
-case "$service_state:$code" in
-  active:0|reloading:0|activating:0|activating:3|deactivating:0|deactivating:3)
-    active=true ;;
-  inactive:3|inactive:4|failed:3|unknown:3|unknown:4)
-    # Missing units report inactive:4 on systemd 255 or unknown on older versions.
-    active=false ;;
-  *)
-    printf '%s\n' 'cannot establish host operation service state' >&2
-    exit 1 ;;
-esac
+check_unit() {
+  code=0
+  service_state=$(systemctl is-active "$1" 2>/dev/null) || code=$?
+  case "$service_state:$code" in
+    active:0|reloading:0|activating:0|activating:3|deactivating:0|deactivating:3)
+      return 0 ;;
+    inactive:3|inactive:4|failed:3|unknown:3|unknown:4)
+      # Missing units report inactive:4 on systemd 255 or unknown on older versions.
+      return 1 ;;
+    *)
+      printf '%s\n' 'cannot establish host operation service state' >&2
+      exit 1 ;;
+  esac
+}
+active=false
+if check_unit soar-host-operation.service; then
+  active=true
+elif [ -d /var/lib/soar/queue/operations ]; then
+  for rec in /var/lib/soar/queue/operations/*.json; do
+    [ -e "$rec" ] || break
+    if [ -L "$rec" ] || [ ! -f "$rec" ]; then
+      printf '%s\n' 'refusing invalid queue record' >&2
+      exit 1
+    fi
+    op_id=${rec##*/}
+    op_id=${op_id%.json}
+    if check_unit "soar-op-${op_id}.service"; then
+      active=true
+      break
+    fi
+    if grep -Eq '"phase"[[:space:]]*:[[:space:]]*"(queued|running)"' "$rec"; then
+      active=true
+      break
+    fi
+  done
+fi
 printf '{"active":%s,"state":' "$active"
 if [ -f /var/lib/soar/host.json ]; then
   head -c 1048577 /var/lib/soar/host.json

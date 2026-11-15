@@ -167,7 +167,12 @@ func reserveJournalHostnames(all []*journal, domain string) error {
 
 // reserveHostnames is a read-only global reservation check, including pending
 // desired configs and the effective versions of partially updated apps.
-func (m *Manager) reserveHostnames(j *journal) error {
+func (m *Manager) reserveHostnames(ctx context.Context, j *journal) error {
+	unlock, err := m.lockIngress(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	all, domain, e := m.routeJournals(j)
 	if e != nil {
 		return e

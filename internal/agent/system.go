@@ -24,7 +24,7 @@ const (
 	DefaultAuthorizedKeys = "/etc/soar/authorized_keys"
 )
 
-var forcedKeyRE = regexp.MustCompile(`^restrict,command="/usr/local/lib/soar/soar-agent internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" ssh-(?:ed25519|rsa|ecdsa(?:-sha2-nistp(?:256|384|521))?) [A-Za-z0-9+/=]+(?: .*)?$`)
+var forcedKeyRE = regexp.MustCompile(`^restrict,command="(?:/usr/local/lib/soar/soar-agent|/usr/local/lib/soar/executor) internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" ssh-(?:ed25519|rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
 
 type Config struct {
 	Concurrency agentproto.ConcurrencyPolicy `json:"concurrency"`
@@ -64,7 +64,7 @@ func ServeSystem(ctx context.Context) error {
 // principal IDs exist in the root-owned ACL. This makes key-to-principal
 // attribution an sshd-enforced boundary rather than client-provided input.
 func ValidateAuthorizedKeys(path string, principals map[string]agentproto.Principal) error {
-	data, err := os.ReadFile(path)
+	data, err := readRegularFile(path, 1<<20, "authorized_keys")
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func ValidateAuthorizedKeys(path string, principals map[string]agentproto.Princi
 
 func ReadConfig(path string) (Config, error) {
 	var config Config
-	data, err := os.ReadFile(path)
+	data, err := readRegularFile(path, 1<<20, "agent configuration")
 	if err != nil {
 		return config, err
 	}
@@ -108,14 +108,7 @@ func ReadConfig(path string) (Config, error) {
 // they make the bridge fail closed until an administrator provisions a scoped
 // deploy key and matching principal.
 func ReadPrincipals(path string) (map[string]agentproto.Principal, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > 1<<20 {
-		return nil, errors.New("principals file must be a regular file no larger than 1 MiB")
-	}
-	data, err := os.ReadFile(path)
+	data, err := readRegularFile(path, 1<<20, "principals file")
 	if err != nil {
 		return nil, err
 	}
@@ -140,4 +133,34 @@ func ReadPrincipals(path string) (map[string]agentproto.Principal, error) {
 		result[principal.ID] = principal
 	}
 	return result, nil
+}
+
+func readRegularFile(path string, maxBytes int64, label string) ([]byte, error) {
+	before, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || before.Size() > maxBytes {
+		return nil, fmt.Errorf("%s must be a regular file no larger than %d bytes", label, maxBytes)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	after, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(before, after) || !after.Mode().IsRegular() || after.Size() > maxBytes {
+		return nil, fmt.Errorf("%s changed or exceeded size limit while reading", label)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%s must be a regular file no larger than %d bytes", label, maxBytes)
+	}
+	return data, nil
 }

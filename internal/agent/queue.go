@@ -24,6 +24,7 @@ import (
 	"github.com/nchapman/soar/internal/agentproto"
 	"github.com/nchapman/soar/internal/buildmeta"
 	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/soar/internal/executor"
 )
 
 const recordsDirectory = "operations"
@@ -265,6 +266,25 @@ func (q *Queue) StorePayload(id string, input io.Reader) error {
 	return q.saveLocked(op)
 }
 
+// PeekQueued inspects a queued operation before concurrency slots are claimed
+// so unstarted work stays in PhaseQueued while waiting for capacity.
+func (q *Queue) PeekQueued(id string) (deploy.Request, bool, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if !operationIDRE.MatchString(id) {
+		return deploy.Request{}, false, errors.New("invalid operation ID")
+	}
+	data, err := os.ReadFile(q.recordPath(id))
+	if err != nil {
+		return deploy.Request{}, false, err
+	}
+	var op operation
+	if err := decode(data, &op); err != nil {
+		return deploy.Request{}, false, err
+	}
+	return op.Request, op.Phase == agentproto.PhaseQueued && op.PayloadReady, nil
+}
+
 // Start atomically claims one fully staged queued operation. The phase is
 // durable before execution begins, so a daemon crash is recovered as uncertain.
 func (q *Queue) Start(id string) (deploy.Request, []byte, error) {
@@ -297,8 +317,9 @@ func (q *Queue) Start(id string) (deploy.Request, []byte, error) {
 	return op.Request, payload, nil
 }
 
-// Finish records the exact terminal worker result. A worker failure is not
-// retried automatically; callers inspect or submit explicit recovery work.
+// Finish records the exact terminal worker result and removes any staged
+// private payload. Structured failure responses remain attached so clients
+// preserve refusal codes, build diagnostics, and release-hook status.
 func (q *Queue) Finish(id string, response deploy.Response, runErr error) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -313,21 +334,60 @@ func (q *Queue) Finish(id string, response deploy.Response, runErr error) error 
 	if op.Phase != agentproto.PhaseRunning {
 		return errors.New("operation is not running")
 	}
+	if runErr != nil || response.Version == 0 {
+		response = executor.FormatAppResponse(op.Request, response, runErr)
+	}
 	now := q.now().UTC()
 	op.FinishedAt = &now
-	if runErr != nil {
+	op.Response = &response
+	if runErr != nil || response.Error != "" {
 		op.Phase = agentproto.PhaseFailed
-		op.Error = runErr.Error()
+		op.Error = response.Error
+		op.ErrorCode = response.ErrorCode
 	} else {
 		op.Phase = agentproto.PhaseSucceeded
-		op.Response = &response
 	}
-	return q.saveLocked(op)
+	if err := q.saveLocked(op); err != nil {
+		return err
+	}
+	_ = os.Remove(q.payloadPath(id))
+	if op.Phase == agentproto.PhaseSucceeded && resolvesUncertain(op.Action) {
+		if err := q.resolveUncertainLocked(op.App, op.OperationID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// Fence records an indeterminate worker outcome. It is deliberately separate
-// from Finish so daemon shutdown cannot turn an interrupted mutation into a
-// claimed failure or success.
+func resolvesUncertain(action string) bool {
+	switch action {
+	case "deploy", "resume", "rollback", "destroy", "service-remove", "cleanup", "secrets-set", "backup-repository":
+		return true
+	default:
+		return false
+	}
+}
+
+func (q *Queue) resolveUncertainLocked(app, resolvingID string) error {
+	ops, err := q.recordsLocked()
+	if err != nil {
+		return err
+	}
+	for _, older := range ops {
+		if older.OperationID == resolvingID || older.Phase != agentproto.PhaseUncertain || older.ResolvedBy != "" || older.App != app {
+			continue
+		}
+		older.ResolvedBy = resolvingID
+		if err := q.saveLocked(older); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Fence records an indeterminate worker outcome and scrubs any staged payload.
+// It is deliberately separate from Finish so daemon shutdown or worker death
+// cannot turn an interrupted mutation into a claimed failure or success.
 func (q *Queue) Fence(id, message string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -344,7 +404,9 @@ func (q *Queue) Fence(id, message string) error {
 	}
 	now := q.now().UTC()
 	op.Phase, op.Error, op.FinishedAt = agentproto.PhaseUncertain, message, &now
-	return q.saveLocked(op)
+	err = q.saveLocked(op)
+	_ = os.Remove(q.payloadPath(id))
+	return err
 }
 
 func (q *Queue) Wait(ctx context.Context, id string) (agentproto.OperationRecord, error) {
@@ -401,27 +463,71 @@ func (q *Queue) Get(id string) (agentproto.OperationRecord, error) {
 	return op.OperationRecord, nil
 }
 
-// Recover fences an operation that was running across agent restart. It never
-// guesses whether a worker completed; an explicit app-level resume/supersede is
-// required after the operator inspects recorded state.
-func (q *Queue) Recover() error {
+// RunningRequests returns all currently recorded running operations in creation
+// order so daemon startup can inspect or re-adopt supervised worker units.
+func (q *Queue) RunningRequests() (map[string]deploy.Request, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	ops, err := q.recordsLocked()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	running := make(map[string]deploy.Request)
 	for _, op := range ops {
-		if op.Phase != agentproto.PhaseRunning {
-			continue
-		}
-		now := q.now().UTC()
-		op.Phase = agentproto.PhaseUncertain
-		op.FinishedAt = &now
-		op.Error = "agent restarted while worker outcome was unknown"
-		if err := q.saveLocked(op); err != nil {
-			return err
+		if op.Phase == agentproto.PhaseRunning {
+			running[op.OperationID] = op.Request
 		}
 	}
-	return nil
+	return running, nil
+}
+
+// Recover fences any operation that was running across agent restart without
+// an active supervised worker.
+func (q *Queue) Recover() error {
+	_, err := q.RecoverReady(nil)
+	return err
+}
+
+// RecoverReady fences orphaned running operations and incomplete uploads while
+// preserving staged queued operations in FIFO order for scheduling.
+func (q *Queue) RecoverReady(readopted map[string]bool) ([]string, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	ops, err := q.recordsLocked()
+	if err != nil {
+		return nil, err
+	}
+	var ready []string
+	for _, op := range ops {
+		switch op.Phase {
+		case agentproto.PhaseRunning:
+			if readopted[op.OperationID] {
+				continue
+			}
+			now := q.now().UTC()
+			op.Phase = agentproto.PhaseUncertain
+			op.FinishedAt = &now
+			op.Error = "agent restarted while worker outcome was unknown"
+			if err := q.saveLocked(op); err != nil {
+				return nil, err
+			}
+			_ = os.Remove(q.payloadPath(op.OperationID))
+		case agentproto.PhaseQueued:
+			if op.PayloadReady {
+				ready = append(ready, op.OperationID)
+				continue
+			}
+			now := q.now().UTC()
+			op.Phase = agentproto.PhaseUncertain
+			op.FinishedAt = &now
+			op.Error = "agent restarted before payload transfer completed"
+			if err := q.saveLocked(op); err != nil {
+				return nil, err
+			}
+			_ = os.Remove(q.payloadPath(op.OperationID))
+		default:
+			_ = os.Remove(q.payloadPath(op.OperationID))
+		}
+	}
+	return ready, nil
 }

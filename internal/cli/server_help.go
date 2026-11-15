@@ -16,8 +16,8 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		names = append(names, "json")
 	case "add":
 		usage = "soar server add [OPTIONS] --yes --domain DOMAIN NAME TARGET"
-		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDNS is configured separately. Started mutations survive client disconnection."
-		names = append(names, "yes", "domain", "executor")
+		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDNS is configured separately. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH."
+		names = append(names, "yes", "domain", "executor", "deploy-key")
 	case "connect":
 		usage = "soar server connect [OPTIONS] --domain DOMAIN NAME TARGET"
 		notes = "Verify an existing ready installation and register it locally. Requires root SSH.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME and DOMAIN must match the installed identity; SSH host keys must already be trusted."

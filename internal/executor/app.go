@@ -77,20 +77,57 @@ func ServeApp(ctx context.Context, stdin io.Reader, stdout io.Writer) int {
 		return appFailure(stdout, errors.New("worker directory unavailable"), 1)
 	}
 	response, err := manager.Execute(ctx, request, archive)
-	if err != nil {
-		if request.Action == "secrets-stage" || request.Action == "secrets-set" || request.Action == "secrets-list" {
-			message := deploy.RefusalMessage(request.Action, deploy.ErrorCode(err))
-			if message == "" {
-				message = "secret request outcome unknown"
-			}
-			return writeAppSecretFailure(stdout, message, deploy.ErrorCode(err))
-		}
-		return appFailure(stdout, err, 1)
+	formatted := FormatAppResponse(request, response, err)
+	data, marshalErr := json.Marshal(formatted)
+	if marshalErr != nil {
+		return appFailure(stdout, marshalErr, 1)
 	}
-	return writeAppResponse(stdout, response)
+	if _, writeErr := stdout.Write(append(data, '\n')); writeErr != nil {
+		return 1
+	}
+	if err != nil || formatted.Error != "" {
+		return 1
+	}
+	return 0
 }
 
-func writeAppResponse(stdout io.Writer, response deploy.Response) int {
+// FormatAppResponse normalizes an engine result into a bounded protocol
+// response, redacting secret-operation errors and enforcing the 64 KiB wire cap.
+func FormatAppResponse(request deploy.Request, response deploy.Response, runErr error) deploy.Response {
+	if runErr != nil && (request.Action == "secrets-stage" || request.Action == "secrets-set" || request.Action == "secrets-list") {
+		message := deploy.RefusalMessage(request.Action, deploy.ErrorCode(runErr))
+		if message == "" {
+			message = "secret request outcome unknown"
+		}
+		return deploy.Response{Version: 1, Error: message, ErrorCode: deploy.ErrorCode(runErr)}
+	}
+	response.Version = 1
+	if runErr != nil {
+		message := runErr.Error()
+		if len(message) > 4096 {
+			message = message[:4096] + " [truncated]"
+		}
+		response.Error = message
+		response.ErrorCode = deploy.ErrorCode(runErr)
+	}
+	boundResponseOutputs(&response)
+	data, err := json.Marshal(response)
+	if err != nil {
+		return fallbackFailureResponse(err)
+	}
+	if len(data)+1 > process.OutputLimit {
+		if response.Error != "" {
+			return deploy.Response{Version: 1, Error: response.Error, ErrorCode: response.ErrorCode}
+		}
+		return deploy.Response{
+			Version: 1,
+			Error:   "app response exceeds 64 KiB; request status or logs with --service NAME, or secrets list separately",
+		}
+	}
+	return response
+}
+
+func boundResponseOutputs(response *deploy.Response) {
 	boundRun := func(r *deploy.RunResult) {
 		if r != nil && len(r.Output) > 8*1024 {
 			r.Output = "[run output truncated to 8 KiB]\n" + r.Output[len(r.Output)-8*1024:]
@@ -99,24 +136,33 @@ func writeAppResponse(stdout io.Writer, response deploy.Response) int {
 	boundRun(response.Run)
 	if response.Status != nil {
 		boundRun(response.Status.Run)
+		boundRun(response.Status.Release)
 	}
-
 	// JSON escaping can expand each byte sixfold. Leave headroom under the
 	// transport's 64 KiB per-stream limit even for control-heavy application logs.
 	if len(response.Logs) > 8*1024 {
 		response.Logs = "[log tail truncated to 8 KiB]\n" + response.Logs[len(response.Logs)-8*1024:]
 	}
-	data, err := json.Marshal(response)
+}
+
+func fallbackFailureResponse(err error) deploy.Response {
+	message := err.Error()
+	if len(message) > 4096 {
+		message = message[:4096] + " [truncated]"
+	}
+	return deploy.Response{Version: 1, Error: message, ErrorCode: deploy.ErrorCode(err)}
+}
+
+func writeAppResponse(stdout io.Writer, response deploy.Response) int {
+	formatted := FormatAppResponse(deploy.Request{}, response, nil)
+	data, err := json.Marshal(formatted)
 	if err != nil {
 		return appFailure(stdout, err, 1)
 	}
-	// Mixed effective versions can have more secret metadata than the desired
-	// config. Fail with a complete, actionable response rather than letting SSH
-	// truncate JSON and obscure the operation's outcome.
-	if len(data)+1 > process.OutputLimit {
-		return appFailure(stdout, errors.New("app response exceeds 64 KiB; request status or logs with --service NAME, or secrets list separately"), 1)
-	}
 	if _, err = stdout.Write(append(data, '\n')); err != nil {
+		return 1
+	}
+	if formatted.Error != "" {
 		return 1
 	}
 	return 0
@@ -229,8 +275,4 @@ func readSecretsFile(path string, r deploy.Request) ([]byte, error) {
 		return nil, errors.New("invalid secret input")
 	}
 	return data, nil
-}
-func writeAppSecretFailure(w io.Writer, message, code string) int {
-	_ = json.NewEncoder(w).Encode(deploy.Response{Version: 1, Error: message, ErrorCode: code})
-	return 1
 }

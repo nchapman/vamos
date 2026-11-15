@@ -94,7 +94,7 @@ func TestMultiRoutesPreviewAndMixedLegacy(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("preview mutated journal")
 	}
-	if e = m.reserveHostnames(j); e != nil {
+	if e = m.reserveHostnames(t.Context(), j); e != nil {
 		t.Fatal(e)
 	}
 	if e = os.MkdirAll(m.dir(j.App), 0700); e != nil {
@@ -157,7 +157,7 @@ func TestMultiRoutesGlobalClaims(t *testing.T) {
 			cfg := j.Config.Services["api"]
 			j.Config.Services["bar"] = cfg
 			// No effective bar release is needed: its pending config reserves the name.
-			if e := m.reserveHostnames(j); e == nil || !strings.Contains(e.Error(), "foo-bar.example.com") {
+			if e := m.reserveHostnames(t.Context(), j); e == nil || !strings.Contains(e.Error(), "foo-bar.example.com") {
 				t.Fatal("collision accepted", e)
 			}
 			if _, e := m.routes(j, false); e == nil {
@@ -166,7 +166,7 @@ func TestMultiRoutesGlobalClaims(t *testing.T) {
 			// A private service has no public claim.
 			cfg.HTTP = nil
 			j.Config.Services["bar"] = cfg
-			if e := m.reserveHostnames(j); e != nil {
+			if e := m.reserveHostnames(t.Context(), j); e != nil {
 				t.Fatal(e)
 			}
 		})
@@ -202,7 +202,7 @@ func TestMultiRoutesForeignAndMalformed(t *testing.T) {
 				t.Fatal(e)
 			}
 			j := routeTestJournal("notes")
-			if e := m.reserveHostnames(j); e == nil {
+			if e := m.reserveHostnames(t.Context(), j); e == nil {
 				t.Fatal("invalid global journal accepted")
 			}
 			if _, e := m.routes(j, false); e == nil {
@@ -391,7 +391,7 @@ func TestMultiRoutesPersistedV2WithLegacyCaller(t *testing.T) {
 		t.Fatal(e)
 	}
 	claimant := routeTestJournal("future-api")
-	if e = m.reserveHostnames(claimant); e == nil || !strings.Contains(e.Error(), "future-api.example.com") {
+	if e = m.reserveHostnames(t.Context(), claimant); e == nil || !strings.Contains(e.Error(), "future-api.example.com") {
 		t.Fatal("pending v2 hostname was not reserved", e)
 	}
 }

@@ -17,6 +17,15 @@ from scenarios import identities, require
 UNIT = 'soar-host-operation.service'
 
 
+def active_worker_unit(h):
+    out = h.command(['systemctl', 'list-units', '--type=service', '--state=active,activating',
+                     '--plain', '--no-legend', '--no-pager', 'soar-op-*.service', UNIT],
+                    user='root').stdout.decode()
+    units = [line.split()[0] for line in out.splitlines() if line.strip()]
+    require(len(units) == 1, f'expected exactly one active worker unit, found {units!r}')
+    return units[0]
+
+
 def init_identity():
     # OrbStack machine restart is not necessarily a shared-kernel reboot.
     stat = Path('/proc/1/stat').read_text().rsplit(')', 1)[1].split()
@@ -27,7 +36,8 @@ def init_identity():
 class Worker:
     def __init__(self, h):
         self.h = h
-        pid = int(h.command(['systemctl', 'show', '--property=MainPID', '--value', UNIT], user='root').stdout)
+        self.unit = active_worker_unit(h)
+        pid = int(h.command(['systemctl', 'show', '--property=MainPID', '--value', self.unit], user='root').stdout)
         require(pid > 1, 'checkpoint did not capture an active worker')
         self.fd = os.pidfd_open(pid)
 
@@ -38,10 +48,10 @@ class Worker:
         require(bool(select.select([self.fd], [], [], timeout)[0]), 'worker did not exit before deadline')
 
     def kill(self):
-        self.h.command(['systemctl', 'kill', '--signal=SIGKILL', UNIT], user='root')
+        self.h.command(['systemctl', 'kill', '--signal=SIGKILL', self.unit], user='root')
         self.wait()
         # Wait for cgroup cleanup too. A collected transient unit may be gone.
-        self.h.command(['systemctl', 'stop', UNIT], user='root', check=False)
+        self.h.command(['systemctl', 'stop', self.unit], user='root', check=False)
 
     def __exit__(self, *exc):
         os.close(self.fd)
@@ -322,7 +332,7 @@ def verify_restart(h, owner):
     require(checkpoint['init'] != init_identity(), 'machine init was not restarted')
     boot = h.command(['systemctl', 'is-system-running', '--wait'], user='root', check=False, timeout=180)
     require(boot.stdout.strip() in (b'running', b'degraded'), 'machine did not finish boot')
-    h.command(['systemctl', 'is-active', '--quiet', 'ssh', 'docker', 'caddy'], user='root')
+    h.command(['systemctl', 'is-active', '--quiet', 'ssh', 'docker', 'caddy', 'soar-agent'], user='root')
     app, host = checkpoint['app'], checkpoint['host']
     no_restart(h, checkpoint['old_worker'])
     wait_database(h, checkpoint['before']['database'][0])

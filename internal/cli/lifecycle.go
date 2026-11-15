@@ -7,25 +7,30 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nchapman/soar/internal/executor"
 	"github.com/nchapman/soar/internal/host"
 	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/soar/internal/process"
 	"github.com/nchapman/soar/internal/registry"
 	"github.com/nchapman/soar/internal/ssh"
 )
 
 type lifecycleDeps struct {
-	Registry func() (*registry.Store, error)
-	Inspect  func(context.Context, string) (*host.Report, error)
-	Artifact func(string, string) ([]byte, error)
-	Run      func(context.Context, string, executor.Request, []byte) (*lifecycle.State, error)
-	Status   func(context.Context, string) (*ssh.Status, error)
+	Registry  func() (*registry.Store, error)
+	Inspect   func(context.Context, string) (*host.Report, error)
+	Artifact  func(string, string) ([]byte, error)
+	Run       func(context.Context, string, executor.Request, []byte) (*lifecycle.State, error)
+	Status    func(context.Context, string) (*ssh.Status, error)
+	DeployKey func() (string, error)
 }
 
 func defaultLifecycleDeps() lifecycleDeps {
-	return lifecycleDeps{registry.Default, ssh.Inspect, ssh.Artifact, ssh.RunLifecycle, ssh.HostStatus}
+	return lifecycleDeps{Registry: registry.Default, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey}
 }
 
 func serverLifecycle(ctx context.Context, operation string, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {
@@ -38,6 +43,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	purge := flags.Bool("purge", false, "authorize removal of owned runtime data and certificates")
 	domain := flags.String("domain", "", "base domain (DNS is configured separately)")
 	artifact := flags.String("executor", "", "Linux executor artifact override")
+	deployKey := flags.String("deploy-key", "", "public key file installed for the restricted deploy bridge (default: SSH agent or ~/.ssh key)")
 	asJSON := flags.Bool("json", false, "print status as JSON")
 	timeoutDefault := 25 * time.Minute
 	if operation == "status" {
@@ -60,7 +66,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	if operation == "teardown" && !*purge {
 		return usageError(stderr, "teardown requires --purge and --yes; workloads will still block it")
 	}
-	if (operation != "teardown" && *purge) || (operation != "add" && *domain != "") || (operation != "status" && *asJSON) {
+	if (operation != "teardown" && *purge) || (operation != "add" && *domain != "") || (operation != "status" && *asJSON) || (operation != "add" && *deployKey != "") {
 		return usageError(stderr, "option does not apply to this server operation")
 	}
 	name := flags.Arg(0)
@@ -179,6 +185,13 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		remoteOp = "upgrade"
 	}
 	request := executor.Request{Version: executor.Version, Operation: remoteOp, Config: &lifecycle.Config{Name: name, Domain: server.Domain}, Confirm: true, Purge: *purge}
+	if operation == "add" {
+		key, keyErr := readDeployKey(*deployKey, deps.DeployKey)
+		if keyErr != nil {
+			return usageError(stderr, keyErr.Error())
+		}
+		request.DeployKey = key
+	}
 	state, err := deps.Run(ctx, server.Target, request, binary)
 	if err != nil {
 		return lifecycleError(stderr, err)
@@ -217,4 +230,65 @@ func lifecycleError(stderr io.Writer, err error) int {
 	}
 	fmt.Fprintf(stderr, "error: %v\n", err)
 	return 1
+}
+
+// readDeployKey resolves the bootstrap bridge key: an explicit file, the SSH
+// agent's first key, or the first conventional local public key file.
+func readDeployKey(path string, discover func() (string, error)) (string, error) {
+	if path != "" {
+		f, err := os.Open(path)
+		if err != nil {
+			return "", fmt.Errorf("read deploy key: %w", err)
+		}
+		defer f.Close()
+		data, err := io.ReadAll(io.LimitReader(f, 4097))
+		if err != nil {
+			return "", fmt.Errorf("read deploy key: %w", err)
+		}
+		if len(data) > 4096 {
+			return "", errors.New("deploy key file is too large")
+		}
+		line := strings.TrimSpace(string(data))
+		if err := lifecycle.ValidateDeployKey(line); err != nil {
+			return "", err
+		}
+		return line, nil
+	}
+	if discover == nil {
+		return "", errors.New("no deploy key configured")
+	}
+	line, err := discover()
+	if err != nil {
+		return "", err
+	}
+	if err := lifecycle.ValidateDeployKey(line); err != nil {
+		return "", fmt.Errorf("discovered deploy key is invalid: %w", err)
+	}
+	return line, nil
+}
+
+func discoverDeployKey() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if result, err := process.Run(ctx, "ssh-add", []string{"-L"}, nil); err == nil && len(result.Stdout) != 0 {
+		first := strings.TrimSpace(strings.SplitN(string(result.Stdout), "\n", 2)[0])
+		if strings.HasPrefix(first, "ssh-") {
+			return first, nil
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", errors.New("no SSH public key found for the restricted deploy bridge; pass --deploy-key PATH")
+	}
+	for _, name := range []string{"id_ed25519.pub", "id_ecdsa.pub", "id_rsa.pub"} {
+		data, err := os.ReadFile(filepath.Join(home, ".ssh", name))
+		if err != nil {
+			continue
+		}
+		first := strings.TrimSpace(strings.SplitN(string(data), "\n", 2)[0])
+		if strings.HasPrefix(first, "ssh-") {
+			return first, nil
+		}
+	}
+	return "", errors.New("no SSH public key found for the restricted deploy bridge; pass --deploy-key PATH")
 }

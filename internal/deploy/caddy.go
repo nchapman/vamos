@@ -280,3 +280,38 @@ func (m *Manager) reconcilePending(c context.Context, j *journal) error {
 	}
 	return nil
 }
+
+func (m *Manager) verifyCurrentRoutes(c context.Context, j *journal) error {
+	unlock, err := m.lockIngress(c)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	old, e := m.routes(j, false)
+	if e != nil {
+		return e
+	}
+	p := m.path("/etc/caddy/Caddyfile")
+	if e = safe(p); e != nil {
+		return e
+	}
+	b, e := os.ReadFile(p)
+	if e != nil {
+		return e
+	}
+	if string(b) != old {
+		return errors.New("Caddyfile drift")
+	}
+	expected, e := m.adapt(c, old)
+	if e != nil {
+		return e
+	}
+	live, e := m.live(c)
+	if e != nil {
+		return e
+	}
+	if !sameJSON(live, expected) {
+		return errors.New("Caddy runtime drift")
+	}
+	return nil
+}

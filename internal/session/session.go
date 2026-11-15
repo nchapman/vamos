@@ -41,6 +41,29 @@ type record struct {
 	Request deploy.SessionRequest `json:"request"`
 }
 
+var containerIDPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// ValidTarget confirms a preparation describes exactly the requested session:
+// same app/service/candidate, well-formed identities, and matching local
+// service bindings. Both the direct executor transport and the coordinator
+// agent enforce it before attaching a command.
+func ValidTarget(r deploy.SessionRequest, t deploy.SessionTarget) bool {
+	if t.App != r.App || t.Service == "" || (r.Service != "" && t.Service != r.Service) || t.Candidate != r.Candidate || !tokenPattern.MatchString(t.HostIdentity) || !tokenPattern.MatchString(t.Incarnation) || !tokenPattern.MatchString(t.Operation) || !containerIDPattern.MatchString(t.ContainerID) {
+		return false
+	}
+	binding, ok := r.Bindings[t.Service]
+	if ok && (binding.HostIdentity != t.HostIdentity || binding.Incarnation != t.Incarnation) {
+		return false
+	}
+	return true
+}
+
+// WindowSize describes terminal dimensions for interactive PTY sessions.
+type WindowSize struct {
+	Rows uint16 `json:"rows"`
+	Cols uint16 `json:"cols"`
+}
+
 // Manager's hooks allow tests to resolve and stream without a Docker daemon.
 // Configure a Manager before use; its fields must not change during a session.
 type Manager struct {
@@ -48,11 +71,12 @@ type Manager struct {
 	Now     func() time.Time
 	Resolve func(context.Context, deploy.SessionRequest) (deploy.SessionTarget, error)
 	Run     func(context.Context, string, []string, io.Reader, io.Writer, io.Writer) (int, error)
+	RunPTY  func(context.Context, string, []string, *WindowSize, <-chan WindowSize, io.Reader, io.Writer) (int, error)
 }
 
 func NewManager() *Manager {
 	return &Manager{Root: "/run/soar-sessions", Now: time.Now,
-		Resolve: deploy.NewManager().ResolveSession, Run: process.Stream}
+		Resolve: deploy.NewManager().ResolveSession, Run: process.Stream, RunPTY: runPTY}
 }
 
 func (m *Manager) defaults() Manager {
@@ -68,6 +92,9 @@ func (m *Manager) defaults() Manager {
 	}
 	if n.Run == nil {
 		n.Run = process.Stream
+	}
+	if n.RunPTY == nil {
+		n.RunPTY = runPTY
 	}
 	return n
 }
@@ -160,6 +187,16 @@ func (m *Manager) Prepare(ctx context.Context, token string, req deploy.SessionR
 // Attach consumes a preparation before re-admission. No root or host mutation
 // lock is held while streaming. Nonzero workload exits are returned unchanged.
 func (m *Manager) Attach(ctx context.Context, token string, stdin io.Reader, stdout, stderr io.Writer) (code int, err error) {
+	return m.attach(ctx, token, false, nil, nil, stdin, stdout, stderr)
+}
+
+// AttachAgent consumes a preparation on behalf of soar-agent, allocating a
+// host PTY for TTY sessions because the restricted SSH bridge runs pipe-only.
+func (m *Manager) AttachAgent(ctx context.Context, token string, initial *WindowSize, resizes <-chan WindowSize, stdin io.Reader, stdout, stderr io.Writer) (code int, err error) {
+	return m.attach(ctx, token, true, initial, resizes, stdin, stdout, stderr)
+}
+
+func (m *Manager) attach(ctx context.Context, token string, allocatePTY bool, initial *WindowSize, resizes <-chan WindowSize, stdin io.Reader, stdout, stderr io.Writer) (code int, err error) {
 	n := m.defaults()
 	if err = validToken(token); err != nil {
 		return -1, err
@@ -241,6 +278,9 @@ func (m *Manager) Attach(ctx context.Context, token string, stdin io.Reader, std
 	}
 	if !req.Stdin {
 		stdin = nil
+	}
+	if allocatePTY && req.TTY {
+		return n.RunPTY(ctx, "docker", args, initial, resizes, stdin, stdout)
 	}
 	return n.Run(ctx, "docker", args, stdin, stdout, stderr)
 }

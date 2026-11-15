@@ -154,15 +154,7 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	run := func(r backup.Request, private []byte) (*backup.Response, error) {
-		report, e := deps.Inspect(ctx, server.Target)
-		if e != nil || report == nil || !report.Supported || !report.Root {
-			return nil, errors.New("repository host inspection failed")
-		}
-		binary, e := deps.Artifact(*executor, report.Architecture)
-		if e != nil {
-			return nil, errors.New("repository executor unavailable")
-		}
-		response, e := deps.Run(ctx, server.Target, deploy.Request{Version: 1, Action: "backup-repository", Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}, Backup: &r}, binary, private)
+		response, e := runAppTransport(ctx, server.Target, *executor, deploy.Request{Version: 1, Action: "backup-repository", Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}, Backup: &r}, private, deps)
 		if response.Version == 1 && response.ErrorCode != "" {
 			if message := deploy.RefusalMessage("backup-repository", response.ErrorCode); message != "" {
 				fmt.Fprintln(stderr, message)

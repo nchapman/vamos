@@ -54,3 +54,13 @@ func TestBuildServiceRefusesDaemonPolicyDrift(t *testing.T) {
 		t.Fatal("accepted daemon policy drift")
 	}
 }
+
+func TestBuilderSnapshotterPrefersManagerOverride(t *testing.T) {
+	t.Setenv("SOAR_BUILDKIT_SNAPSHOTTER", "auto")
+	if got := builderSnapshotter(&Manager{Snapshotter: "native"}); got != "native" {
+		t.Fatalf("snapshotter = %q, want manager override native", got)
+	}
+	if got := builderSnapshotter(&Manager{}); got != "auto" {
+		t.Fatalf("snapshotter = %q, want environment fallback auto", got)
+	}
+}

@@ -14,6 +14,8 @@ import (
 	"github.com/nchapman/soar/internal/ssh"
 )
 
+const testDeployKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHJlcGxhY2VtZW50cHVibGlja2V5Ym9keWZvcnRlc3Rpbmdvbmx5 ci@host"
+
 func TestLifecycleRefusals(t *testing.T) {
 	for _, tt := range []struct {
 		op   string
@@ -59,7 +61,8 @@ func TestLifecycleFooterWriteFailure(t *testing.T) {
 				phase = "removed"
 			}
 			deps := lifecycleDeps{
-				Registry: func() (*registry.Store, error) { return store, nil },
+				Registry:  func() (*registry.Store, error) { return store, nil },
+				DeployKey: func() (string, error) { return testDeployKey, nil },
 				Inspect: func(context.Context, string) (*host.Report, error) {
 					return &host.Report{Supported: true, Root: true, Architecture: "amd64"}, nil
 				},
@@ -101,7 +104,8 @@ func TestLifecycleRegistration(t *testing.T) {
 				}
 				calls := 0
 				deps := lifecycleDeps{
-					Registry: func() (*registry.Store, error) { return store, nil },
+					Registry:  func() (*registry.Store, error) { return store, nil },
+					DeployKey: func() (string, error) { return testDeployKey, nil },
 					Status: func(context.Context, string) (*ssh.Status, error) {
 						return &ssh.Status{State: &lifecycle.State{Config: lifecycle.Config{Name: server.Name, Domain: server.Domain}}}, nil
 					},
@@ -124,12 +128,17 @@ func TestLifecycleRegistration(t *testing.T) {
 						calls++
 						want := "bootstrap"
 						phase := "ready"
+						wantKey := testDeployKey
 						if op == "teardown" {
 							want = "teardown"
 							phase = "removed"
+							wantKey = ""
 						}
 						if target != server.Target || r.Version != executor.Version || r.Operation != want || !r.Confirm || r.Purge != (op == "teardown") || r.Config == nil || *r.Config != (lifecycle.Config{Name: server.Name, Domain: server.Domain}) || string(b) != "binary" {
 							t.Fatalf("unexpected request %+v", r)
+						}
+						if r.DeployKey != wantKey {
+							t.Fatalf("deploy key not provisioned: %q", r.DeployKey)
 						}
 						if outcome == "remote error" {
 							return nil, errors.New("remote failed")

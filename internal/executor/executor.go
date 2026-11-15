@@ -27,6 +27,10 @@ type Request struct {
 	Config    *lifecycle.Config `json:"config,omitempty"`
 	Confirm   bool              `json:"confirm,omitempty"`
 	Purge     bool              `json:"purge,omitempty"`
+	// DeployKey is one SSH public key line provisioned as the initial
+	// restricted bridge key during bootstrap. It is never used by upgrade or
+	// teardown, which preserve administrator-managed keys.
+	DeployKey string `json:"deploy_key,omitempty"`
 }
 
 type Response struct {
@@ -91,12 +95,20 @@ func runLifecycle(ctx context.Context, request Request, stdout io.Writer, collec
 	if (request.Operation == "bootstrap" || request.Operation == "upgrade") && request.Purge {
 		return failure(stdout, "invalid_request", "bootstrap and upgrade do not accept purge", 2)
 	}
+	if request.Operation != "bootstrap" && request.DeployKey != "" {
+		return failure(stdout, "invalid_request", "only bootstrap provisions a deploy key", 2)
+	}
+	if request.DeployKey != "" {
+		if err := lifecycle.ValidateDeployKey(request.DeployKey); err != nil {
+			return failure(stdout, "invalid_request", err.Error(), 2)
+		}
+	}
 	if runtime.GOOS != "linux" {
 		return failure(stdout, "lifecycle_failed", "host lifecycle requires Linux", 1)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
-	manager := &lifecycle.Manager{Root: "/", Run: lifecycle.RunCommand, Inspect: func(ctx context.Context) (*host.Report, error) { return host.Inspect(ctx, collect) }}
+	manager := &lifecycle.Manager{Root: "/", Run: lifecycle.RunCommand, DeployKey: request.DeployKey, Inspect: func(ctx context.Context) (*host.Report, error) { return host.Inspect(ctx, collect) }}
 	var state *lifecycle.State
 	var err error
 	if request.Operation == "bootstrap" || request.Operation == "upgrade" {

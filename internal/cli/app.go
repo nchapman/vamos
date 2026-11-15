@@ -30,10 +30,67 @@ type appDeps struct {
 	Artifact func(string, string) ([]byte, error)
 	Run      func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error)
 	Stream   func(context.Context, string, deploy.SessionRequest, []byte, io.Reader, io.Writer, io.Writer) (int, error)
+	// Agent and AgentStream select the installed-coordinator transport: the
+	// restricted SSH bridge with server-side authorization and durable queueing.
+	// Nil restores the per-command uploaded-executor transport (tests, recovery).
+	Agent       func(context.Context, string, deploy.Request, []byte) (deploy.Response, error)
+	AgentStream func(context.Context, string, deploy.SessionRequest, io.Reader, io.Writer, io.Writer) (int, error)
 }
 
 func defaultAppDeps() appDeps {
-	return appDeps{Registry: registry.Default, Archive: buildcontext.Archive, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunApp, Stream: ssh.StreamApp}
+	agentTransport := ssh.NewAgentTransport()
+	return appDeps{Registry: registry.Default, Archive: buildcontext.Archive, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunApp, Stream: ssh.StreamApp, Agent: agentTransport.RunApp, AgentStream: agentTransport.StreamApp}
+}
+
+// runAppTransport routes one app operation through the installed coordinator
+// when available, falling back to the uploaded-executor transport otherwise.
+// An explicit executor override is incompatible with the installed agent.
+func runAppTransport(ctx context.Context, target, executorFile string, request deploy.Request, payload []byte, deps appDeps) (deploy.Response, error) {
+	if deps.Agent != nil {
+		if executorFile != "" {
+			return deploy.Response{}, errors.New("--executor override requires the uploaded-executor transport; recover the server with 'soar server upgrade'")
+		}
+		return deps.Agent(ctx, target, request, payload)
+	}
+	inspectCtx, stop := context.WithTimeout(ctx, 15*time.Second)
+	report, err := deps.Inspect(inspectCtx, target)
+	stop()
+	if err != nil {
+		return deploy.Response{}, err
+	}
+	if !report.Supported || !report.Root {
+		return deploy.Response{}, errors.New("deployment requires root on a supported Ubuntu host")
+	}
+	binary, err := deps.Artifact(executorFile, report.Architecture)
+	if err != nil {
+		return deploy.Response{}, err
+	}
+	return deps.Run(ctx, target, request, binary, payload)
+}
+
+// runSessionTransport attaches one interactive session through the installed
+// coordinator when available, using the uploaded-executor staging otherwise.
+func runSessionTransport(ctx context.Context, target, executorFile string, request deploy.SessionRequest, stdin io.Reader, stdout, stderr io.Writer, deps appDeps) (int, error) {
+	if deps.AgentStream != nil {
+		if executorFile != "" {
+			return -1, errors.New("--executor override requires the uploaded-executor transport; recover the server with 'soar server upgrade'")
+		}
+		return deps.AgentStream(ctx, target, request, stdin, stdout, stderr)
+	}
+	inspectCtx, stop := context.WithTimeout(ctx, 15*time.Second)
+	report, err := deps.Inspect(inspectCtx, target)
+	stop()
+	if err != nil {
+		return -1, err
+	}
+	if !report.Supported || !report.Root {
+		return -1, errors.New("deployment requires root on a supported Ubuntu host")
+	}
+	binary, err := deps.Artifact(executorFile, report.Architecture)
+	if err != nil {
+		return -1, err
+	}
+	return deps.Stream(ctx, target, request, binary, stdin, stdout, stderr)
 }
 
 func appCommand(ctx context.Context, action string, args []string, stdout, stderr io.Writer, deps appDeps) int {
@@ -279,7 +336,6 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		ctx, cancel = context.WithTimeout(ctx, *timeout)
 		defer cancel()
 	}
-	var binary []byte
 	view := presentationFor(stdout)
 	if *asJSON {
 		view = nil
@@ -317,21 +373,6 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 	}
-	{
-		inspectCtx, stop := context.WithTimeout(ctx, 15*time.Second)
-		report, err := deps.Inspect(inspectCtx, server.Target)
-		stop()
-		if err != nil {
-			return lifecycleError(stderr, err)
-		}
-		if !report.Supported || !report.Root {
-			return lifecycleError(stderr, errors.New("deployment requires root on a supported Ubuntu host"))
-		}
-		binary, err = deps.Artifact(*executorFile, report.Architecture)
-		if err != nil {
-			return lifecycleError(stderr, err)
-		}
-	}
 	if action == "deploy" {
 		if view != nil {
 			if err := view.write(stdout, view.field("Selected services", fmt.Sprint(selectedNames))); err != nil {
@@ -346,9 +387,13 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	if *follow {
 		sessionRequest := deploy.SessionRequest{Version: 1, Action: "logs", App: name, Host: request.Host, Service: *service, Replica: *replica, Candidate: *candidate, Tail: *tail}
-		return runSession(ctx, server.Target, sessionRequest, binary, nil, stdout, stderr, deps)
+		code, err := runSessionTransport(ctx, server.Target, *executorFile, sessionRequest, nil, stdout, stderr, deps)
+		if err != nil {
+			return lifecycleError(stderr, err)
+		}
+		return code
 	}
-	response, err := deps.Run(ctx, server.Target, request, binary, archive)
+	response, err := runAppTransport(ctx, server.Target, *executorFile, request, archive, deps)
 	if action == "deploy" {
 		updates := acknowledgedBindings(request, response.Status, selectedNames)
 		if len(updates) > 0 {

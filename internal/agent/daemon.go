@@ -21,10 +21,24 @@ import (
 	"github.com/nchapman/soar/internal/agentproto"
 	"github.com/nchapman/soar/internal/buildmeta"
 	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/soar/internal/executor"
 	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/soar/internal/session"
 )
 
+// peerAccountName is the only account allowed to connect to the socket. It
+// is a constant in production; tests on Linux point it at the harness user so
+// SO_PEERCRED is still enforced rather than skipped.
+var peerAccountName = "soar"
+
 var bridgePrincipalRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$`)
+
+// SessionManager is the subset of session.Manager the coordinator needs.
+type SessionManager interface {
+	Prepare(ctx context.Context, token string, req deploy.SessionRequest, executable string) (session.Preparation, error)
+	AttachAgent(ctx context.Context, token string, initial *session.WindowSize, resizes <-chan session.WindowSize, stdin io.Reader, stdout, stderr io.Writer) (int, error)
+	Cleanup(token string) error
+}
 
 // Daemon serves the coordinator's local Unix socket. SSH never executes an
 // uploaded program: a restricted account runs Bridge, which relays its stdio to
@@ -41,15 +55,17 @@ type Daemon struct {
 	Version         string
 	BuildID         string
 	Capabilities    []string
-	// Execute performs one admitted worker. Production defaults to the shared
-	// engine; the serial coordinator fence remains outside this callback.
-	Execute  func(context.Context, deploy.Request, []byte) (deploy.Response, error)
-	workWG   sync.WaitGroup
-	builds   chan struct{}
-	deploys  chan struct{}
-	locksMu  sync.Mutex
-	appLocks map[string]*sync.Mutex
-	ingress  chan struct{}
+	// Execute overrides worker and read execution for unit tests. When nil,
+	// production launches supervised soar-op-<id>.service units for mutations
+	// and runs non-mutating reads through executor.ExecuteRead.
+	Execute     func(context.Context, deploy.Request, []byte) (deploy.Response, error)
+	Sessions    SessionManager
+	workWG      sync.WaitGroup
+	builds      chan struct{}
+	deploys     chan struct{}
+	exclusiveMu sync.Mutex
+	locksMu     sync.Mutex
+	appLocks    map[string]*sync.Mutex
 }
 
 func (d *Daemon) defaults() {
@@ -75,8 +91,8 @@ func (d *Daemon) defaults() {
 	if len(d.Capabilities) == 0 {
 		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapDurableQueue, agentproto.CapPerAppConcurrency, agentproto.CapScopedACL, agentproto.CapSecrets, agentproto.CapBackups, agentproto.CapSessions}
 	}
-	if d.Execute == nil {
-		d.Execute = d.defaultExecute
+	if d.Sessions == nil {
+		d.Sessions = session.NewManager()
 	}
 	if d.SocketGID == 0 {
 		// Zero is the Go default but root:root would exclude the restricted
@@ -96,9 +112,18 @@ func (d *Daemon) Serve(ctx context.Context) error {
 	d.builds = make(chan struct{}, d.Queue.policy.MaxConcurrentBuilds)
 	d.deploys = make(chan struct{}, d.Queue.policy.MaxConcurrentDeploys)
 	d.appLocks = make(map[string]*sync.Mutex)
-	d.ingress = make(chan struct{}, 1)
-	if err := d.Queue.Recover(); err != nil {
+	readopted, err := d.reconcileSupervisedWorkers(ctx)
+	if err != nil {
+		return fmt.Errorf("reconcile running workers: %w", err)
+	}
+	readyIDs, err := d.Queue.RecoverReady(readopted)
+	if err != nil {
 		return fmt.Errorf("recover agent queue: %w", err)
+	}
+	for _, id := range readyIDs {
+		idCopy := id
+		d.workWG.Add(1)
+		go func() { defer d.workWG.Done(); d.execute(ctx, idCopy) }()
 	}
 	if info, err := os.Lstat(d.SocketPath); err == nil {
 		if info.Mode()&os.ModeSocket == 0 || info.Mode()&os.ModeSymlink != 0 {
@@ -111,6 +136,11 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(d.SocketPath), 0755); err != nil {
+		return err
+	}
+	// The service umask would mask the directory to root-only, but the
+	// restricted bridge account must reach the socket to connect.
+	if err := os.Chmod(filepath.Dir(d.SocketPath), 0755); err != nil {
 		return err
 	}
 	listener, err := net.Listen("unix", d.SocketPath)
@@ -149,7 +179,7 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("read agent socket peer credentials: %w", err)
 	}
 	if uid >= 0 {
-		account, err := user.Lookup("soar")
+		account, err := user.Lookup(peerAccountName)
 		if err != nil {
 			return fmt.Errorf("look up restricted agent account: %w", err)
 		}
@@ -215,7 +245,7 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 			helloDone = true
 		case agentproto.MethodSubmit:
 			var request agentproto.SubmitRequest
-			if err := decodePayload(frame.Payload, &request); err != nil {
+			if err := decodePayload(frame.Payload, &request); err != nil || agentproto.ValidateSubmitRequest(request) != nil || !request.Request.Mutating() {
 				_ = writeError(conn, "invalid_request", "invalid submit request")
 				continue
 			}
@@ -243,6 +273,52 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 				d.workWG.Add(1)
 				go func() { defer d.workWG.Done(); d.execute(ctx, response.OperationID) }()
 			}
+		case agentproto.MethodRead:
+			var request agentproto.ReadRequest
+			if err := decodePayload(frame.Payload, &request); err != nil || agentproto.ValidateReadRequest(request) != nil {
+				_ = writeError(conn, "invalid_request", "invalid read request")
+				continue
+			}
+			if err := agentproto.Authorize(principal, request.Request.Action, request.Request.App); err != nil {
+				_ = writeError(conn, "forbidden", err.Error())
+				continue
+			}
+			var (
+				response deploy.Response
+				runErr   error
+			)
+			if d.Execute != nil {
+				response, runErr = d.Execute(ctx, request.Request, nil)
+			} else {
+				response, runErr = executor.ExecuteRead(ctx, request.Request)
+			}
+			if runErr != nil {
+				_ = writeError(conn, "read_failed", runErr.Error())
+				continue
+			}
+			if err := writeOK(conn, response); err != nil {
+				return err
+			}
+		case agentproto.MethodSession:
+			var envelope agentproto.SessionEnvelope
+			if err := decodePayload(frame.Payload, &envelope); err != nil || agentproto.ValidateSessionEnvelope(envelope) != nil {
+				_ = writeError(conn, "invalid_request", "invalid session request")
+				continue
+			}
+			action := "exec"
+			if envelope.Request.Action == "logs" {
+				action = "logs"
+			}
+			if err := agentproto.Authorize(principal, action, envelope.Request.App); err != nil {
+				_ = writeError(conn, "forbidden", err.Error())
+				continue
+			}
+			if err := d.serveSession(ctx, conn, reader, envelope); err != nil {
+				return err
+			}
+			// A session consumes the connection: its typed relay ends only with a
+			// terminal exit frame, so no further JSON frames follow.
+			return nil
 		case agentproto.MethodStatus, agentproto.MethodWait:
 			var request struct {
 				OperationID string `json:"operation_id"`
@@ -270,34 +346,245 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 	}
 }
 
+// serveSession prepares one interactive session, validates its admission
+// snapshot, then relays typed stream frames between the client and the attach
+// worker until the worker exits. The exit status is a typed control frame, so
+// workload output cannot forge it.
+func (d *Daemon) serveSession(ctx context.Context, conn net.Conn, reader *bufio.Reader, envelope agentproto.SessionEnvelope) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	executable, err := os.Executable()
+	if err != nil {
+		return writeError(conn, "session_failed", "agent executable is unavailable")
+	}
+	prepared, prepErr := d.Sessions.Prepare(ctx, envelope.Token, envelope.Request, executable)
+	if prepErr == nil && (prepared.Version != 1 || prepared.Token != envelope.Token || prepared.Error != "" || !session.ValidTarget(envelope.Request, prepared.Target)) {
+		_ = d.Sessions.Cleanup(envelope.Token)
+		prepErr = errors.New("invalid session preparation")
+	}
+	if prepErr != nil {
+		return writeError(conn, "session_refused", prepErr.Error())
+	}
+	defer func() { _ = d.Sessions.Cleanup(envelope.Token) }()
+	if err := writeOK(conn, prepared); err != nil {
+		return err
+	}
+	var initial *session.WindowSize
+	if envelope.Window != nil {
+		initial = &session.WindowSize{Rows: envelope.Window.Rows, Cols: envelope.Window.Cols}
+	}
+	var resizeCh chan session.WindowSize
+	if envelope.Request.TTY {
+		resizeCh = make(chan session.WindowSize, 4)
+	}
+	stdin, stdinWriter := io.Pipe()
+	var writeMu sync.Mutex
+	frame := func(kind byte) io.Writer { return chunkWriter{conn: conn, kind: kind, mu: &writeMu} }
+	type attachResult struct {
+		code int
+		err  error
+	}
+	attached := make(chan attachResult, 1)
+	go func() {
+		code, err := d.Sessions.AttachAgent(ctx, envelope.Token, initial, resizeCh, stdin, frame(agentproto.StreamStdout), frame(agentproto.StreamStderr))
+		attached <- attachResult{code, err}
+	}()
+	pumpDone := make(chan struct{})
+	go func() {
+		defer close(pumpDone)
+		defer stdinWriter.Close()
+		if resizeCh != nil {
+			defer close(resizeCh)
+		}
+		closed := false
+		for {
+			kind, data, err := agentproto.DecodeStreamChunk(reader)
+			if err != nil {
+				// A broken connection must not leave a detached worker attached
+				// forever; after a legitimate EOF the loop only drains until the
+				// socket closes.
+				cancel()
+				return
+			}
+			switch kind {
+			case agentproto.StreamEOF:
+				if !closed {
+					closed = true
+					stdinWriter.Close()
+				}
+			case agentproto.StreamResize:
+				size, err := agentproto.DecodeStreamResize(data)
+				if err != nil || resizeCh == nil {
+					stdinWriter.CloseWithError(errors.New("invalid session resize frame"))
+					cancel()
+					return
+				}
+				next := session.WindowSize{Rows: size.Rows, Cols: size.Cols}
+				select {
+				case resizeCh <- next:
+				default:
+					select {
+					case <-resizeCh:
+					default:
+					}
+					select {
+					case resizeCh <- next:
+					default:
+					}
+				}
+			case agentproto.StreamInput:
+				if closed {
+					stdinWriter.CloseWithError(errors.New("invalid session input frame"))
+					cancel()
+					return
+				}
+				if _, err := stdinWriter.Write(data); err != nil {
+					return
+				}
+			default:
+				stdinWriter.CloseWithError(errors.New("invalid session input frame"))
+				cancel()
+				return
+			}
+		}
+	}()
+	result := <-attached
+	// Remove session staging synchronously before transmitting the terminal
+	// exit frame so callers immediately observe clean /run/soar-sessions state.
+	_ = d.Sessions.Cleanup(envelope.Token)
+	exit := agentproto.SessionExit{ExitCode: result.code}
+	if result.err != nil || result.code < 0 || result.code > 255 {
+		exit.ExitCode = -1
+		exit.Error = "session execution failed"
+		if result.err != nil {
+			exit.Error = result.err.Error()
+		}
+	}
+	writeMu.Lock()
+	writeErr := agentproto.EncodeStreamChunk(conn, agentproto.StreamControl, mustJSON(exit))
+	writeMu.Unlock()
+	cancel()
+	return writeErr
+}
+
+type chunkWriter struct {
+	conn net.Conn
+	kind byte
+	mu   *sync.Mutex
+}
+
+func (w chunkWriter) Write(data []byte) (int, error) {
+	written := 0
+	for len(data) > 0 {
+		size := min(len(data), agentproto.MaxStreamChunk)
+		w.mu.Lock()
+		err := agentproto.EncodeStreamChunk(w.conn, w.kind, data[:size])
+		w.mu.Unlock()
+		if err != nil {
+			return written, err
+		}
+		data = data[size:]
+		written += size
+	}
+	return written, nil
+}
+
+func mustJSON(v any) []byte {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return []byte("{}")
+	}
+	return data
+}
+
 func (d *Daemon) execute(ctx context.Context, id string) {
+	peeked, ready, err := d.Queue.PeekQueued(id)
+	if err != nil || !ready {
+		return
+	}
+	// Claim concurrency slots BEFORE transitioning from PhaseQueued to
+	// PhaseRunning: if the daemon stops while an operation is waiting for
+	// capacity, it stays cleanly queued for the next daemon rather than being
+	// falsely fenced as uncertain.
+	releaseSlots, err := d.acquireOperationSlots(ctx, peeked)
+	if err != nil {
+		return
+	}
+	defer releaseSlots()
+
 	request, payload, err := d.Queue.Start(id)
 	if err != nil {
 		return
 	}
-	if request.Mutating() {
-		if err := acquire(ctx, d.deploys); err != nil {
-			_ = d.Queue.Fence(id, "agent stopped before deploy admission")
-			return
-		}
-		defer release(d.deploys)
-		lock := d.appLock(request.App)
-		lock.Lock()
-		defer lock.Unlock()
+	if d.Execute == nil {
+		d.runSupervisedWorker(ctx, id, request, payload)
+		return
 	}
-	if request.Action == "deploy" || request.Action == "run" {
-		if err := acquire(ctx, d.builds); err != nil {
-			_ = d.Queue.Fence(id, "agent stopped before build admission")
-			return
-		}
-		defer release(d.builds)
-	}
-	response, runErr := d.Execute(ctx, request, payload)
+	workCtx, stop := context.WithTimeout(ctx, 21*time.Minute)
+	defer stop()
+	response, runErr := d.Execute(workCtx, request, payload)
 	if ctx.Err() != nil {
 		_ = d.Queue.Fence(id, "agent stopped while worker outcome was unknown")
 		return
 	}
 	_ = d.Queue.Finish(id, response, runErr)
+}
+
+func (d *Daemon) acquireOperationSlots(ctx context.Context, request deploy.Request) (func(), error) {
+	if !request.Mutating() {
+		return func() {}, nil
+	}
+	exclusive := request.App == "" || request.Action == "destroy" || request.Action == "service-remove"
+	if exclusive {
+		d.exclusiveMu.Lock()
+		acquired := 0
+		for acquired < cap(d.deploys) {
+			if err := acquire(ctx, d.deploys); err != nil {
+				for i := 0; i < acquired; i++ {
+					release(d.deploys)
+				}
+				d.exclusiveMu.Unlock()
+				return nil, err
+			}
+			acquired++
+		}
+		var appMu *sync.Mutex
+		if request.App != "" {
+			appMu = d.appLock(request.App)
+			appMu.Lock()
+		}
+		return func() {
+			if appMu != nil {
+				appMu.Unlock()
+			}
+			for i := 0; i < acquired; i++ {
+				release(d.deploys)
+			}
+			d.exclusiveMu.Unlock()
+		}, nil
+	}
+
+	if err := acquire(ctx, d.deploys); err != nil {
+		return nil, err
+	}
+	appMu := d.appLock(request.App)
+	appMu.Lock()
+	hasBuild := false
+	if request.Action == "deploy" || request.Action == "run" {
+		if err := acquire(ctx, d.builds); err != nil {
+			appMu.Unlock()
+			release(d.deploys)
+			return nil, err
+		}
+		hasBuild = true
+	}
+	return func() {
+		if hasBuild {
+			release(d.builds)
+		}
+		appMu.Unlock()
+		release(d.deploys)
+	}, nil
 }
 
 func acquire(ctx context.Context, sem chan struct{}) error {
@@ -318,18 +605,6 @@ func (d *Daemon) appLock(app string) *sync.Mutex {
 		d.appLocks[app] = lock
 	}
 	return lock
-}
-func (d *Daemon) defaultExecute(ctx context.Context, request deploy.Request, payload []byte) (deploy.Response, error) {
-	manager := deploy.NewManager()
-	// Per-app admission happens above; bypass the legacy host-wide flock.
-	manager.MutationLock = func(context.Context, string, bool) (bool, func(), error) { return false, func() {}, nil }
-	manager.IngressLock = func(ctx context.Context) (func(), error) {
-		if err := acquire(ctx, d.ingress); err != nil {
-			return nil, err
-		}
-		return func() { release(d.ingress) }, nil
-	}
-	return manager.Execute(ctx, request, payload)
 }
 
 func decodePayload(data json.RawMessage, dst any) error {

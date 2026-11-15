@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -98,7 +100,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 					if parts[0] == "group" && (len(fields) != 4 || fields[0] != parts[1] || fields[3] != "") {
 						return nil, errors.New("unexpected service group after interrupted setup")
 					}
-					if parts[0] == "passwd" && parts[1] == "soar" && (len(fields) != 7 || fields[0] != "soar" || fields[5] != "/nonexistent" || fields[6] != AgentPath) {
+					if parts[0] == "passwd" && parts[1] == "soar" && (len(fields) != 7 || fields[0] != "soar" || (fields[5] != "/" && fields[5] != "/nonexistent") || fields[6] != AgentPath) {
 						return nil, errors.New("unexpected soar account after interrupted setup")
 					}
 				}
@@ -265,6 +267,10 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 			return nil, err
 		}
 	}
+	// Drop the restricted Match block from the running daemon as well.
+	if _, err := m.command(ctx, "systemctl", "reload", "ssh"); err != nil {
+		return nil, fmt.Errorf("reload ssh after removing the restricted account policy: %w", err)
+	}
 	if _, err := m.command(ctx, "systemctl", "daemon-reload"); err != nil {
 		return nil, err
 	}
@@ -292,9 +298,65 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if err := m.removeAppReceipts(s); err != nil {
 		return nil, err
 	}
+	if err := m.removeQueueHistory(); err != nil {
+		return nil, err
+	}
 	s.Phase = "removed"
 	if err := m.step(s, "complete"); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+func (m *Manager) removeQueueHistory() error {
+	for _, transient := range []string{"/run/soar", "/run/lock/soar"} {
+		target := m.path(transient)
+		if err := rejectSymlink(target); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	queueRoot := m.path("/var/lib/soar/queue")
+	if err := rejectSymlink(queueRoot); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(queueRoot); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	operations := filepath.Join(queueRoot, "operations")
+	if err := rejectSymlink(operations); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(operations)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, entry := range entries {
+		path := filepath.Join(operations, entry.Name())
+		if err := rejectSymlink(path); err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if err := os.Remove(operations); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(queueRoot); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if runtime.GOOS != "windows" {
+		parent, err := os.Open(filepath.Dir(queueRoot))
+		if err != nil {
+			return err
+		}
+		defer parent.Close()
+		return parent.Sync()
+	}
+	return nil
 }

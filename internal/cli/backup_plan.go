@@ -120,16 +120,8 @@ func backupPlanCommand(ctx context.Context, args []string, stdin io.Reader, stdo
 		}
 		return 1
 	}
-	report, err := deps.Inspect(ctx, server.Target)
-	if err != nil || report == nil || !report.Supported || !report.Root {
-		return fail(false)
-	}
-	binary, err := deps.Artifact(*executor, report.Architecture)
-	if err != nil {
-		return fail(false)
-	}
 	run := func(r backup.PlanRequest) (*backup.PlanResponse, bool) {
-		response, e := deps.Run(ctx, server.Target, deploy.Request{Version: 1, Action: "backup-plan", App: *app, Host: hostConfig, BackupPlan: &r}, binary, nil)
+		response, e := runAppTransport(ctx, server.Target, *executor, deploy.Request{Version: 1, Action: "backup-plan", App: *app, Host: hostConfig, BackupPlan: &r}, nil, deps)
 		if response.ErrorCode != "" {
 			if message := deploy.RefusalMessage("backup-plan", response.ErrorCode); message != "" {
 				fmt.Fprintln(stderr, message)

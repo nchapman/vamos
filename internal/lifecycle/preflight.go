@@ -1,9 +1,12 @@
 package lifecycle
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,18 +176,8 @@ func (m *Manager) checkStateDirectory(ctx context.Context) error {
 				return err
 			}
 		case "queue":
-			queueRoot := m.path("/var/lib/soar/queue")
-			queueEntries, err := os.ReadDir(queueRoot)
-			if err != nil || len(queueEntries) != 1 || queueEntries[0].Name() != "operations" || !queueEntries[0].IsDir() {
-				return errors.New("agent queue is nonempty; inspect or resolve recorded operations before teardown")
-			}
-			operations := filepath.Join(queueRoot, "operations")
-			if err := rejectSymlink(operations); err != nil {
+			if err := m.verifyQueueIdle(); err != nil {
 				return err
-			}
-			operationEntries, err := os.ReadDir(operations)
-			if err != nil || len(operationEntries) != 0 {
-				return errors.New("agent queue is nonempty; inspect or resolve recorded operations before teardown")
 			}
 		case "buildkit":
 			if s.PurgeApproved {
@@ -200,6 +193,76 @@ func (m *Manager) checkStateDirectory(ctx context.Context) error {
 			}
 		default:
 			return fmt.Errorf("unexpected Soar state %s; refusing removal", entry.Name())
+		}
+	}
+	return nil
+}
+
+func (m *Manager) verifyQueueIdle() error {
+	queueRoot := m.path("/var/lib/soar/queue")
+	if err := rejectSymlink(queueRoot); err != nil {
+		return err
+	}
+	queueEntries, err := os.ReadDir(queueRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("cannot inspect coordinator queue: %w", err)
+	}
+	if len(queueEntries) != 1 || queueEntries[0].Name() != "operations" || !queueEntries[0].IsDir() {
+		return errors.New("agent queue is nonempty; inspect or resolve recorded operations before teardown")
+	}
+	operations := filepath.Join(queueRoot, "operations")
+	if err := rejectSymlink(operations); err != nil {
+		return err
+	}
+	operationEntries, err := os.ReadDir(operations)
+	if err != nil {
+		return fmt.Errorf("cannot inspect coordinator queue operations: %w", err)
+	}
+	type queueRecord struct {
+		OperationID string `json:"operation_id"`
+		Phase       string `json:"phase"`
+		ResolvedBy  string `json:"resolved_by"`
+	}
+	var records []queueRecord
+	succeeded := make(map[string]bool)
+	for _, entry := range operationEntries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			return errors.New("agent queue has staged or unexpected entries; inspect or resolve operations before teardown")
+		}
+		info, err := entry.Info()
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > 1<<20 {
+			return errors.New("agent queue record is unreadable; inspect or resolve recorded operations before teardown")
+		}
+		data, err := os.ReadFile(filepath.Join(operations, entry.Name()))
+		if err != nil {
+			return errors.New("agent queue record is unreadable; inspect or resolve recorded operations before teardown")
+		}
+		var record queueRecord
+		dec := json.NewDecoder(bytes.NewReader(data))
+		if err := dec.Decode(&record); err != nil {
+			return errors.New("agent queue record is invalid; inspect or resolve recorded operations before teardown")
+		}
+		var trailing any
+		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+			return errors.New("agent queue record is invalid; inspect or resolve recorded operations before teardown")
+		}
+		if record.Phase == "succeeded" && record.OperationID != "" {
+			succeeded[record.OperationID] = true
+		}
+		records = append(records, record)
+	}
+	for _, record := range records {
+		switch record.Phase {
+		case "succeeded", "failed", "cancelled":
+		case "uncertain":
+			if record.ResolvedBy == "" || !succeeded[record.ResolvedBy] {
+				return errors.New("agent queue has unfinished or uncertain operations; inspect or resolve them before teardown")
+			}
+		default:
+			return errors.New("agent queue has unfinished or uncertain operations; inspect or resolve them before teardown")
 		}
 	}
 	return nil

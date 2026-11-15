@@ -179,7 +179,11 @@ type Manager struct {
 	MutationLock func(ctx context.Context, app string, mut bool) (active bool, unlock func(), err error)
 	// IngressLock serializes short Caddyfile and live-route transactions when
 	// multiple apps deploy concurrently.
-	IngressLock    func(ctx context.Context) (func(), error)
+	IngressLock func(ctx context.Context) (func(), error)
+	// Snapshotter overrides the BuildKit snapshotter choice ("auto" or
+	// "native"). Empty defers to the SOAR_BUILDKIT_SNAPSHOTTER environment
+	// variable so operators can keep configuring hosts through systemd.
+	Snapshotter    string
 	Root           string
 	Run            Runner
 	HTTP           *http.Client
@@ -995,31 +999,8 @@ func (m *Manager) supersede(c context.Context, j *journal) error {
 			return err
 		}
 	}
-	old, e := m.routes(j, false)
-	if e != nil {
-		return e
-	}
-	p := m.path("/etc/caddy/Caddyfile")
-	if e = safe(p); e != nil {
-		return e
-	}
-	b, e := os.ReadFile(p)
-	if e != nil {
-		return e
-	}
-	if string(b) != old {
-		return errors.New("Caddyfile drift")
-	}
-	expected, e := m.adapt(c, old)
-	if e != nil {
-		return e
-	}
-	live, e := m.live(c)
-	if e != nil {
-		return e
-	}
-	if !sameJSON(live, expected) {
-		return errors.New("Caddy runtime drift")
+	if err := m.verifyCurrentRoutes(c, j); err != nil {
+		return err
 	}
 	yes, e := m.exists(c, "container", j.Candidate.Container)
 	if e != nil {

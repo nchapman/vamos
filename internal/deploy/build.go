@@ -34,6 +34,17 @@ type ImageBuilder interface {
 	Build(context.Context, string, string, string, []byte) (process.Result, error)
 }
 
+// builderSnapshotter is privileged operator configuration, not an application
+// option. Native is useful on isolated hosts that cannot mount nested overlays;
+// the agent sets it from the host's systemd manager environment while direct
+// executor runs keep reading their own environment.
+func builderSnapshotter(m *Manager) string {
+	if m.Snapshotter != "" {
+		return m.Snapshotter
+	}
+	return os.Getenv("SOAR_BUILDKIT_SNAPSHOTTER")
+}
+
 func (m *Manager) buildImage(ctx context.Context, hostID, dockerfile, iidfile string, archive []byte) (process.Result, error) {
 	// In particular, live restore must not keep a builder running across a
 	// daemon restart while its network guards are unavailable.
@@ -43,11 +54,9 @@ func (m *Manager) buildImage(ctx context.Context, hostID, dockerfile, iidfile st
 	builder := m.Builder
 	if builder == nil {
 		builder = &buildkit.Manager{
-			Root: m.Root,
-			Run:  buildkit.Runner(m.Run),
-			// Privileged operator configuration, not an application option.
-			// Native is useful on isolated hosts that cannot mount nested overlays.
-			Snapshotter: os.Getenv("SOAR_BUILDKIT_SNAPSHOTTER"),
+			Root:        m.Root,
+			Run:         buildkit.Runner(m.Run),
+			Snapshotter: builderSnapshotter(m),
 		}
 	}
 	return builder.Build(ctx, hostID, dockerfile, iidfile, archive)

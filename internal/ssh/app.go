@@ -64,6 +64,20 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 	command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
 	result, runErr := run(ctx, "ssh", arguments(target, command), payload)
 	decodeErr := decodeJSON(result.Stdout, &response)
+	var connErr error
+	if runErr != nil {
+		connErr = connectionError(target, result, runErr)
+	}
+	return appOutcome(request, response, decodeErr, connErr)
+}
+
+// appOutcome maps one decoded executor response to the CLI's strict result
+// semantics. decodeErr is set when the envelope is untrusted or incomplete;
+// connErr carries a transport failure. Both transports (uploaded executor and
+// installed agent) share these refusal and acknowledgment rules.
+func appOutcome(request deploy.Request, response deploy.Response, decodeErr, connErr error) (deploy.Response, error) {
+	runErr := connErr
+	mutation := request.Mutating()
 	if request.Action == "backup-plan" {
 		if decodeErr == nil && response.Version == 1 && response.Error != "" {
 			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {
@@ -124,7 +138,7 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 		return response, fmt.Errorf("run outcome unknown; inspect soar status --run %s", request.Operation)
 	}
 	if runErr != nil {
-		err := connectionError(target, result, runErr)
+		err := runErr
 		if mutation {
 			return response, fmt.Errorf("deployment outcome may be unknown; use soar status before retrying: %w", err)
 		}

@@ -1,10 +1,10 @@
 # Agent RPC and Handshake Protocol
 
-**Status: Phase 1 protocol specification implemented in `internal/agentproto`; `soar-agent` daemon scheduled for Phase 2.**
+**Status: implemented — `internal/agentproto` frames, `internal/agent` daemon, `internal/agentclient`, and the restricted SSH bridge in `internal/ssh`.**
 
 ## Transport and framing
 
-- Requests and responses use strict single-document newline-delimited JSON frames bounded to `64 KiB` (`MaxEnvelopeBytes`) for control metadata.
+- Requests and responses use strict single-document newline-delimited JSON frames bounded to `128 KiB` (`MaxEnvelopeBytes`) so a `64 KiB` executor response fits inside an outer `OperationRecord` / `RPCResponse` envelope.
 - Every frame decoder sets `DisallowUnknownFields()` and rejects trailing JSON documents.
 - Large inputs (build context archives, private secret payloads, repository credentials) remain bounded out-of-band stream payloads alongside structured metadata—never inlined into `RPCRequest` JSON. A `submit` declares `payload_bytes` and `payload_sha256`; after the accepted response the client writes exactly those bytes before the next frame. The agent stores them mode `0600`, verifies the digest, and fences an incomplete transfer as `uncertain`.
 
@@ -23,6 +23,14 @@ Every client connection begins with `hello` before submitting mutations:
    - Client older than agent `api_min`: fail before sending payloads and instruct upgrading the local CLI.
    - Agent older than client `api_min` or missing a required capability: fail before mutation and instruct `soar server upgrade`.
 
+## Methods
+
+- `hello` — capability handshake; required first.
+- `submit` — mutating operations only. Persists admission, accepts the declared payload stream, and returns a reconnectable operation ID. Read-only actions are refused.
+- `read` — authorized non-mutating requests (status, logs, previews, listings) executed directly without queue records, so observation never fences teardown.
+- `status` / `wait` — reattach to a recorded operation; `wait` blocks server-side until a terminal phase.
+- `session` — one interactive exec or followed log stream. After the validated preparation response the connection switches to typed length-prefixed frames (`0x01` stdout, `0x04` stderr, `0x05` client stdin, `0x03` stdin EOF, `0x06` TTY window resize); the terminal exit status is a distinct `0x02` control frame, so workload output cannot forge it. A session consumes the connection.
+
 ## Durable queueing and idempotency
 
 - `submit` carries a 32–64 hex `idempotency_key` alongside a validated `deploy.Request` and, when needed, the size and SHA-256 of its following out-of-band payload.
@@ -38,3 +46,4 @@ Every client connection begins with `hello` before submitting mutations:
 - `admin` principals may execute host-administration actions (`server-add`, `server-upgrade`, `server-configure`, `server-teardown`, `acl-manage`).
 - `deployer` principals are confined to explicitly allowed apps and actions and cannot list all host apps (`apps`) without explicit wildcard scope.
 - Scoped CI access is mapped by root-owned `/etc/soar/authorized_keys`: every nonempty key must use `restrict,command="/usr/local/lib/soar/soar-agent internal-agent bridge --principal <id>"` and name a principal in `/etc/soar/principals.json`. The daemon refuses unsafe or unmatched mappings at startup, so the client cannot choose its own principal.
+- `soar server add` installs the operator's own key (SSH agent, `~/.ssh`, or `--deploy-key PATH`) as the initial `default-deployer` bridge key with wildcard app scope. Ordinary CLI app traffic (`deploy`, `status`, `logs`, `run`, `rollback`, `resume`, `cleanup`, `destroy`, `service`, `secrets`, `backup`, `apps`, `exec`, `console`) connects as `soar@host` through this bridge; only host administration (`server add/upgrade/teardown`) still uses root SSH. An explicit `--executor` override is rejected on the agent path; recover version skew with `soar server upgrade`.

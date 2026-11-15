@@ -181,7 +181,7 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if err = validateMultiJournal(next, r.App); err != nil {
 			return
 		}
-		if err = m.reserveHostnames(next); err != nil {
+		if err = m.reserveHostnames(ctx, next); err != nil {
 			return
 		}
 		if err = m.verifyMultiHost(); err != nil {

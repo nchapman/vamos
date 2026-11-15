@@ -22,7 +22,7 @@ const (
 	APIVersion       = 1
 	MinSupportedAPI  = 1
 	MaxSupportedAPI  = 1
-	MaxEnvelopeBytes = 64 * 1024
+	MaxEnvelopeBytes = 128 * 1024
 )
 
 const (
@@ -48,10 +48,12 @@ type Method string
 const (
 	MethodHello          Method = "hello"
 	MethodSubmit         Method = "submit"
+	MethodRead           Method = "read"
 	MethodStatus         Method = "status"
 	MethodWait           Method = "wait"
 	MethodCancel         Method = "cancel"
 	MethodHostStatus     Method = "host-status"
+	MethodSession        Method = "session"
 	MethodSessionPrepare Method = "session-prepare"
 )
 
@@ -341,6 +343,54 @@ type SubmitResponse struct {
 	Deduplicated   bool           `json:"deduplicated,omitempty"`
 }
 
+// ReadRequest carries one non-mutating app request. Reads never persist queue
+// records: they are authorized, executed, and answered directly.
+type ReadRequest struct {
+	Request deploy.Request `json:"request"`
+}
+
+func ValidateReadRequest(r ReadRequest) error {
+	if err := deploy.ValidateRequest(r.Request); err != nil {
+		return err
+	}
+	if r.Request.Mutating() {
+		return errors.New("read requires a non-mutating action; use submit")
+	}
+	return nil
+}
+
+type WindowSize struct {
+	Rows uint16 `json:"rows"`
+	Cols uint16 `json:"cols"`
+}
+
+// SessionEnvelope opens one interactive session. The client-generated token
+// names the host staging directory exactly as the direct executor transport
+// does; the forced bridge principal still owns authorization.
+type SessionEnvelope struct {
+	Token   string                `json:"token"`
+	Request deploy.SessionRequest `json:"request"`
+	Window  *WindowSize           `json:"window,omitempty"`
+}
+
+func ValidateSessionEnvelope(s SessionEnvelope) error {
+	if !hex32RE.MatchString(s.Token) {
+		return errors.New("session token must be 32 lowercase hex characters")
+	}
+	if !s.Request.TTY && s.Window != nil {
+		return errors.New("window size requires a TTY session")
+	}
+	return deploy.ValidateSessionRequest(s.Request)
+}
+
+// SessionExit is the typed control frame that terminates a session relay. It
+// cannot be spoofed by workload output because stream data always travels in
+// typed chunk frames.
+type SessionExit struct {
+	ExitCode int    `json:"exit_code"`
+	Error    string `json:"error,omitempty"`
+}
+
 type OperationRecord struct {
 	Version        int              `json:"version"`
 	OperationID    string           `json:"operation_id"`
@@ -357,6 +407,7 @@ type OperationRecord struct {
 	Response       *deploy.Response `json:"response,omitempty"`
 	Error          string           `json:"error,omitempty"`
 	ErrorCode      string           `json:"error_code,omitempty"`
+	ResolvedBy     string           `json:"resolved_by,omitempty"`
 }
 
 func ValidateOperationRecord(rec OperationRecord) error {
@@ -389,6 +440,9 @@ func ValidateOperationRecord(rec OperationRecord) error {
 	}
 	if rec.CreatedAt.IsZero() {
 		return errors.New("created_at is required")
+	}
+	if rec.ResolvedBy != "" && (rec.Phase != PhaseUncertain || !hex32RE.MatchString(rec.ResolvedBy)) {
+		return errors.New("resolved_by requires an uncertain operation and 32-char hex operation_id")
 	}
 	return nil
 }

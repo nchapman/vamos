@@ -226,7 +226,7 @@ func (m *Manager) executeRollback(ctx context.Context, r Request, old *journal, 
 	if err = m.verifyMultiHost(); err != nil {
 		return resp, err
 	}
-	if err = m.reserveHostnames(next); err != nil {
+	if err = m.reserveHostnames(ctx, next); err != nil {
 		return resp, err
 	}
 	if err = m.verifyRoutes(ctx, old); err != nil {

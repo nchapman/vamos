@@ -257,6 +257,8 @@ def run(h):
     # Destroy is explicitly not a data purge; never edit production journals to
     # trick teardown into passing. The parent disposes of the isolated guest.
     before = identities(h.status(app))
+    h.cli("server", "upgrade", "--yes", "local")
+    stable(before, before)
     cli(orders, "destroy")
     stable(before, before)
     cli(orders, "destroy", "--yes")

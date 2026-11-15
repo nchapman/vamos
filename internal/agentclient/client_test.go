@@ -1,8 +1,11 @@
 package agentclient
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -49,5 +52,29 @@ func TestHandshakeSubmitAndReattachStatus(t *testing.T) {
 	record, err := client.Status(context.Background(), response.OperationID)
 	if err != nil || record.OperationID != response.OperationID {
 		t.Fatalf("record=%+v err=%v", record, err)
+	}
+}
+
+func TestStreamRelayUnblocksOnContextCancel(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+	stream := &Stream{conn: clientConn, reader: bufio.NewReader(clientConn), writer: clientConn}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := stream.Relay(ctx, nil, io.Discard, io.Discard)
+		done <- err
+	}()
+	// Drain the initial EOF frame on serverConn and then hold the stream open.
+	_, _, _ = agentproto.DecodeStreamChunk(serverConn)
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Relay err = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stream.Relay hung on context cancellation")
 	}
 }

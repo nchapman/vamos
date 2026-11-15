@@ -92,7 +92,7 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		}
 		return out(value + "\n")
 	case "useradd":
-		f.accounts["passwd:soar"] = "soar:x:997:997::/nonexistent:" + AgentPath
+		f.accounts["passwd:soar"] = "soar:x:997:997::/:" + AgentPath
 		f.accounts["group:soar"] = "soar:x:997:"
 		return out("")
 	case "systemctl":
@@ -103,6 +103,8 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			}
 			return out("not-found\n")
 		case "daemon-reload":
+			return out("")
+		case "reload":
 			return out("")
 		case "enable":
 			if f.failStart {
@@ -115,7 +117,7 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		case "stop":
 			f.active = false
 			return out("")
-		case "restart":
+		case "start", "restart":
 			f.active = true
 			return out("")
 		case "is-active":

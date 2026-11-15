@@ -1,6 +1,6 @@
 # Proposal: server coordinator agent, non-root deploys, and shared engine boundary
 
-**Status: proposed architecture (not yet implemented).**
+**Status: implemented (Phases 1–3); local dev stack (Phase 4) deferred.**
 Current Soar commands still upload a Linux executor over `root` SSH per operation
 and serialize all host mutations with immediate busy refusal (`/run/lock/soar-host.lock`
 and a single `soar-host-operation.service` unit). Local development (`soar dev` /

@@ -58,20 +58,7 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	inspectCtx, stop := context.WithTimeout(ctx, 15*time.Second)
-	report, err := deps.Inspect(inspectCtx, server.Target)
-	stop()
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
-	if report == nil || !report.Supported || !report.Root {
-		return lifecycleError(stderr, errors.New("apps requires root on a supported Ubuntu host"))
-	}
-	binary, err := deps.Artifact(*executor, report.Architecture)
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
-	response, err := deps.Run(ctx, server.Target, request, binary, nil)
+	response, err := runAppTransport(ctx, server.Target, *executor, request, nil, deps)
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}

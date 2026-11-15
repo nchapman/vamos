@@ -77,7 +77,7 @@ func streamApp(ctx context.Context, target string, request deploy.SessionRequest
 	if runErr != nil {
 		return -1, connectionError(target, result, runErr)
 	}
-	if decodeErr != nil || prepared.Version != 1 || prepared.Token != token || !validSessionTarget(request, prepared.Target) {
+	if decodeErr != nil || prepared.Version != 1 || prepared.Token != token || !session.ValidTarget(request, prepared.Target) {
 		return -1, errors.New("invalid session preparation response; no command attached")
 	}
 	cancel()
@@ -94,16 +94,6 @@ func streamApp(ctx context.Context, target string, request deploy.SessionRequest
 		return -1, errors.New("log stream interrupted; reconnect explicitly to select the current container")
 	}
 	return code, nil
-}
-
-func validSessionTarget(r deploy.SessionRequest, t deploy.SessionTarget) bool {
-	if t.App != r.App || t.Service == "" || (r.Service != "" && t.Service != r.Service) || t.Candidate != r.Candidate || !sessionToken.MatchString(t.HostIdentity) || !sessionToken.MatchString(t.Incarnation) || !sessionToken.MatchString(t.Operation) || !sessionContainerID.MatchString(t.ContainerID) {
-		return false
-	}
-	if binding, ok := r.Bindings[t.Service]; ok && (binding.HostIdentity != t.HostIdentity || binding.Incarnation != t.Incarnation) {
-		return false
-	}
-	return true
 }
 
 func sessionArguments(target, command string, tty bool) []string {
