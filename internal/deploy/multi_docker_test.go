@@ -1101,3 +1101,25 @@ func TestMultiDockerPostAdmissionDriftWithdrawal(t *testing.T) {
 		})
 	}
 }
+
+func TestMultiDockerPostAdmissionWithdrawalToleratesDaemonNormalization(t *testing.T) {
+	m, j, r, f := multiDockerFixture(t, true)
+	ensureMultiDocker(t, m, j, r)
+	j.ServiceStates[r.Service].Phase = "aliasing"
+	m.HTTP.Transport = transport(func(*http.Request) (*http.Response, error) {
+		v := f.containers[r.Container]
+		if hasAlias(v, network(j), r.Service) {
+			// Simulate dockerd restart normalizing nil HostConfig slices/bools
+			// while the candidate restarts during post-admission readiness.
+			off := false
+			v.HostConfig.DNS = []string{}
+			v.HostConfig.OomKillDisable = &off
+			v.RestartCount++
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+	})
+	err := m.multiAdmitAlias(context.Background(), j, r)
+	if err == nil || !strings.Contains(err.Error(), "endpoint withdrawn") || len(f.containers[r.Container].NetworkSettings.Networks) != 0 {
+		t.Fatalf("expected endpoint withdrawal after daemon normalization, got err=%v networks=%v", err, f.containers[r.Container].NetworkSettings.Networks)
+	}
+}

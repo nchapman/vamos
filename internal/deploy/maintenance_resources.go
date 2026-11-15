@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nchapman/vamos/internal/buildkit"
 	"github.com/nchapman/vamos/internal/config"
 )
 
@@ -244,6 +245,9 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 			return nil, e
 		}
 		if !owned(v.Config.Labels, j, "") {
+			if buildkit.IsOwnedContainer(j.HostID, r.Name, v.Config.Labels) {
+				continue
+			}
 			prefix := "vamos-" + j.App + "-"
 			if retainedContainer(j, r.Name) || (strings.HasPrefix(r.Name, prefix) && operation.MatchString(strings.TrimPrefix(r.Name, prefix))) {
 				return nil, errors.New("foreign app container name")

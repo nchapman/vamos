@@ -296,7 +296,7 @@ func (m *Manager) verifyRoutes(c context.Context, j *journal) error {
 	if e != nil {
 		return e
 	}
-	p := m.path("/etc/caddy/Caddyfile")
+	p := m.path(lifecycle.CaddyfilePath)
 	if e = safe(p); e != nil {
 		return e
 	}

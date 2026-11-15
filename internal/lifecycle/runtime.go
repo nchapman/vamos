@@ -44,7 +44,7 @@ func readCaddyConfig(ctx context.Context) ([]byte, error) {
 	transport := &http.Transport{Proxy: nil}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:2019/config/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, CaddyAdminURL, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
-const baseCaddy = "{\n\tadmin 127.0.0.1:2019\n}\n"
+const baseCaddy = lifecycle.BaseCaddyfile
 
 // caddy runs the Caddy CLI inside the managed ingress container. /etc/caddy is
 // mounted at the same path, so arguments use host paths without the test root.
@@ -45,7 +45,7 @@ func (m *Manager) adapt(c context.Context, text string) ([]byte, error) {
 	return m.caddy(c, "adapt", "--config", name, "--adapter", "caddyfile")
 }
 func (m *Manager) live(c context.Context) ([]byte, error) {
-	r, _ := http.NewRequestWithContext(c, "GET", "http://127.0.0.1:2019/config/", nil)
+	r, _ := http.NewRequestWithContext(c, "GET", lifecycle.CaddyAdminURL, nil)
 	resp, e := m.HTTP.Do(r)
 	if e != nil {
 		return nil, e
@@ -80,7 +80,7 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 	if j.NewCaddy != "" && (j.OldCaddy != old || j.NewCaddy != next) {
 		return errors.New("promotion intent differs from journals")
 	}
-	p := m.path("/etc/caddy/Caddyfile")
+	p := m.path(lifecycle.CaddyfilePath)
 	if e = safe(p); e != nil {
 		return e
 	}
@@ -137,7 +137,7 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 		}
 	}
 	if !isNew {
-		_, reloadErr := m.caddy(c, "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile")
+		_, reloadErr := m.caddy(c, "reload", "--config", lifecycle.CaddyfilePath, "--adapter", "caddyfile")
 		live, e = m.live(c)
 		if e != nil {
 			return errors.Join(reloadErr, e)
@@ -188,7 +188,7 @@ func (m *Manager) verifyUnservedPromotion(c context.Context, j *journal) error {
 	if old != j.OldCaddy || next != j.NewCaddy {
 		return errors.New("promotion intent differs from journals")
 	}
-	p := m.path("/etc/caddy/Caddyfile")
+	p := m.path(lifecycle.CaddyfilePath)
 	if err = safe(p); err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func (m *Manager) reconcilePending(c context.Context, j *journal) error {
 	if old != j.OldCaddy || next != j.NewCaddy {
 		return errors.New("promotion intent differs from journals")
 	}
-	p := m.path("/etc/caddy/Caddyfile")
+	p := m.path(lifecycle.CaddyfilePath)
 	if e = safe(p); e != nil {
 		return e
 	}
@@ -313,7 +313,7 @@ func (m *Manager) verifyCurrentRoutes(c context.Context, j *journal) error {
 	if e != nil {
 		return e
 	}
-	p := m.path("/etc/caddy/Caddyfile")
+	p := m.path(lifecycle.CaddyfilePath)
 	if e = safe(p); e != nil {
 		return e
 	}

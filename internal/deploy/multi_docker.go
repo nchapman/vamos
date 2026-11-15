@@ -666,7 +666,7 @@ func (m *Manager) instanceAdmitAlias(ctx context.Context, j *journal, r runtimeR
 	// Compare with the fully verified pre-admission object. Effective port/IP
 	// drift is precisely a reason to withdraw, not permission to ignore a
 	// different container, labels, environment, or configured publish intent.
-	if verifyErr != nil || beforeWithdrawal.ID != v.ID || beforeWithdrawal.Name != v.Name || !reflect.DeepEqual(beforeWithdrawal.Config, v.Config) || !reflect.DeepEqual(beforeWithdrawal.HostConfig, v.HostConfig) || !reflect.DeepEqual(beforeWithdrawal.Mounts, v.Mounts) {
+	if verifyErr != nil || !sameContainerSpec(beforeWithdrawal, v) {
 		return errors.New("candidate readiness failed; endpoint withdrawal unconfirmed")
 	}
 	if len(beforeWithdrawal.NetworkSettings.Networks) == 0 {
@@ -685,6 +685,58 @@ func (m *Manager) instanceAdmitAlias(ctx context.Context, j *journal, r runtimeR
 		return errors.New("candidate readiness failed; endpoint withdrawal unconfirmed")
 	}
 	return errors.New("candidate readiness failed; endpoint withdrawn")
+}
+
+// sameContainerSpec compares two inspections of the same container while
+// tolerating Docker daemon restarts that normalize nil slices/maps to empty and
+// OomKillDisable from nil to false.
+func sameContainerSpec(a, b *inspection) bool {
+	if a == nil || b == nil || a.ID != b.ID || a.Name != b.Name {
+		return false
+	}
+	ca, cb := canonicalSpec(*a), canonicalSpec(*b)
+	return reflect.DeepEqual(ca.Config, cb.Config) && reflect.DeepEqual(ca.HostConfig, cb.HostConfig) && reflect.DeepEqual(ca.Mounts, cb.Mounts)
+}
+
+func canonicalSpec(v inspection) inspection {
+	v.Config.Env = nilIfEmpty(v.Config.Env)
+	v.Config.Cmd = nilIfEmpty(v.Config.Cmd)
+	v.Config.Entrypoint = nilIfEmpty(v.Config.Entrypoint)
+	if len(v.Config.Labels) == 0 {
+		v.Config.Labels = nil
+	}
+	if len(v.Config.Volumes) == 0 {
+		v.Config.Volumes = nil
+	}
+	h := &v.HostConfig
+	if h.OomKillDisable != nil && !*h.OomKillDisable {
+		h.OomKillDisable = nil
+	}
+	h.CapAdd = nilIfEmpty(h.CapAdd)
+	h.CapDrop = nilIfEmpty(h.CapDrop)
+	h.Devices = nilIfEmpty(h.Devices)
+	h.DeviceRequests = nilIfEmpty(h.DeviceRequests)
+	h.VolumesFrom = nilIfEmpty(h.VolumesFrom)
+	h.Links = nilIfEmpty(h.Links)
+	h.ExtraHosts = nilIfEmpty(h.ExtraHosts)
+	h.DNS = nilIfEmpty(h.DNS)
+	h.DNSOptions = nilIfEmpty(h.DNSOptions)
+	h.DNSSearch = nilIfEmpty(h.DNSSearch)
+	h.SecurityOpt = nilIfEmpty(h.SecurityOpt)
+	h.Mounts = nilIfEmpty(h.Mounts)
+	h.Binds = nilIfEmpty(h.Binds)
+	if len(h.PortBindings) == 0 {
+		h.PortBindings = nil
+	}
+	v.Mounts = nilIfEmpty(v.Mounts)
+	return v
+}
+
+func nilIfEmpty[T any](s []T) []T {
+	if len(s) == 0 {
+		return nil
+	}
+	return s
 }
 
 func (m *Manager) instanceObserve(ctx context.Context, j *journal, r runtimeRef) error {

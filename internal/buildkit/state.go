@@ -34,6 +34,12 @@ type receipt struct {
 func intent(host, snapshotter string) receipt {
 	return receipt{Version: 1, Host: host, Snapshotter: snapshotter, Container: "vamos-buildkit-" + host, Network: "vamos-buildkit-" + host + "-net", Volume: "vamos-buildkit-" + host + "-cache", Builder: "vamos-" + host, Bridge: bridge, Image: Image}
 }
+
+// IsOwnedContainer reports whether a Docker container is this host's builder.
+func IsOwnedContainer(host, name string, labels map[string]string) bool {
+	return hostPattern.MatchString(host) && name == "vamos-buildkit-"+host && labels["org.vamos.buildkit.host"] == host
+}
+
 func (s receipt) labels(role string) map[string]string {
 	return map[string]string{"org.vamos.buildkit.host": s.Host, "org.vamos.buildkit.nonce": s.Nonce, "org.vamos.buildkit.role": role}
 }

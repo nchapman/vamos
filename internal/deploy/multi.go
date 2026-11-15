@@ -22,7 +22,7 @@ func bundleDigest(data []byte) string { sum := sha256.Sum256(data); return hex.E
 // Vamos's supported runtime has Docker-managed filtering and ordinary bridge NAT.
 // Never silently repair daemon policy or restart Docker during app deployment.
 func (m *Manager) verifyMultiHost() error {
-	p := m.path("/etc/docker/daemon.json")
+	p := m.path(lifecycle.DockerDaemonPath)
 	if err := safe(p); err != nil {
 		return err
 	}
@@ -37,7 +37,7 @@ func (m *Manager) verifyMultiHost() error {
 	if err != nil {
 		return err
 	}
-	if !sameJSON(data, []byte(`{"bridge":"none","log-driver":"local"}`)) {
+	if !sameJSON(data, []byte(lifecycle.DockerDaemonConfig)) {
 		return errors.New("Docker daemon configuration drift; multi-service deployment requires the Vamos-managed networking policy")
 	}
 	return nil

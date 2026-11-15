@@ -18,10 +18,14 @@ import (
 	"github.com/nchapman/vamos/internal/process"
 )
 
-const caddyConfig = "{\n\tadmin 127.0.0.1:2019\n}\n"
-
-// Applications will get explicit private networks; no shared default bridge.
-const dockerConfig = "{\n  \"bridge\": \"none\",\n  \"log-driver\": \"local\"\n}\n"
+const (
+	BaseCaddyfile = "{\n\tadmin 127.0.0.1:2019\n}\n"
+	caddyConfig   = BaseCaddyfile
+	// Applications get explicit private networks; no shared default bridge.
+	DockerDaemonPath   = "/etc/docker/daemon.json"
+	DockerDaemonConfig = "{\n  \"bridge\": \"none\",\n  \"log-driver\": \"local\"\n}\n"
+	dockerConfig       = DockerDaemonConfig
+)
 
 var deployKeyLine = regexp.MustCompile(`^(?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
 
@@ -317,7 +321,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		if err := atomicWrite(m.path(caddyfilePath), []byte(caddyConfig), 0644); err != nil {
 			return nil, err
 		}
-		if err := atomicWrite(m.path("/etc/docker/daemon.json"), []byte(dockerConfig), 0644); err != nil {
+		if err := atomicWrite(m.path(DockerDaemonPath), []byte(dockerConfig), 0644); err != nil {
 			return nil, err
 		}
 		if err := atomicWrite(m.path(ExecutorPath), m.Executor, 0755); err != nil {
@@ -589,7 +593,7 @@ func (m *Manager) verifyFiles(s *State) error {
 }
 
 func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
-	for path, expected := range map[string]string{"/etc/docker/daemon.json": dockerConfig, "/etc/ssh/sshd_config.d/vamos.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
+	for path, expected := range map[string]string{DockerDaemonPath: dockerConfig, "/etc/ssh/sshd_config.d/vamos.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
 		if err := rejectSymlink(m.path(path)); err != nil {
 			return err
 		}

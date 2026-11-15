@@ -21,9 +21,12 @@ const (
 	caddyImageRef  = "caddy@" + caddyDigest
 	CaddyContainer = "vamos-caddy"
 	caddyHostLabel = "org.vamos.caddy.host"
-	// Host paths. /etc/caddy is mounted read-only at the same path so callers
-	// can pass identical paths to the in-container CLI.
-	caddyfilePath   = "/etc/caddy/Caddyfile"
+	// Host paths and loopback admin endpoint shared with app deployments.
+	// /etc/caddy is mounted read-only at the same path so callers can pass
+	// identical paths to the in-container CLI.
+	CaddyfilePath   = "/etc/caddy/Caddyfile"
+	CaddyAdminURL   = "http://127.0.0.1:2019/config/"
+	caddyfilePath   = CaddyfilePath
 	caddyDataDir    = "/var/lib/caddy/data"
 	caddyConfigDir  = "/var/lib/caddy/config"
 	caddyRestart    = "unless-stopped"

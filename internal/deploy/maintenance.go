@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nchapman/vamos/internal/appstate"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 func maintenanceStatus(j *journal, domain string) Status {
@@ -264,7 +265,7 @@ func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) e
 	if w.OldCaddy != old || w.NewCaddy != next {
 		return errors.New("maintenance route intent differs from journals")
 	}
-	p := m.path("/etc/caddy/Caddyfile")
+	p := m.path(lifecycle.CaddyfilePath)
 	if e = safe(p); e != nil {
 		return e
 	}
@@ -307,7 +308,7 @@ func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) e
 		}
 	}
 	if !sameJSON(live, n) {
-		_, reloadErr := m.caddy(c, "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile")
+		_, reloadErr := m.caddy(c, "reload", "--config", lifecycle.CaddyfilePath, "--adapter", "caddyfile")
 		live, e = m.live(c)
 		if e != nil {
 			return errors.Join(reloadErr, e)
