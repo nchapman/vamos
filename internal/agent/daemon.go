@@ -18,18 +18,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nchapman/soar/internal/agentproto"
-	"github.com/nchapman/soar/internal/buildmeta"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/executor"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/session"
+	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/executor"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/session"
 )
 
 // peerAccountName is the only account allowed to connect to the socket. It
 // is a constant in production; tests on Linux point it at the harness user so
 // SO_PEERCRED is still enforced rather than skipped.
-var peerAccountName = "soar"
+var peerAccountName = "vamos"
 
 var bridgePrincipalRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$`)
 
@@ -56,7 +56,7 @@ type Daemon struct {
 	BuildID         string
 	Capabilities    []string
 	// Execute overrides worker and read execution for unit tests. When nil,
-	// production launches supervised soar-op-<id>.service units for mutations
+	// production launches supervised vamos-op-<id>.service units for mutations
 	// and runs non-mutating reads through executor.ExecuteRead.
 	Execute     func(context.Context, deploy.Request, []byte) (deploy.Response, error)
 	Sessions    SessionManager
@@ -70,7 +70,7 @@ type Daemon struct {
 
 func (d *Daemon) defaults() {
 	if d.SocketPath == "" {
-		d.SocketPath = "/run/soar/agent.sock"
+		d.SocketPath = "/run/vamos/agent.sock"
 	}
 	if d.StatePath == "" {
 		d.StatePath = lifecycle.StatePath
@@ -96,7 +96,7 @@ func (d *Daemon) defaults() {
 	}
 	if d.SocketGID == 0 {
 		// Zero is the Go default but root:root would exclude the restricted
-		// soar account. Production supplies the resolved soar group explicitly.
+		// vamos account. Production supplies the resolved vamos group explicitly.
 		d.SocketGID = -1
 	}
 }
@@ -185,7 +185,7 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 		}
 		expectedUID, err := strconv.Atoi(account.Uid)
 		if err != nil || uid != expectedUID {
-			return errors.New("agent socket peer is not the restricted soar account")
+			return errors.New("agent socket peer is not the restricted vamos account")
 		}
 	}
 	reader := bufio.NewReaderSize(conn, agentproto.MaxEnvelopeBytes+256)
@@ -193,7 +193,7 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 	if err != nil {
 		return err
 	}
-	const prefix = "SOAR-BRIDGE "
+	const prefix = "VAMOS-BRIDGE "
 	principalID := ""
 	if len(line) > len(prefix)+1 && line[:len(prefix)] == prefix {
 		principalID = line[len(prefix) : len(line)-1]
@@ -450,7 +450,7 @@ func (d *Daemon) serveSession(ctx context.Context, conn net.Conn, reader *bufio.
 	}()
 	result := <-attached
 	// Remove session staging synchronously before transmitting the terminal
-	// exit frame so callers immediately observe clean /run/soar-sessions state.
+	// exit frame so callers immediately observe clean /run/vamos-sessions state.
 	_ = d.Sessions.Cleanup(envelope.Token)
 	exit := agentproto.SessionExit{ExitCode: result.code}
 	if result.err != nil || result.code < 0 || result.code > 255 {
@@ -644,7 +644,7 @@ func Bridge(ctx context.Context, socket, principal string, stdin io.Reader, stdo
 		return err
 	}
 	defer conn.Close()
-	if _, err := fmt.Fprintf(conn, "SOAR-BRIDGE %s\n", principal); err != nil {
+	if _, err := fmt.Fprintf(conn, "VAMOS-BRIDGE %s\n", principal); err != nil {
 		return err
 	}
 	stop := make(chan struct{})

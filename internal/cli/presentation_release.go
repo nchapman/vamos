@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func (p *presentation) releaseReport(result *deploy.RunResult, r appReport) string {

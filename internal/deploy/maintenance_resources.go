@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 var resourceID = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -74,11 +74,11 @@ func (m *Manager) resourceList(ctx context.Context, kind string) ([]resourceRow,
 	return rows, nil
 }
 func resourceContainer(v *resourceInspection, j *journal, r resourceRow) error {
-	op := v.Config.Labels["soar.operation"]
-	if service, present := v.Config.Labels["soar.service"]; present && service == "" {
+	op := v.Config.Labels["vamos.operation"]
+	if service, present := v.Config.Labels["vamos.service"]; present && service == "" {
 		return errors.New("empty maintenance service label")
 	}
-	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["soar.service"], op, replicaLabel(v.Config.Labels)) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (!supportsVolumes(j) && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || (!supportsVolumes(j) && len(v.Config.Volumes) != 0) || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
+	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["vamos.service"], op, replicaLabel(v.Config.Labels)) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (!supportsVolumes(j) && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || (!supportsVolumes(j) && len(v.Config.Volumes) != 0) || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
 		return errors.New("unsafe or changed maintenance container")
 	}
 	return nil
@@ -244,7 +244,7 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 			return nil, e
 		}
 		if !owned(v.Config.Labels, j, "") {
-			prefix := "soar-" + j.App + "-"
+			prefix := "vamos-" + j.App + "-"
 			if retainedContainer(j, r.Name) || (strings.HasPrefix(r.Name, prefix) && operation.MatchString(strings.TrimPrefix(r.Name, prefix))) {
 				return nil, errors.New("foreign app container name")
 			}
@@ -253,10 +253,10 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 		if e = m.verifyResourceContainer(ctx, v, j, r); e != nil {
 			return nil, e
 		}
-		if service != "" && v.Config.Labels["soar.service"] != service {
+		if service != "" && v.Config.Labels["vamos.service"] != service {
 			continue
 		}
-		o := v.Config.Labels["soar.operation"]
+		o := v.Config.Labels["vamos.operation"]
 		if action == "cleanup" && (retainedContainer(j, r.Name) || v.State.Running) {
 			keep[o] = true
 			keepImages[v.Image] = true
@@ -265,15 +265,15 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 		}
 		// Select prunable runs first; never discard provenance for a container
 		// deferred to a later cleanup. Once pruning is exhausted, drain retained runs.
-		if action == "cleanup" && v.Config.Labels["soar.run"] != "" {
-			record := v.Config.Labels["soar.run"] + ".run.json"
+		if action == "cleanup" && v.Config.Labels["vamos.run"] != "" {
+			record := v.Config.Labels["vamos.run"] + ".run.json"
 			if runBatch >= maintenanceRunPruneBatch || (len(prune) > 0 && !prune[record]) {
 				delete(prune, record)
 				continue
 			}
 			runBatch++
 		}
-		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o, Service: v.Config.Labels["soar.service"], Replica: replicaLabel(v.Config.Labels)})
+		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o, Service: v.Config.Labels["vamos.service"], Replica: replicaLabel(v.Config.Labels)})
 		w.Plan.Containers = append(w.Plan.Containers, r.Name)
 		exclude[r.ID] = true
 	}
@@ -487,7 +487,7 @@ func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p pl
 	if e = m.verifyResourceContainer(ctx, v, j, resourceRow{ID: p.ID, Name: p.Name}); e != nil {
 		return nil, e
 	}
-	if replicaLabel(v.Config.Labels) != p.Replica || v.Image != p.Image || v.Config.Labels["soar.operation"] != p.Operation || v.Config.Labels["soar.service"] != p.Service {
+	if replicaLabel(v.Config.Labels) != p.Replica || v.Image != p.Image || v.Config.Labels["vamos.operation"] != p.Operation || v.Config.Labels["vamos.service"] != p.Service {
 		return nil, errors.New("changed planned container")
 	}
 	nv, e := m.resourceInspect(ctx, "network", network(j))
@@ -539,7 +539,7 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			return errors.New("planned container network identity mismatch")
 		}
 		commands := [][]string{{"container", "rm", p.ID}}
-		if (w.Action == "destroy" || w.Action == "service-remove") && !strings.HasPrefix(p.Name, "soar-run-") {
+		if (w.Action == "destroy" || w.Action == "service-remove") && !strings.HasPrefix(p.Name, "vamos-run-") {
 			commands = [][]string{{"container", "update", "--restart=no", p.ID}, {"container", "stop", p.ID}, {"container", "rm", p.ID}}
 		}
 		for _, args := range commands {
@@ -699,7 +699,7 @@ func (m *Manager) removeMaintenanceFiles(j *journal, w *maintenance) error {
 // Validate historical candidates by registry binding plus immutable image and
 // container provenance, without recursively enumerating volume references.
 func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspection, j *journal, row resourceRow) error {
-	if v.Config.Labels["soar.run"] != "" || strings.HasPrefix(row.Name, "soar-run-") {
+	if v.Config.Labels["vamos.run"] != "" || strings.HasPrefix(row.Name, "vamos-run-") {
 		return m.maintenanceRunContainer(ctx, j, v, row)
 	}
 	if err := resourceContainer(v, j, row); err != nil {
@@ -715,7 +715,7 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 	if err != nil {
 		return err
 	}
-	service := v.Config.Labels["soar.service"]
+	service := v.Config.Labels["vamos.service"]
 	if s == nil || s.Records[service].ID == "" {
 		if len(v.Mounts)+len(v.HostConfig.Mounts)+len(v.HostConfig.VolumesFrom)+len(v.Config.Volumes) != 0 {
 			return errors.New("unregistered maintenance mounts")
@@ -743,7 +743,7 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 		return errors.New("maintenance volume container image provenance differs")
 	}
 	proven := false
-	op := v.Config.Labels["soar.operation"]
+	op := v.Config.Labels["vamos.operation"]
 	for _, rel := range retainedReleases(j) {
 		if releaseHas(rel, row.Name) && runtimeLabelMatches(rel, row.Name, v.Config.Labels) && rel.Service == service && rel.Operation == op && rel.VolumeID == rec.ID && rel.Image == v.Config.Image {
 			proven = true

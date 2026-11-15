@@ -12,8 +12,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nchapman/soar/internal/appstate"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/appstate"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 // MaxApps bounds both directory enumeration and the union of registered apps.
@@ -115,9 +115,9 @@ func (m *Manager) listApps(ctx context.Context, hostID string, host lifecycle.Co
 		path string
 		dirs bool
 	}{
-		{m.path("/var/lib/soar/apps"), true},
-		{m.path("/var/lib/soar/secrets"), false},
-		{m.path("/var/lib/soar/volumes"), false},
+		{m.path("/var/lib/vamos/apps"), true},
+		{m.path("/var/lib/vamos/secrets"), false},
+		{m.path("/var/lib/vamos/volumes"), false},
 	} {
 		names, err := inventoryNames(source.path, source.dirs)
 		if err != nil {

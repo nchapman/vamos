@@ -15,7 +15,7 @@ identities before configuring a plan for an older application.
 
 ## Configure and inspect
 
-Keep `backup.yaml` separate from `soar.yaml`. For Journal, SQLite and uploaded
+Keep `backup.yaml` separate from `vamos.yaml`. For Journal, SQLite and uploaded
 files can select different paths in the **same** service-owned volume:
 
 ```yaml
@@ -79,7 +79,7 @@ selections do not prove SQL authentication or restore-profile support.
 ### Field reference
 
 Selections resolve against the **effective deployed app on the selected server**,
-not an adjacent local `soar.yaml` or pending deployment changes.
+not an adjacent local `vamos.yaml` or pending deployment changes.
 
 | Field | Meaning |
 | --- | --- |
@@ -107,14 +107,14 @@ policy application do not create backups or authorize downtime.
 
 ```sh
 # Inspect both the current policy and the fully resolved proposed policy.
-soar backup configure --server home --app journal -f backup.yaml --json
+vamos backup configure --server home --app journal -f backup.yaml --json
 
 # Capture the file once, obtain a fresh preview, then apply that exact revision
 # and resolved-identity digest using compare-and-swap.
-soar backup configure --server home --app journal -f backup.yaml --yes
+vamos backup configure --server home --app journal -f backup.yaml --yes
 
 # Read installed metadata from the host, without container or repository checks.
-soar backup plan --server home --app journal --json
+vamos backup plan --server home --app journal --json
 ```
 
 `--app` is mandatory and must match the file. `-f` defaults to `backup.yaml`.
@@ -153,7 +153,7 @@ Preview and apply share the existing host mutation lock with deployment operatio
 Preview writes no plan record. Apply atomically replaces the entire app plan; it
 does not merge omitted sources/sets, alter runtimes, or delete repository data.
 Records are private, host-bound JSON under
-`/var/lib/soar/backups/plans/<app>.json` (`0700` directory, `0600` file). They are
+`/var/lib/vamos/backups/plans/<app>.json` (`0700` directory, `0600` file). They are
 retained after ordinary app destruction. `backup plan` reports this retained
 policy, **not** current source readiness. A missing record reports revision `none`.
 If the apply result is lost, inspect the recorded plan; do not assume no change.

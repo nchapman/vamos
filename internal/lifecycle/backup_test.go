@@ -17,7 +17,7 @@ func TestRetainedRepositoryStateBlocksNewHostIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.calls = nil
-	path := m.path("/var/lib/soar/backups/repositories")
+	path := m.path("/var/lib/vamos/backups/repositories")
 	if err := os.MkdirAll(path, 0700); err != nil {
 		t.Fatal(err)
 	}

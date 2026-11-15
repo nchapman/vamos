@@ -10,17 +10,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 func appFixture(t *testing.T) (string, *registry.Store, appDeps) {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "soar.yaml")
+	path := filepath.Join(dir, "vamos.yaml")
 	if err := os.WriteFile(path, []byte("app: hello\nservices:\n  web:\n    build: {context: ., dockerfile: Dockerfile}\n    http: {port: 80, health: /healthz}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestDeployCapturesRequestAndBindsDefault(t *testing.T) {
 	if err != nil || bound == nil || bound.Server != "home" || bound.App != "hello" {
 		t.Fatalf("binding=%+v err=%v", bound, err)
 	}
-	ignore, err := os.ReadFile(filepath.Join(filepath.Dir(path), ".soar", ".gitignore"))
+	ignore, err := os.ReadFile(filepath.Join(filepath.Dir(path), ".vamos", ".gitignore"))
 	if err != nil || string(ignore) != "*\n" {
 		t.Fatal("binding not Git-ignored")
 	}
@@ -136,7 +136,7 @@ func TestAppOutputAndRemoteFailures(t *testing.T) {
 		return deploy.Response{}, errors.New("failed remotely")
 	}
 	var out, diagnostic bytes.Buffer
-	if code := appCommand(context.Background(), "deploy", []string{"-f", path}, &out, &diagnostic, deps); code != 1 || !strings.Contains(diagnostic.String(), "soar resume") {
+	if code := appCommand(context.Background(), "deploy", []string{"-f", path}, &out, &diagnostic, deps); code != 1 || !strings.Contains(diagnostic.String(), "vamos resume") {
 		t.Fatalf("code=%d err=%s", code, &diagnostic)
 	}
 	deps.Run = func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error) {
@@ -184,7 +184,7 @@ func TestBindingRefusesRetargetAndCorruptMetadata(t *testing.T) {
 	if _, err := selectAppServer(state, dir, "renamed", ""); err == nil {
 		t.Fatal("silently renamed app")
 	}
-	file := filepath.Join(dir, ".soar", "server.json")
+	file := filepath.Join(dir, ".vamos", "server.json")
 	if err := os.WriteFile(file, []byte(`{"version":99}`), 0600); err != nil {
 		t.Fatal(err)
 	}

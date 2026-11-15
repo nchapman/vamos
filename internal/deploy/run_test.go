@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestRunDurableBoundary(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRunDurableBoundary(t *testing.T) {
 					}
 					if args[0] == "start" {
 						starts++
-						v := f.docker.containers["soar-run-"+q.Operation]
+						v := f.docker.containers["vamos-run-"+q.Operation]
 						if v == nil || args[1] != v.ID {
 							t.Fatal(args)
 						}
@@ -66,14 +66,14 @@ func TestRunDurableBoundary(t *testing.T) {
 					}
 					if args[0] == "wait" {
 						completed = true
-						f.docker.containers["soar-run-"+q.Operation].State.Running = false
+						f.docker.containers["vamos-run-"+q.Operation].State.Running = false
 						return process.Result{Stdout: []byte("7\n")}, nil
 					}
 					if args[0] == "logs" {
 						return process.Result{Stdout: []byte(strings.Repeat("x", 20000))}, nil
 					}
 					if len(args) == 3 && args[0] == "container" && args[1] == "inspect" && completed {
-						v := f.docker.containers["soar-run-"+q.Operation]
+						v := f.docker.containers["vamos-run-"+q.Operation]
 						if args[2] == v.ID || args[2] == strings.TrimPrefix(v.Name, "/") {
 							b, _ := json.Marshal(v)
 							var obj map[string]any
@@ -122,7 +122,7 @@ func TestRunDurableBoundary(t *testing.T) {
 					}
 				}
 			}
-			v := f.docker.containers["soar-run-"+q.Operation]
+			v := f.docker.containers["vamos-run-"+q.Operation]
 			if !reflect.DeepEqual(v.Config.Entrypoint, []string{"/entrypoint"}) {
 				t.Fatal(v.Config)
 			}
@@ -184,7 +184,7 @@ func TestRunDurableBoundary(t *testing.T) {
 				if _, e = f.m.executeRun(context.Background(), q, nil, j, &lifecycle.State{ID: j.HostID}, state); e != nil || starts != 1 {
 					t.Fatal(e, starts)
 				}
-				delete(f.docker.containers, "soar-run-"+q.Operation)
+				delete(f.docker.containers, "vamos-run-"+q.Operation)
 				out, err := f.m.runStatus(context.Background(), j, q.Operation)
 				if err != nil || out.Phase != "unknown" {
 					t.Fatal(out, err)
@@ -200,7 +200,7 @@ func TestRunDurableBoundary(t *testing.T) {
 func TestRunRecordStrictPrivateAndBounded(t *testing.T) {
 	m, _ := setup(t)
 	j := &journal{HostID: strings.Repeat("a", 32), Status: Status{App: "test"}}
-	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "building", Container: "soar-run-" + strings.Repeat("b", 32)}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "building", Container: "vamos-run-" + strings.Repeat("b", 32)}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 	if err := m.saveRun(j, r); err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestRunRecordStrictPrivateAndBounded(t *testing.T) {
 
 func TestRunFollowupValidation(t *testing.T) {
 	j := &journal{HostID: strings.Repeat("a", 32), Status: Status{App: "test"}}
-	base := runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "building", Container: "soar-run-" + strings.Repeat("b", 32)}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+	base := runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "building", Container: "vamos-run-" + strings.Repeat("b", 32)}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 	if err := validateRun(j, &base); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestRunBuildingDoesNotBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	j := f.load()
-	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "building", Container: "soar-run-" + strings.Repeat("b", 32)}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "building", Container: "vamos-run-" + strings.Repeat("b", 32)}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 	if err := f.m.saveRun(j, r); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestRunCompletedCleanupAndLiveGuard(t *testing.T) {
 	}
 	j := f.load()
 	code := 7
-	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "complete", Container: "soar-run-" + strings.Repeat("b", 32), Image: "sha256:" + strings.Repeat("a", 64), ExitCode: &code, Output: "durable output"}, DockerID: strings.Repeat("c", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: strings.Repeat("b", 32), Service: "worker", Phase: "complete", Container: "vamos-run-" + strings.Repeat("b", 32), Image: "sha256:" + strings.Repeat("a", 64), ExitCode: &code, Output: "durable output"}, DockerID: strings.Repeat("c", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 	if err := f.m.saveRun(j, r); err != nil {
 		t.Fatal(err)
 	}

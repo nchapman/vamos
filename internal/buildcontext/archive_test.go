@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 func put(t *testing.T, root, name, content string) {
@@ -45,12 +45,12 @@ func unpack(t *testing.T, b []byte) map[string]string {
 func TestArchive(t *testing.T) {
 	root := t.TempDir()
 	for name, text := range map[string]string{
-		"ctx/Dockerfile": "FROM scratch\n", "ctx/.dockerignore": "\ufeff# comment\nDockerfile\n.dockerignore\ncache\n!cache/deep/keep\n**/*.secret\n!.git/config\n!nested/.soar/key\n",
-		"ctx/hello": "hello world", "ctx/cache/deep/keep": "keep", "ctx/cache/deep/drop": "drop", "ctx/nested/a.secret": "secret", "ctx/.git/config": "private", "ctx/nested/.soar/key": "private",
+		"ctx/Dockerfile": "FROM scratch\n", "ctx/.dockerignore": "\ufeff# comment\nDockerfile\n.dockerignore\ncache\n!cache/deep/keep\n**/*.secret\n!.git/config\n!nested/.vamos/key\n",
+		"ctx/hello": "hello world", "ctx/cache/deep/keep": "keep", "ctx/cache/deep/drop": "drop", "ctx/nested/a.secret": "secret", "ctx/.git/config": "private", "ctx/nested/.vamos/key": "private",
 	} {
 		put(t, root, name, text)
 	}
-	b, e := Archive(filepath.Join(root, "soar.yaml"), config.Build{Context: "ctx"})
+	b, e := Archive(filepath.Join(root, "vamos.yaml"), config.Build{Context: "ctx"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -63,7 +63,7 @@ func TestArchive(t *testing.T) {
 	if _, ok := files[".dockerignore"]; !ok {
 		t.Fatal("ignore not forced")
 	}
-	for _, name := range []string{"cache/deep/drop", "nested/a.secret", ".git/config", "nested/.soar/key"} {
+	for _, name := range []string{"cache/deep/drop", "nested/a.secret", ".git/config", "nested/.vamos/key"} {
 		if _, ok := files[name]; ok {
 			t.Fatalf("included %s", name)
 		}

@@ -14,13 +14,13 @@ import (
 	"sort"
 	"time"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/registry"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/registry"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 type appDeps struct {
@@ -48,7 +48,7 @@ func defaultAppDeps() appDeps {
 func runAppTransport(ctx context.Context, target, executorFile string, request deploy.Request, payload []byte, deps appDeps) (deploy.Response, error) {
 	if deps.Agent != nil {
 		if executorFile != "" {
-			return deploy.Response{}, errors.New("--executor override requires the uploaded-executor transport; recover the server with 'soar server upgrade'")
+			return deploy.Response{}, errors.New("--executor override requires the uploaded-executor transport; recover the server with 'vamos server upgrade'")
 		}
 		return deps.Agent(ctx, target, request, payload)
 	}
@@ -73,7 +73,7 @@ func runAppTransport(ctx context.Context, target, executorFile string, request d
 func runSessionTransport(ctx context.Context, target, executorFile string, request deploy.SessionRequest, stdin io.Reader, stdout, stderr io.Writer, deps appDeps) (int, error) {
 	if deps.AgentStream != nil {
 		if executorFile != "" {
-			return -1, errors.New("--executor override requires the uploaded-executor transport; recover the server with 'soar server upgrade'")
+			return -1, errors.New("--executor override requires the uploaded-executor transport; recover the server with 'vamos server upgrade'")
 		}
 		return deps.AgentStream(ctx, target, request, stdin, stdout, stderr)
 	}
@@ -411,7 +411,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 				if len(selectedNames) == 1 {
 					selected = selectedNames[0]
 				}
-				bindingArgs := []string{"soar", "service", "bind", selected, "-f", manifestPath, "--server", server.Name}
+				bindingArgs := []string{"vamos", "service", "bind", selected, "-f", manifestPath, "--server", server.Name}
 				bindingCommand = suggestedCommand(appendSuppliedFlags(bindingArgs, flags, "executor", "timeout")...)
 			}
 			_ = errorView.write(stderr, errorView.appFailure(reportView, request, response, err, bindingCommand))
@@ -422,7 +422,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			if len(selectedNames) == 1 {
 				selected = selectedNames[0]
 			}
-			bindingArgs := []string{"soar", "service", "bind", selected, "-f", manifestPath, "--server", server.Name}
+			bindingArgs := []string{"vamos", "service", "bind", selected, "-f", manifestPath, "--server", server.Name}
 			bindingArgs = appendSuppliedFlags(bindingArgs, flags, "executor", "timeout")
 			fmt.Fprintf(stderr, "Inspect status first; explicitly adopt only the intended service:\n  %s\n", suggestedCommand(bindingArgs...))
 		}
@@ -431,9 +431,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			_ = printReleaseSummary(stderr, response.Status.Release)
 		}
 		if action == "run" {
-			fmt.Fprintf(stderr, "Inspect: soar status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
+			fmt.Fprintf(stderr, "Inspect: vamos status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
 		} else if mutation {
-			fmt.Fprintf(stderr, "Inspect: soar status --server %s --app %s\nIf recorded, resume: soar resume --server %s --app %s %s\n", server.Name, name, server.Name, name, request.Operation)
+			fmt.Fprintf(stderr, "Inspect: vamos status --server %s --app %s\nIf recorded, resume: vamos resume --server %s --app %s %s\n", server.Name, name, server.Name, name, request.Operation)
 		}
 		return code
 	}
@@ -504,7 +504,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	if action == "run" {
-		fmt.Fprintf(stderr, "Run outcome unknown. Inspect: soar status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
+		fmt.Fprintf(stderr, "Run outcome unknown. Inspect: vamos status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
 		return 1
 	}
 	if action == "logs" {

@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/nchapman/soar/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/backupbackend"
 )
 
 const maxRecordBytes = 128 * 1024
@@ -56,7 +56,7 @@ func (s store) checkDir(create bool) error {
 		return err
 	}
 	// The application-independent backup boundary and repository directory are
-	// private, even though their existing /var/lib/soar parent need not be.
+	// private, even though their existing /var/lib/vamos parent need not be.
 	parent := filepath.Dir(s.dir)
 	outer, err := os.Lstat(filepath.Dir(parent))
 	if err != nil || !outer.IsDir() || !owned(outer) || (runtime.GOOS != "windows" && outer.Mode().Perm()&0022 != 0) {

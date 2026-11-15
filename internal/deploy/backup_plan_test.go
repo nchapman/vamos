@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func boundaryPlanRequest(host lifecycle.Config, action string) Request {
@@ -209,7 +209,7 @@ func TestBackupPlanLegacyPreviewDoesNotMutate(t *testing.T) {
 	if !reflect.DeepEqual(events, f.docker.events) {
 		t.Fatal("runtime mutated")
 	}
-	if _, err = os.Stat(f.m.path("/var/lib/soar/backups")); !errors.Is(err, os.ErrNotExist) {
+	if _, err = os.Stat(f.m.path("/var/lib/vamos/backups")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("backup root created", err)
 	}
 }
@@ -276,7 +276,7 @@ func TestBackupPlanShowRetainedPrivatePlanAfterDestroy(t *testing.T) {
 	if installed.Current == nil {
 		t.Fatal("missing installed record")
 	}
-	if _, err = os.Stat(m.path("/var/lib/soar/backups/plans")); err != nil {
+	if _, err = os.Stat(m.path("/var/lib/vamos/backups/plans")); err != nil {
 		t.Fatal("missing shared plan directory", err)
 	}
 	// Use the existing minimal completed-destruction receipt format. Show must

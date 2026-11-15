@@ -1,5 +1,5 @@
 {
-  "name": "soar-cli-visual",
+  "name": "vamos-cli-visual",
   "private": true,
   "scripts": {
     "test": "node --test *.test.js",

@@ -7,7 +7,7 @@ validation, redirects, cookies and CORS remain application responsibilities.
 
 ## Configure and deploy
 
-Add aliases to an existing service in `soar.yaml` (this fragment assumes its
+Add aliases to an existing service in `vamos.yaml` (this fragment assumes its
 build/image is already configured):
 
 ```yaml
@@ -28,24 +28,24 @@ http:
 
 Configure DNS yourself at your DNS provider, pointing the aliases to the host's
 public addresses. Ensure TCP 80/443 are reachable through host/cloud firewalls.
-Soar does not automate DNS. Caddy requests public certificates automatically;
+Vamos does not automate DNS. Caddy requests public certificates automatically;
 issuance and DNS propagation can take time.
 
 ```sh
 # After editing services.web.http.domains:
-soar deploy --service web
-soar status
+vamos deploy --service web
+vamos status
 # Or apply all eligible changes:
-soar deploy
-soar status --service web
+vamos deploy
+vamos status --service web
 
 # Preview captured code/config (including alias) rollback, then apply:
-soar rollback --service web
-soar rollback --service web --yes
-soar status
+vamos rollback --service web
+vamos rollback --service web --yes
+vamos status
 ```
 
-There is no `soar domains add/list/remove` command. Edit the list and deploy to
+There is no `vamos domains add/list/remove` command. Edit the list and deploy to
 add or remove aliases; use status to inspect them. Removing an alias removes its
 route and releases its claim after completion; it does not edit DNS or revoke
 certificates. Caddy continues to manage its own certificate storage. This is normal deployment,
@@ -101,7 +101,7 @@ Status lists current and captured desired aliases, not unrelated local edits:
 | `certificate=pending` | That local TLS verification has not succeeded. |
 | `HTTPS=ready` | Both DNS matches-host and local certificate ready. |
 
-Only an explicit `soar status` with no active operation probes configured aliases.
+Only an explicit `vamos status` with no active operation probes configured aliases.
 Deploy/rollback responses, active-operation status, and pending/unavailable routes
 leave DNS/certificate/HTTPS `unknown`: use status after the operation completes.
 A successful route reload alone is not certificate readiness.
@@ -130,7 +130,7 @@ The disposable `dprobe` app was exercised on the existing Ubuntu 26.04 amd64 hos
 with Docker 29.1.3 and Caddy 2.6.2, using the base domain's existing wildcard DNS:
 
 - Deployed `dprobe-a.pastime.gg` alongside the deliberately unresolvable
-  `no-such-soar-dprobe.invalid`. The generated URL and valid alias both served
+  `no-such-vamos-dprobe.invalid`. The generated URL and valid alias both served
   `/healthz` over externally verified HTTPS. Status reported the valid alias
   ready and the invalid alias DNS/certificate pending without failing the app.
 - Attempted to claim the existing `hello.pastime.gg`. Deployment rejected the

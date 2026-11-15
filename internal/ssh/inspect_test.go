@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/process"
 )
 
-var supportedOutput = []byte("soar-inspect-v1\nLinux\nx86_64\n1000\nsystemd\nyes\npresent\nID=ubuntu\nVERSION_ID=24.04\n")
+var supportedOutput = []byte("vamos-inspect-v1\nLinux\nx86_64\n1000\nsystemd\nyes\npresent\nID=ubuntu\nVERSION_ID=24.04\n")
 
 func TestTargets(t *testing.T) {
 	for _, target := range []string{"home", "root@host.example.com", "deploy@192.0.2.1", "::1", "root@2001:db8::1", "my_host"} {

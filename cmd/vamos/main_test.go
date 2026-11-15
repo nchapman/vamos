@@ -14,7 +14,7 @@ import (
 )
 
 func TestShutdownSignalHelper(t *testing.T) {
-	if os.Getenv("SOAR_TEST_SIGNAL_HELPER") != "1" {
+	if os.Getenv("VAMOS_TEST_SIGNAL_HELPER") != "1" {
 		return
 	}
 	ctx, stop := shutdownContext()
@@ -34,7 +34,7 @@ func TestTerminationSignalsCancelContext(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestShutdownSignalHelper$")
-			cmd.Env = append(os.Environ(), "SOAR_TEST_SIGNAL_HELPER=1")
+			cmd.Env = append(os.Environ(), "VAMOS_TEST_SIGNAL_HELPER=1")
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			stdout, err := cmd.StdoutPipe()

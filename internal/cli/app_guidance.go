@@ -31,7 +31,7 @@ func suggestedCommand(args ...string) string {
 }
 
 func deploymentApproval(flags *flag.FlagSet, manifest, server, service string) string {
-	args := []string{"soar", "deploy", "--service", service, "--yes", "-f", manifest, "--server", server}
+	args := []string{"vamos", "deploy", "--service", service, "--yes", "-f", manifest, "--server", server}
 	args = appendSuppliedFlags(args, flags, "supersede", "executor", "timeout", "reuse-data")
 	return suggestedCommand(args...)
 }
@@ -39,12 +39,12 @@ func deploymentApproval(flags *flag.FlagSet, manifest, server, service string) s
 // Captured-state operations do not read new deployment inputs. Pin both
 // identities instead of allowing a later manifest edit to retarget approval.
 func capturedApproval(flags *flag.FlagSet, action, server, app string) string {
-	args := []string{"soar", action}
+	args := []string{"vamos", action}
 	switch action {
 	case "cleanup", "destroy", "rollback":
 		args = appendSuppliedFlags(args, flags, "service")
 	case "service-remove":
-		args = []string{"soar", "service", "remove", flags.Lookup("service").Value.String()}
+		args = []string{"vamos", "service", "remove", flags.Lookup("service").Value.String()}
 	default:
 		return ""
 	}
@@ -74,9 +74,9 @@ func configRecoveryHint(w io.Writer, action string, flags *flag.FlagSet) {
 	default:
 		return
 	}
-	args := []string{"soar", action}
+	args := []string{"vamos", action}
 	if action == "service-bind" || action == "service-remove" {
-		args = []string{"soar", "service", strings.TrimPrefix(action, "service-"), flags.Lookup("service").Value.String()}
+		args = []string{"vamos", "service", strings.TrimPrefix(action, "service-"), flags.Lookup("service").Value.String()}
 	}
 	server := flags.Lookup("server").Value.String()
 	if server == "" {

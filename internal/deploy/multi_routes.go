@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 // ServiceURL returns the generated public URL. Callers validate DNS lengths
@@ -43,7 +43,7 @@ func (m *Manager) routeJournals(j *journal) ([]*journal, string, error) {
 	if e != nil {
 		return nil, "", e
 	}
-	appsDir := m.path("/var/lib/soar/apps")
+	appsDir := m.path("/var/lib/vamos/apps")
 	if e := safe(appsDir); e != nil {
 		return nil, "", e
 	}

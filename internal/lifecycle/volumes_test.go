@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nchapman/soar/internal/volumes"
+	"github.com/nchapman/vamos/internal/volumes"
 )
 
 func TestRetainedVolumesFenceIdentityAndPurge(t *testing.T) {

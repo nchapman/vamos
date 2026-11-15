@@ -38,13 +38,13 @@ func TestMainHelpPresentation(t *testing.T) {
 				t.Fatalf("code=%d stderr=%q", code, diag.String())
 			}
 			text := ansi.Strip(out.String())
-			for _, want := range []string{"SOAR", "Work with an app", "Inspect and recover", "Manage a server", "Reference", "Examples", "Before you begin", "Setup/teardown require explicit", "data is retained.", "soar apps --server home", "soar status --server home --app notes", "soar help deploy"} {
+			for _, want := range []string{"VAMOS", "Work with an app", "Inspect and recover", "Manage a server", "Reference", "Examples", "Before you begin", "Setup/teardown require explicit", "data is retained.", "vamos apps --server home", "vamos status --server home --app notes", "vamos help deploy"} {
 				if !strings.Contains(strings.Join(strings.Fields(text), " "), want) {
 					t.Errorf("missing %q in:\n%s", want, text)
 				}
 			}
 			for _, command := range []string{"apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "service bind|remove", "secrets stage|set|list", "validate", "server inspect", "server add", "server connect", "server status", "server teardown", "version", "help"} {
-				if !strings.Contains(text, "soar "+command) {
+				if !strings.Contains(text, "vamos "+command) {
 					t.Errorf("missing command %q", command)
 				}
 			}
@@ -93,7 +93,7 @@ func TestSuccessfulCommandHelpPresentationPreservesCapturedText(t *testing.T) {
 }
 
 func TestParseFlagsPresentationOnlyForSuccessfulHelp(t *testing.T) {
-	const captured = "Usage: soar fixture [OPTIONS]\n\nOptions:\n  -name string\n    \ta name (default \"sample\")\n\nExample:\n  soar fixture --name sample\n"
+	const captured = "Usage: vamos fixture [OPTIONS]\n\nOptions:\n  -name string\n    \ta name (default \"sample\")\n\nExample:\n  vamos fixture --name sample\n"
 	for _, args := range [][]string{{"--help"}, {"--unknown"}} {
 		out, diag := newHelpAppsTerminal(48, true), newHelpAppsTerminal(48, true)
 		flags := flag.NewFlagSet("fixture", flag.ContinueOnError)
@@ -114,10 +114,10 @@ func TestParseFlagsPresentationOnlyForSuccessfulHelp(t *testing.T) {
 
 func TestHelpPresentationEscapesControlsWithoutLosingText(t *testing.T) {
 	out := newHelpAppsTerminal(48, false)
-	if err := writeHelpText(out, "Usage: soar test\n  unsafe\x1b[2J\rname\n"); err != nil {
+	if err := writeHelpText(out, "Usage: vamos test\n  unsafe\x1b[2J\rname\n"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "Usage: soar test\n  unsafe\\x1b[2J\\rname\n"; out.String() != want {
+	if want := "Usage: vamos test\n  unsafe\\x1b[2J\\rname\n"; out.String() != want {
 		t.Fatalf("got %q want %q", out.String(), want)
 	}
 }

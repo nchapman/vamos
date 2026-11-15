@@ -27,7 +27,7 @@ func TestTeardownQueueFence(t *testing.T) {
 		if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
 			t.Fatal(err)
 		}
-		operations := m.path("/var/lib/soar/queue/operations")
+		operations := m.path("/var/lib/vamos/queue/operations")
 		if err := os.MkdirAll(operations, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -45,8 +45,8 @@ func TestTeardownQueueFence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s blocked teardown: %v", tt.phase, err)
 		}
-		if _, err := os.Lstat(m.path("/var/lib/soar/queue")); !os.IsNotExist(err) {
-			t.Fatalf("teardown left /var/lib/soar/queue behind: %v", err)
+		if _, err := os.Lstat(m.path("/var/lib/vamos/queue")); !os.IsNotExist(err) {
+			t.Fatalf("teardown left /var/lib/vamos/queue behind: %v", err)
 		}
 	}
 }
@@ -56,7 +56,7 @@ func TestTeardownAllowsResolvedUncertainOperationOnlyWhenResolverSucceeded(t *te
 	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
 		t.Fatal(err)
 	}
-	operations := m.path("/var/lib/soar/queue/operations")
+	operations := m.path("/var/lib/vamos/queue/operations")
 	if err := os.MkdirAll(operations, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestTeardownAllowsResolvedUncertainOperationOnlyWhenResolverSucceeded(t *te
 	if _, err := m.Teardown(context.Background(), testConfig.Name, true); err != nil {
 		t.Fatalf("resolved uncertain operation blocked teardown: %v", err)
 	}
-	if _, err := os.Lstat(m.path("/var/lib/soar/queue")); !os.IsNotExist(err) {
-		t.Fatalf("teardown left /var/lib/soar/queue behind: %v", err)
+	if _, err := os.Lstat(m.path("/var/lib/vamos/queue")); !os.IsNotExist(err) {
+		t.Fatalf("teardown left /var/lib/vamos/queue behind: %v", err)
 	}
 }

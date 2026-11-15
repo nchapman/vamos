@@ -48,17 +48,17 @@ Normal deploy remains noninteractive and does not require confirmation on every 
 
 Expose volume ownership, binding, identity, and retained/missing state through `status`, never data contents. Initial deploy creates its own new volume automatically. No separate volume preparation, listing, backup, or restore commands are proposed for this milestone.
 
-The `soar deploy --reuse-data` flag acknowledges reuse after destroy. It authorizes attaching exact retained identities, never arbitrary adoption, deletion, renaming, or schema compatibility. Record that authorization in the operation so resume does not ask again. It is not needed for ordinary updates of an existing service or continued recovery of its captured operation. An explicitly named supersede inherits attachment authorization for the same captured volume identities, including after a failed **first** deployment. Preserve the binding and possible-mutation record independently of whether `Current` ever existed. Supersede cannot silently turn that failed first service into a fresh volume or a stateless service; correcting a binding mistake requires a separate identity/migration decision.
+The `vamos deploy --reuse-data` flag acknowledges reuse after destroy. It authorizes attaching exact retained identities, never arbitrary adoption, deletion, renaming, or schema compatibility. Record that authorization in the operation so resume does not ask again. It is not needed for ordinary updates of an existing service or continued recovery of its captured operation. An explicitly named supersede inherits attachment authorization for the same captured volume identities, including after a failed **first** deployment. Preserve the binding and possible-mutation record independently of whether `Current` ever existed. Supersede cannot silently turn that failed first service into a fresh volume or a stateless service; correcting a binding mistake requires a separate identity/migration decision.
 
 ## Stable ownership and creation
 
-Maintain a private, versioned per-app volume registry separate from deployment history, for example `/var/lib/soar/volumes/<app>.json`. It survives destroy. Each record binds:
+Maintain a private, versioned per-app volume registry separate from deployment history, for example `/var/lib/vamos/volumes/<app>.json`. It survives destroy. Each record binds:
 
 - Host identity, app, service, logical volume name, and absolute container mount path.
-- A random immutable volume ID and opaque Docker name, such as `soar-vol-<id>`; do not derive ambiguous names by concatenating app/service labels.
+- A random immutable volume ID and opaque Docker name, such as `vamos-vol-<id>`; do not derive ambiguous names by concatenating app/service labels.
 - Creation operation and state (`planned` or `created`). Runtime/release records reference that immutable ID.
 
-Require both registry provenance and exact Docker labels, local driver/scope, and empty driver options. Matching names or labels alone are not adoption authority. Never derive permissions or deletion authority from Docker's host mountpoint path. Reject unknown containers referencing the volume, including stopped containers; retained, verified Soar containers from the same service are expected references.
+Require both registry provenance and exact Docker labels, local driver/scope, and empty driver options. Matching names or labels alone are not adoption authority. Never derive permissions or deletion authority from Docker's host mountpoint path. Reject unknown containers referencing the volume, including stopped containers; retained, verified Vamos containers from the same service are expected references.
 
 Creation is an idempotent journaled operation: persist the allocated identity and creation intent, create with exact labels, inspect it, then persist `created` **before creating any application container**. A lost create response can adopt only that recorded intent. A `created`/previously attached volume that is now missing must fail closed—not become a fresh empty database. A name collision, unexpected attachment, driver drift, or inconsistent registry must block work before retiring an active service.
 
@@ -90,7 +90,7 @@ The 503 state must be a **durable per-service route state**, separate from `Curr
 | Candidate startup/readiness fails | Keep data and the old writer retired. Public service stays 503. Resume retries captured inputs; corrected supersede stops/removes the failed candidate before starting another writer on the **same** volume. |
 | Final activation response lost | Reconcile recorded 503/new routes. Do not automatically return to the old binary, even if a previous release is retained. |
 | Supersede after data mutation may have begun | Preserve retirement and storage identity; explicitly warn that corrected code must tolerate current data. Supersede is not a schema undo. |
-| Normal host reboot | Current containers recover through their configured restart policy; retired containers remain restart-disabled. Verify this with real Docker. Soar is not a continuous storage-integrity monitor. |
+| Normal host reboot | Current containers recover through their configured restart policy; retired containers remain restart-disabled. Verify this with real Docker. Vamos is not a continuous storage-integrity monitor. |
 
 Extend the existing proven-old promotion cancellation rule to the recorded **503** route, not to the retired binary's old endpoint. If routing is already new or uncertain, require reconciliation rather than assuming the candidate is unserved. Clearing a route intent must never clear writer retirement or the record that data may have changed.
 
@@ -98,9 +98,9 @@ Completed app snapshots retain code/configuration/secret/volume references only.
 
 ## Permissions, retention, and destruction
 
-Use `volume-nocopy` to avoid implicit image-file population. Applications own initialization and numeric UID/GID permissions; Soar must not recursively chown, chmod, copy, or migrate an existing volume. The first runnable example needs an explicit initialization pattern that works with a new root-owned volume and a least-privilege application process. Initialization and migrations must be restart-safe: single-writer replacement does not make startup execute exactly once, and resume or Docker restart may repeat it after partial mutation.
+Use `volume-nocopy` to avoid implicit image-file population. Applications own initialization and numeric UID/GID permissions; Vamos must not recursively chown, chmod, copy, or migrate an existing volume. The first runnable example needs an explicit initialization pattern that works with a new root-owned volume and a least-privilege application process. Initialization and migrations must be restart-safe: single-writer replacement does not make startup execute exactly once, and resume or Docker restart may repeat it after partial mutation.
 
-Cleanup never removes volumes, never uses `docker rm -v`/volume prune, and does not erase registry provenance. Known stopped containers can be removed without deleting their named volume. Never stop or remove an unknown container merely because it references Soar data.
+Cleanup never removes volumes, never uses `docker rm -v`/volume prune, and does not erase registry provenance. Known stopped containers can be removed without deleting their named volume. Never stop or remove an unknown container merely because it references Vamos data.
 
 Destroy withdraws all public routes, disables restart, proves owned writers stopped, and removes verified containers/network. It retains **every volume and secret**, even if the app never became ready. As today, unresolved deployment work must first be recovered to a supported maintenance state; do not quietly broaden incomplete-app destruction in this milestone. Failed initial deployments may therefore leave retained storage and require recovery before ordinary destroy.
 
@@ -134,4 +134,4 @@ bindings, explicit retained-data reuse, and no implicit copy/chown or data delet
 Backup/restore/preparation work remains deferred. The checklist above is not a
 claim that new full-suite or live checks have already passed.
 
-Docker references: [volume lifecycle, implicit creation, and `volume-nocopy`](https://docs.docker.com/engine/storage/volumes/), [volume removal restrictions](https://docs.docker.com/reference/cli/docker/volume/rm/). These describe Docker primitives, not a substitute for Soar's ownership and writer checks.
+Docker references: [volume lifecycle, implicit creation, and `volume-nocopy`](https://docs.docker.com/engine/storage/volumes/), [volume removal restrictions](https://docs.docker.com/reference/cli/docker/volume/rm/). These describe Docker primitives, not a substitute for Vamos's ownership and writer checks.

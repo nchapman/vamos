@@ -18,7 +18,7 @@ func TestRetainedSecretsFenceNewIdentity(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := os.MkdirAll(m.path("/var/lib/soar/secrets"), 0700); err != nil {
+			if err := os.MkdirAll(m.path("/var/lib/vamos/secrets"), 0700); err != nil {
 				t.Fatal(err)
 			}
 			f.calls = nil
@@ -37,7 +37,7 @@ func TestRetainedSecretsAllowReadyReadButFenceTeardown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(m.path("/var/lib/soar/secrets"), 0700); err != nil {
+	if err := os.MkdirAll(m.path("/var/lib/vamos/secrets"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	current, err := m.Bootstrap(context.Background(), testConfig)
@@ -51,7 +51,7 @@ func TestRetainedSecretsAllowReadyReadButFenceTeardown(t *testing.T) {
 	if len(f.calls) != 0 {
 		t.Fatal("teardown ran commands before fence")
 	}
-	if _, err := os.Stat(m.path("/var/lib/soar/secrets")); err != nil {
+	if _, err := os.Stat(m.path("/var/lib/vamos/secrets")); err != nil {
 		t.Fatal("retained secrets removed")
 	}
 }

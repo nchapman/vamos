@@ -11,13 +11,13 @@ import (
 	"testing"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func boundaryStore(t *testing.T, m *Manager, app string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(m.path("/var/lib/soar/secrets/" + app + ".json"))
+	b, err := os.ReadFile(m.path("/var/lib/vamos/secrets/" + app + ".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestSecretBoundaryStageFences(t *testing.T) {
 				t.Fatal("fenced stage changed existing store")
 			}
 			if kind == "global-maintenance" {
-				if _, err := os.Stat(f.m.path("/var/lib/soar/secrets/other.json")); !os.IsNotExist(err) {
+				if _, err := os.Stat(f.m.path("/var/lib/vamos/secrets/other.json")); !os.IsNotExist(err) {
 					t.Fatalf("fenced stage created store: %v", err)
 				}
 			}
@@ -79,7 +79,7 @@ func TestSecretBoundaryResumeMissingPin(t *testing.T) {
 			f.buildFail = true
 			before := f.execute(r, "archive", true)
 			stageSecret(t, f.m, r, "2", "newest-must-not-be-used")
-			path := f.m.path("/var/lib/soar/secrets/" + r.App + ".json")
+			path := f.m.path("/var/lib/vamos/secrets/" + r.App + ".json")
 			if kind == "store" {
 				if err := os.Remove(path); err != nil {
 					t.Fatal(err)
@@ -190,7 +190,7 @@ func TestSecretBoundaryMaintenanceRetainsStore(t *testing.T) {
 		if !bytes.Equal(before, boundaryStore(t, f.m, r.App)) {
 			t.Fatalf("%s changed external store bytes or metadata", action)
 		}
-		info, err := os.Stat(f.m.path("/var/lib/soar/secrets/" + r.App + ".json"))
+		info, err := os.Stat(f.m.path("/var/lib/vamos/secrets/" + r.App + ".json"))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -16,18 +16,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/secrets"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/secrets"
+	"github.com/nchapman/vamos/internal/ssh"
 	"golang.org/x/term"
 )
 
 const secretsHelp = `Usage:
-  soar secrets stage|set [-f soar.yaml | --server NAME --app APP] [--stdin] [--json] NAME [NAME...]
-  soar secrets stage|set [-f soar.yaml | --server NAME --app APP] [--json] NAME=VALUE [NAME=VALUE...]
-  soar secrets list [-f soar.yaml | --server NAME --app APP] [--json]
+  vamos secrets stage|set [-f vamos.yaml | --server NAME --app APP] [--stdin] [--json] NAME [NAME...]
+  vamos secrets stage|set [-f vamos.yaml | --server NAME --app APP] [--json] NAME=VALUE [NAME=VALUE...]
+  vamos secrets list [-f vamos.yaml | --server NAME --app APP] [--json]
 All flags precede NAME. All commands accept --executor FILE and --timeout DURATION.
 Stage/set prompt separately without echo. Singleton --stdin reads one bounded value;
 batch --stdin reads literal NAME=value lines, exactly once per requested name.
@@ -213,7 +213,7 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 				}
 			}
 			fmt.Fprintf(stderr, "Secret set did not complete; inspect staged versions and deployment status before retrying. Operation: %s\n", r.Operation)
-			fmt.Fprintf(stderr, "Inspect: soar secrets list --server %s --app %s\nInspect: soar status --server %s --app %s\nResume with soar resume --server %s --app %s %s only if status records this incomplete operation.\n", server.Name, name, server.Name, name, server.Name, name, r.Operation)
+			fmt.Fprintf(stderr, "Inspect: vamos secrets list --server %s --app %s\nInspect: vamos status --server %s --app %s\nResume with vamos resume --server %s --app %s %s only if status records this incomplete operation.\n", server.Name, name, server.Name, name, server.Name, name, r.Operation)
 			return 1
 		}
 		if response.Version == 1 && response.Error != "" {

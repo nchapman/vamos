@@ -10,17 +10,17 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/secrets"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/secrets"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 func TestSecretSuggestionKeepsArgumentBoundaries(t *testing.T) {
 	out := newHelpAppsTerminal(80, false)
 	writeSecretFailure(out, "stage", "stage; echo surprise", "root@host", "$(id)", "operation", "")
-	if !strings.Contains(out.String(), "soar secrets list --server 'stage; echo surprise' --app '$(id)'") {
+	if !strings.Contains(out.String(), "vamos secrets list --server 'stage; echo surprise' --app '$(id)'") {
 		t.Fatal("suggestion did not quote complete arguments:", out.String())
 	}
 }
@@ -111,7 +111,7 @@ func TestMetadataSecretFailuresDoNotLeak(t *testing.T) {
 					}
 				}
 				if action == "stage" {
-					metadataContains(t, diag.String(), "Operation/version", "soar secrets list --server home --app hello")
+					metadataContains(t, diag.String(), "Operation/version", "vamos secrets list --server home --app hello")
 					if refusal {
 						metadataContains(t, diag.String(), "Staging refused", "256")
 					} else {
@@ -166,18 +166,18 @@ func TestMetadataSecretListContracts(t *testing.T) {
 func TestMetadataInitOutputParity(t *testing.T) {
 	for _, binding := range []string{"unbound", "bound to home"} {
 		var plain bytes.Buffer
-		if err := writeInitSuccess(&plain, "hello", "soar.yaml", binding); err != nil {
+		if err := writeInitSuccess(&plain, "hello", "vamos.yaml", binding); err != nil {
 			t.Fatal(err)
 		}
-		want := "Created soar.yaml; " + binding + ". Uses Dockerfile with context '.'; no Dockerfile created and no remote contacted.\n"
+		want := "Created vamos.yaml; " + binding + ". Uses Dockerfile with context '.'; no Dockerfile created and no remote contacted.\n"
 		if plain.String() != want {
 			t.Fatalf("plain changed: %q", plain.String())
 		}
 		out := newHelpAppsTerminal(120, true)
-		if err := writeInitSuccess(out, "hello", "soar.yaml", binding); err != nil {
+		if err := writeInitSuccess(out, "hello", "vamos.yaml", binding); err != nil {
 			t.Fatal(err)
 		}
-		metadataContains(t, out.String(), "INIT", "hello", "Local configuration created", "soar.yaml", binding, "Uses Dockerfile with context '.'; no Dockerfile created and no remote contacted.")
+		metadataContains(t, out.String(), "INIT", "hello", "Local configuration created", "vamos.yaml", binding, "Uses Dockerfile with context '.'; no Dockerfile created and no remote contacted.")
 	}
 }
 

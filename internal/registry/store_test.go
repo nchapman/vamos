@@ -39,7 +39,7 @@ func readBytes(t *testing.T, path string) []byte {
 }
 
 func TestStorePersistenceAndDefault(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "config", "soar")
+	dir := filepath.Join(t.TempDir(), "config", "vamos")
 	store := New(dir)
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("New should not create the directory: %v", err)
@@ -86,7 +86,7 @@ func TestDefaultStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if store.dir != filepath.Join(configDir, "soar") {
+	if store.dir != filepath.Join(configDir, "vamos") {
 		t.Fatalf("default directory = %q", store.dir)
 	}
 	if _, err := os.Stat(store.dir); !os.IsNotExist(err) {
@@ -293,7 +293,7 @@ func TestOversizedPutPreservesState(t *testing.T) {
 }
 
 func TestPermissionsAndStableLock(t *testing.T) {
-	store := New(filepath.Join(t.TempDir(), "soar"))
+	store := New(filepath.Join(t.TempDir(), "vamos"))
 	if err := os.Mkdir(store.dir, 0755); err != nil {
 		t.Fatal(err)
 	}

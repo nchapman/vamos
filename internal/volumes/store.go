@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	Dir           = "/var/lib/soar/volumes"
+	Dir           = "/var/lib/vamos/volumes"
 	MaxRecords    = 64
 	MaxStoreBytes = 128 << 10
 )
@@ -31,7 +31,7 @@ type Record struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (r Record) DockerName() string { return "soar-vol-" + r.ID }
+func (r Record) DockerName() string { return "vamos-vol-" + r.ID }
 
 type State struct {
 	Version int               `json:"version"`

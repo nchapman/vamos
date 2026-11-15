@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 // Test the actual documentation, not copied examples that can drift independently.
@@ -49,7 +49,7 @@ func TestDocumentedBackupPlans(t *testing.T) {
 					if p.App != "journal" && p.App != "rails-ledger" {
 						t.Fatalf("add a corresponding app fixture for %s", p.App)
 					}
-					app, err := config.Load(filepath.Join("..", "..", "examples", p.App, "soar.yaml"))
+					app, err := config.Load(filepath.Join("..", "..", "examples", p.App, "vamos.yaml"))
 					if err != nil {
 						t.Fatal(err)
 					}

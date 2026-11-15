@@ -5,10 +5,10 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/secrets"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/secrets"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 func (p *presentation) renderServerInspect(target string, report *host.Report) string {
@@ -100,7 +100,7 @@ func writeSecretFailure(w io.Writer, action, server, target, app, operation, mes
 			}
 			text += p.ink("warning", outcome, true) + "\n"
 			text += p.field("Operation/version", operation)
-			text += p.section("Inspect") + p.command(suggestedCommand("soar", "secrets", "list", "--server", server, "--app", app))
+			text += p.section("Inspect") + p.command(suggestedCommand("vamos", "secrets", "list", "--server", server, "--app", app))
 		}
 		_ = p.write(w, text)
 		return
@@ -113,7 +113,7 @@ func writeSecretFailure(w io.Writer, action, server, target, app, operation, mes
 		if message != "" {
 			outcome = "Staging refused"
 		}
-		fmt.Fprintf(w, "%s (operation/version %s).\nInspect: soar secrets list --server %s --app %s\n", outcome, operation, server, app)
+		fmt.Fprintf(w, "%s (operation/version %s).\nInspect: vamos secrets list --server %s --app %s\n", outcome, operation, server, app)
 	}
 }
 

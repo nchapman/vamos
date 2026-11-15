@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/backup"
+	"github.com/nchapman/vamos/internal/backup"
 )
 
 func TestBackupHelpPaths(t *testing.T) {

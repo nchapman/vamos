@@ -3,7 +3,7 @@ package buildcontext
 import (
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 func TestNormalizedBuildUsesPortableConfigPaths(t *testing.T) {
@@ -20,7 +20,7 @@ func TestBundleDedupAndCorruption(t *testing.T) {
 		"backend": {Build: &config.Build{Context: ".", Dockerfile: "Other"}},
 	}}
 	calls := 0
-	data, err := Bundle("soar.yaml", a, func(_ string, b config.Build) ([]byte, error) { calls++; return []byte(b.Dockerfile), nil })
+	data, err := Bundle("vamos.yaml", a, func(_ string, b config.Build) ([]byte, error) { calls++; return []byte(b.Dockerfile), nil })
 	if err != nil || calls != 2 {
 		t.Fatalf("calls=%d err=%v", calls, err)
 	}

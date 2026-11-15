@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/volumes"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/volumes"
 )
 
 func TestVolumeMountCSVBoundary(t *testing.T) {
-	name, mount := "soar-vol-abc", `/data,with"quotes`
+	name, mount := "vamos-vol-abc", `/data,with"quotes`
 	fields, err := csv.NewReader(strings.NewReader(volumeMountArgument(name, mount))).Read()
 	if err != nil || !reflect.DeepEqual(fields, []string{"type=volume", "source=" + name, "target=" + mount, "volume-nocopy"}) {
 		t.Fatalf("fields %q: %v", fields, err)
@@ -47,7 +47,7 @@ func TestVolumeLostCreateResponse(t *testing.T) {
 		case cmd == "container ls --all --filter volume="+rec.DockerName()+" --format {{json .}}":
 		case strings.HasPrefix(cmd, "volume create --driver local "):
 			want := []string{"volume", "create", "--driver", "local"}
-			for _, key := range []string{"soar.host", "soar.app", "soar.service", "soar.volume", "soar.operation"} {
+			for _, key := range []string{"vamos.host", "vamos.app", "vamos.service", "vamos.volume", "vamos.operation"} {
 				want = append(want, "--label", key+"="+volumeLabels(j, rec)[key])
 			}
 			want = append(want, rec.DockerName())

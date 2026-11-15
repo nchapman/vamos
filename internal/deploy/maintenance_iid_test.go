@@ -27,7 +27,7 @@ func TestMaintenanceRemovesEmptyIIDOnlyForUnstartedBuild(t *testing.T) {
 	cfg := *multiMaintenanceRelease("web", op, "sha256:"+strings.Repeat("c", 64), false).Config
 	cfg.HTTP = nil
 	cfg.Command = []string{"true"}
-	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "building", Container: "soar-run-" + op}, Config: cfg}
+	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "building", Container: "vamos-run-" + op}, Config: cfg}
 	if err := f.m.saveRun(j, r); err != nil {
 		t.Fatal(err)
 	}

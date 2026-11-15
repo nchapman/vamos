@@ -1,6 +1,6 @@
 package cli
 
-import "github.com/nchapman/soar/internal/deploy"
+import "github.com/nchapman/vamos/internal/deploy"
 
 func (p *presentation) appFailure(r appReport, request deploy.Request, response deploy.Response, err error, bindingCommand string) string {
 	text := p.header(r.action, r.app, r.server.Name, r.server.Target)

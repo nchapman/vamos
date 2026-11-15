@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {plainText, validateFixtures, expectedLines, standaloneCommands, contrastRatio} from './model.js';
 
-const fixture = overrides => ({case: 'help-root', theme: 'terminal', width: 80, ansi: 'Soar\n', ...overrides});
+const fixture = overrides => ({case: 'help-root', theme: 'terminal', width: 80, ansi: 'Vamos\n', ...overrides});
 
 test('plainText removes only SGR, preserving Unicode, tabs, spaces and newlines', () => {
-  assert.equal(plainText('\x1b[1mSoar\x1b[0m\n\t界 é  \n'), 'Soar\n\t界 é  \n');
+  assert.equal(plainText('\x1b[1mVamos\x1b[0m\n\t界 é  \n'), 'Vamos\n\t界 é  \n');
   assert.equal(plainText('\x1b[38;2;20;30;40mRGB\x1b[m\x1b[38:2::1:2:3m!'), 'RGB!');
   assert.equal(plainText(''), '');
 });
@@ -51,10 +51,10 @@ test('expectedLines expands ASCII tabs at eight-column stops and clamps at edge'
 });
 
 test('standaloneCommands selects only unindented non-template command lines', () => {
-  const eligible = ['soar status', "soar logs --app 'café'", 'soar help service remove'];
-  const excluded = [' soar status', '\tsoar status', 'soar status  Show status', 'soar status ',
-    'soar deploy <app>', 'soar logs [flags]', 'soar logs | cat', 'soar\tstatus', 'soar status\r',
-    'Soar status', 'soar', '$ soar status'];
+  const eligible = ['vamos status', "vamos logs --app 'café'", 'vamos help service remove'];
+  const excluded = [' vamos status', '\tvamos status', 'vamos status  Show status', 'vamos status ',
+    'vamos deploy <app>', 'vamos logs [flags]', 'vamos logs | cat', 'vamos\tstatus', 'vamos status\r',
+    'Vamos status', 'vamos', '$ vamos status'];
   assert.deepEqual(standaloneCommands([...eligible, ...excluded].join('\n')), eligible);
 });
 

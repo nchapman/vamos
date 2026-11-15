@@ -11,23 +11,23 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 	names := []string{"timeout"}
 	switch action {
 	case "inspect":
-		usage = "soar server inspect [OPTIONS] TARGET"
+		usage = "vamos server inspect [OPTIONS] TARGET"
 		notes = "Inspect a host read-only, without provisioning or registering it."
 		names = append(names, "json")
 	case "add":
-		usage = "soar server add [OPTIONS] --yes --domain DOMAIN NAME TARGET"
+		usage = "vamos server add [OPTIONS] --yes --domain DOMAIN NAME TARGET"
 		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDNS is configured separately. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH."
 		names = append(names, "yes", "domain", "executor", "deploy-key")
 	case "connect":
-		usage = "soar server connect [OPTIONS] --domain DOMAIN NAME TARGET"
+		usage = "vamos server connect [OPTIONS] --domain DOMAIN NAME TARGET"
 		notes = "Verify an existing ready installation and register it locally. Requires root SSH.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME and DOMAIN must match the installed identity; SSH host keys must already be trusted."
 		names = append(names, "domain")
 	case "status":
-		usage = "soar server status [OPTIONS] NAME [TARGET]"
+		usage = "vamos server status [OPTIONS] NAME [TARGET]"
 		notes = "Read the host lifecycle journal. TARGET is optional for registered names;\nprovide it to recover an unregistered host."
 		names = append(names, "json")
 	case "teardown":
-		usage = "soar server teardown [OPTIONS] --yes --purge NAME [TARGET]"
+		usage = "vamos server teardown [OPTIONS] --yes --purge NAME [TARGET]"
 		notes = "Remove an unused owned installation as root. Requires --yes and --purge.\nRefuses workloads and changed managed resources; purge deletes owned runtime data and certificates.\nTARGET is optional for registered names. Started mutations survive client disconnection."
 		names = append(names, "yes", "purge", "executor")
 	}

@@ -2,9 +2,9 @@
 
 See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
-Soar supports **1–8 services per app**, each built from a Dockerfile or pulled from a registry image reference. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing. No database/storage semantics are implied.
+Vamos supports **1–8 services per app**, each built from a Dockerfile or pulled from a registry image reference. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing. No database/storage semantics are implied.
 
-The runnable [private-backend example](../examples/private-backend/soar.yaml) uses one shared build for public `web` and private `backend`. No local Docker daemon or registry is needed.
+The runnable [private-backend example](../examples/private-backend/vamos.yaml) uses one shared build for public `web` and private `backend`. No local Docker daemon or registry is needed.
 
 ## Configuration and commands
 
@@ -25,13 +25,13 @@ services:
 Public `web` gets `https://<app>.<base-domain>`; other public services get `https://<app>-<service>.<base-domain>`. Generated hostnames are reserved globally, including pending deployments. For example, `foo/bar` conflicts with `foo-bar/web`. Oversized DNS labels/hostnames fail before mutation. Private services have no generated public route or host port bindings, even if their image declares `EXPOSE`.
 
 ```sh
-soar deploy
-soar status                         # Overall operation and each effective service
-soar status --service backend
-soar logs --service backend
-soar logs --service backend --candidate
-soar resume OPERATION_ID
-soar deploy --supersede OPERATION_ID
+vamos deploy
+vamos status                         # Overall operation and each effective service
+vamos status --service backend
+vamos logs --service backend
+vamos logs --service backend --candidate
+vamos resume OPERATION_ID
+vamos deploy --supersede OPERATION_ID
 ```
 
 Flags precede positional arguments. Deploy defaults to the local manifest selection, merged into the remote app; `deploy --service NAME` selects one service without applying other local changes. Existing `update: manual` services require scoped deployment with `--yes` to update; ordinary deploy creates missing manual services but leaves unchanged existing ones pinned. Changed protected configuration or staged secrets cause preflight refusal. Logs default to `web`, or the sole service; otherwise selection is required. `--candidate` selects a pending replacement, not the active container, and output identifies its source.
@@ -73,10 +73,10 @@ For a multi-instance current or candidate group, select an explicit 1-based
 ordinal; sessions pin the actual Docker ID and never follow a replacement:
 
 ```sh
-soar logs --service web --replica 2
-soar logs --service web --candidate --replica 1 --follow
-soar exec --service web --replica 2 -- printenv HOSTNAME
-soar console --service web --replica 1
+vamos logs --service web --replica 2
+vamos logs --service web --candidate --replica 1 --follow
+vamos exec --service web --replica 2 -- printenv HOSTNAME
+vamos console --service web --replica 1
 ```
 
 Replica operations use journal v8 and preserve v7 service incarnations and
@@ -99,7 +99,7 @@ results below describe the earlier singleton milestone.
 
 Selected automatic or explicitly scoped services resolve their images from captured inputs, with BuildKit caching for builds. Unchanged existing manual services are not rebuilt or pulled. A matching effective configuration, immutable image, and secret pins avoids container replacement. There is no dependency graph or implicit ordering beyond these stages. Existing public services must tolerate old/new private versions; readiness checks that require a not-yet-updated private dependency can block promotion. Functional dependency health and retry behavior are application responsibilities.
 
-**A deploy is not a transaction.** If two public services succeed and a private replacement fails, the public services stay promoted. The old private container stays retired; Soar never implicitly restarts it. Status separates the overall operation, per-service transition, effective container, candidate, running state, and availability. `available` is a process/restart/retirement observation, not continuous HTTP or application-level health monitoring.
+**A deploy is not a transaction.** If two public services succeed and a private replacement fails, the public services stay promoted. The old private container stays retired; Vamos never implicitly restarts it. Status separates the overall operation, per-service transition, effective container, candidate, running state, and availability. `available` is a process/restart/retirement observation, not continuous HTTP or application-level health monitoring.
 
 Resume uses captured contexts, images, configuration, and secret versions. It skips completed transitions, reconciles uncertain route/alias effects, and continues the remaining work. Staging newer secrets does not change those captured inputs. Secret status reports applied versions per service when effective versions differ.
 
@@ -115,11 +115,11 @@ A pending public promotion may be cancelled only when the recorded intent matche
 
 Services use their service names, such as `backend:9000`, within their own app network. Separate app networks do not provide cross-app DNS or direct private reachability. Containers still have outbound internet access, and other apps can use intentionally public HTTPS endpoints. This is separation for trusted applications, not a sandbox against host administrators or Docker access.
 
-Public candidates receive **no stable service alias during initial startup**. Docker cannot atomically update an existing endpoint's aliases. After initial readiness, Soar journals intent, disconnects/reconnects only the candidate with its alias, verifies the same pinned loopback port, and rechecks readiness before Caddy promotion. This can interrupt candidate dependency connections and change its private IP.
+Public candidates receive **no stable service alias during initial startup**. Docker cannot atomically update an existing endpoint's aliases. After initial readiness, Vamos journals intent, disconnects/reconnects only the candidate with its alias, verifies the same pinned loopback port, and rechecks readiness before Caddy promotion. This can interrupt candidate dependency connections and change its private IP.
 
 During promotion/drain, DNS can return both old and new versions. This overlap is normally brief, but a failed or interrupted promotion can prolong it until resume or a permitted supersede settles the operation. Alias attachment precedes the second readiness sample, so this is **not atomic or continuously readiness-gated DNS**. A failed post-attachment readiness check attempts to withdraw the candidate endpoint; failed withdrawal remains explicit, not a claimed rollback. Resume recognizes a detached candidate only in the recorded aliasing transition. Clients must tolerate DNS caching, reconnects, and interrupted connections.
 
-The supported host uses Soar's Docker-managed bridge/NAT configuration. Deployment rejects changed daemon configuration and unsupported app-network options, including routed/unprotected gateways, custom direct-routing interfaces, and IPv6 app networks. It does not rewrite firewall rules or restart Docker to repair drift. Arbitrary manual daemon/firewall changes are unsupported; runtime ownership checks are not a complete firewall audit.
+The supported host uses Vamos's Docker-managed bridge/NAT configuration. Deployment rejects changed daemon configuration and unsupported app-network options, including routed/unprotected gateways, custom direct-routing interfaces, and IPv6 app networks. It does not rewrite firewall rules or restart Docker to repair drift. Arbitrary manual daemon/firewall changes are unsupported; runtime ownership checks are not a complete firewall audit.
 
 ## Compatibility, retention, and limits
 

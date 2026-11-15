@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nchapman/soar/internal/buildkit"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildkit"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func (m *Manager) buildService() buildkit.Manager {

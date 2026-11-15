@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 var (

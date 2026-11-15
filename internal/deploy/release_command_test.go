@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 type releaseFlow struct {
@@ -44,7 +44,7 @@ func newReleaseFlow(t *testing.T) *releaseFlow {
 			}
 			var v *inspection
 			for _, candidate := range f.docker.containers {
-				if candidate.Config.Labels["soar.run"] != "" && (args[len(args)-1] == candidate.ID || args[len(args)-1] == strings.TrimPrefix(candidate.Name, "/")) {
+				if candidate.Config.Labels["vamos.run"] != "" && (args[len(args)-1] == candidate.ID || args[len(args)-1] == strings.TrimPrefix(candidate.Name, "/")) {
 					v = candidate
 					break
 				}
@@ -157,7 +157,7 @@ func TestReleaseCommandGatesEveryRuntimeAndUsesCapturedInputs(t *testing.T) {
 			t.Fatal(f.create)
 		}
 	}
-	hook := f.docker.containers["soar-run-"+j.Hook.Operation]
+	hook := f.docker.containers["vamos-run-"+j.Hook.Operation]
 	if !strings.Contains(strings.Join(hook.Config.Env, "\n"), "TOKEN=release-pinned-secret") || !strings.Contains(strings.Join(hook.Config.Env, "\n"), "REVISION=new") {
 		t.Fatal(hook.Config.Env)
 	}
@@ -308,7 +308,7 @@ func TestReleaseCommandReplicaGroupSharesLimitsAndOneExecution(t *testing.T) {
 	if len(members) != 2 || f.starts != 1 {
 		t.Fatal("release was not once for the whole group")
 	}
-	names := []string{"soar-run-" + j.Hook.Operation}
+	names := []string{"vamos-run-" + j.Hook.Operation}
 	for _, member := range members {
 		names = append(names, member.Container)
 	}

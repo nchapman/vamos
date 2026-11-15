@@ -7,13 +7,13 @@ resolved target before applying changes.
 
 ## One app, several source folders
 
-Independent folders can each contain a `soar.yaml` with the **same app name** and
+Independent folders can each contain a `vamos.yaml` with the **same app name** and
 different, app-wide unique service names. No Git repository, CI pipeline, local
 Docker daemon, or image registry is required for Dockerfile builds. Source is
 captured locally and built on the server; image-based services can still pull
 from a registry explicitly.
 
-For example, save this as `frontend/soar.yaml` alongside its Dockerfile:
+For example, save this as `frontend/vamos.yaml` alongside its Dockerfile:
 
 ```yaml
 app: workspace
@@ -29,7 +29,7 @@ services:
       health: /healthz
 ```
 
-Save this independent manifest as `api/soar.yaml` alongside its own Dockerfile:
+Save this independent manifest as `api/vamos.yaml` alongside its own Dockerfile:
 
 ```yaml
 app: workspace
@@ -49,11 +49,11 @@ endpoint. Substitute your configured base domain for `apps.example.com`.
 
 ```sh
 cd frontend
-soar validate
-soar deploy --server home
+vamos validate
+vamos deploy --server home
 cd ../api
-soar validate
-soar deploy --server home
+vamos validate
+vamos deploy --server home
 ```
 
 Deploy **upserts the declared selection**, not the whole remote membership.
@@ -81,23 +81,23 @@ Before deploying an existing service from a new directory, inspect it and bind
 explicitly from that directory:
 
 ```sh
-soar status --app workspace --server home
-soar service bind api --app workspace --server home
-soar deploy --service api --server home
+vamos status --app workspace --server home
+vamos service bind api --app workspace --server home
+vamos deploy --service api --server home
 ```
 
 `service bind` only reads remote status and writes local metadata; it does not
 deploy, restart, or change remote ownership. With `--app`, it writes in the
-current directory; using `-f path/to/soar.yaml` instead uses the manifest's
+current directory; using `-f path/to/vamos.yaml` instead uses the manifest's
 directory. Overlapping manifests/directories are permitted after explicit
 binding. Several directories may bind the same service. These checks prevent
 accidental target adoption, **not access control**, repository ownership, or
 concurrent-edit conflict resolution. Root SSH access remains administrative.
 
-Private `.soar/` metadata includes the normal `server.json` target binding and
+Private `.vamos/` metadata includes the normal `server.json` target binding and
 separate `services-<hash>.json` records keyed by resolved SSH target and app.
 Service records contain host identity and incarnation, use private file
-permissions, and are gitignored. Build contexts always exclude `.soar` (and
+permissions, and are gitignored. Build contexts always exclude `.vamos` (and
 `.git`); do not copy these records into source control or source bundles.
 
 `--server` overrides only this invocation, never the normal project target.
@@ -113,24 +113,24 @@ routing first. It is preview-first, and applying recomputes the plan under the
 host lock:
 
 ```sh
-soar service remove api --app workspace --server home
-soar service remove api --app workspace --server home --yes
+vamos service remove api --app workspace --server home
+vamos service remove api --app workspace --server home --yes
 # A protected update: manual service needs an additional explicit approval:
-soar service remove db --app workspace --server home --yes --allow-protected
+vamos service remove db --app workspace --server home --yes --allow-protected
 ```
 
 The service wrapper accepts **NAME before flags**, as shown. Other positional
 commands require flags first, for example:
 
 ```sh
-soar resume --app workspace --server home OPERATION_ID
+vamos resume --app workspace --server home OPERATION_ID
 ```
 
 Removal withdraws routes before stopping/removing the selected service's verified
 containers. Other services remain. Volumes and secrets are retained; shared
 network, images and archives are not deleted by service removal. Interrupted
 removal resumes its captured maintenance operation. It is not a data purge.
-Removing the last service is refused: use preview-first `soar destroy` for the
+Removing the last service is refused: use preview-first `vamos destroy` for the
 app instead. Removal can also abandon an isolated failed initial creation when
 that service was the operation's only selected service, other services are
 unchanged, and no uncertain routing or retirement needs reconciliation. Broader
@@ -143,9 +143,9 @@ declaration if it should stay absent. To intentionally re-create it, keep/restor
 the declaration and explicitly select and approve it:
 
 ```sh
-soar deploy --server home --re-add --service api --yes
+vamos deploy --server home --re-add --service api --yes
 # If that service has retained volume data, separately authorize exact reuse:
-soar deploy --server home --re-add --service db --yes --reuse-data
+vamos deploy --server home --re-add --service db --yes --reuse-data
 ```
 
 Re-add creates a new incarnation; old directory bindings no longer authorize
@@ -190,7 +190,7 @@ a hostile-tenant security boundary.
 The merged remote app, not each folder independently, is limited to **8 services,
 32 desired instances (8 per service), 32 custom aliases (8 per public service),
 and 64 secret environment mappings**.
-`soar validate` checks configuration syntax/schema and alias bounds, but currently
+`vamos validate` checks configuration syntax/schema and alias bounds, but currently
 does not enforce the deployment service-count or aggregate secret-mapping bounds.
 A successful local validation is not deployment admission: deploy validation and
 remote planning must also validate the merged app and server-wide hostname

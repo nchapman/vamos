@@ -8,7 +8,7 @@ these gates before the backup/recovery milestone can be called complete.
 ## SQLite
 
 Use a separate, pinned, network-disabled helper with a direct SQLite Backup API
-wrapper; keep CGO out of the Soar executor. The inspected `go-sqlite3` v1.14.32
+wrapper; keep CGO out of the Vamos executor. The inspected `go-sqlite3` v1.14.32
 wrapper collapses `SQLITE_OK`, `SQLITE_BUSY` and `SQLITE_LOCKED` in `Backup.Step`, so
 it cannot directly implement distinct busy-result accounting. SQLite 3.50.4 was
 the source-inspection baseline, not a production security-release recommendation.
@@ -64,7 +64,7 @@ claims still need authoritative documentation checks and executable fixtures.
 - Share an exported read-only repeatable-read snapshot between supported catalog
   inventory and `pg_dump`. Document the administrative-stability assumption:
   external role/password, ACL, DDL and configuration changes are not fenced by
-  Soar's host lock. Sequence state is not ordinary MVCC table data. Detected drift
+  Vamos's host lock. Sequence state is not ordinary MVCC table data. Detected drift
   and dump/lock failures must fail capture, not trigger automatic migration/retry.
 - Fresh storage only. Invoke approved `initdb` and `postgres` directly, bypassing
   image entrypoints/init scripts. No published ports, application network, release
@@ -92,8 +92,8 @@ unchanged for publication or artifact streaming.
   are rejected; an uncertain result needs independent sealed-artifact verification.
 - Restic acknowledges pack/index uploads before saving the snapshot object. That
   is not full remote artifact readback. A restic snapshot may be discoverable
-  before Soar may advertise it as a verified recovery point.
-- Backup locks are non-exclusive. Soar must durably own execution identity and
+  before Vamos may advertise it as a verified recovery point.
+- Backup locks are non-exclusive. Vamos must durably own execution identity and
   prove a previous upload worker dead before retrying. Tags, PID, lock absence or
   age are not idempotency/death proof. Never automatically unlock.
 - Read-only `--no-lock` discovery/dump is possible, but offers no retention lease

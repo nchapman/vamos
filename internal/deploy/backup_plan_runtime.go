@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nchapman/soar/internal/backup"
+	"github.com/nchapman/vamos/internal/backup"
 )
 
 // backupPlanRuntime observes effective identities only. In particular it must

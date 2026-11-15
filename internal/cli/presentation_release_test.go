@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func TestReleasePresentationShowsExecutionIdentityWithoutOutput(t *testing.T) {

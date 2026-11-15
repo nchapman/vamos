@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/executor"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/executor"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func workerUnitName(id string) string {
-	return "soar-op-" + id + ".service"
+	return "vamos-op-" + id + ".service"
 }
 
 func workerStageDir(id string) string {
@@ -122,7 +122,7 @@ func startSupervisedUnit(ctx context.Context, id, dir string) error {
 	args := []string{
 		"--quiet",
 		"--collect",
-		"--unit=soar-op-" + id,
+		"--unit=vamos-op-" + id,
 		"--property=RuntimeMaxSec=21min",
 		"--property=KillMode=control-group",
 		"--working-directory=" + dir,
@@ -159,7 +159,7 @@ func isWorkerUnitActive(ctx context.Context, unit string) (bool, error) {
 	}
 }
 
-// runSupervisedWorker launches soar-op-<id>.service and waits for it to exit.
+// runSupervisedWorker launches vamos-op-<id>.service and waits for it to exit.
 // If the daemon shuts down while the detached unit is still running, the
 // staged directory and running phase are left intact for startup re-adoption.
 func (d *Daemon) runSupervisedWorker(ctx context.Context, id string, request deploy.Request, payload []byte) {
@@ -205,7 +205,7 @@ func (d *Daemon) monitorSupervisedUnit(ctx context.Context, id, dir string) {
 		select {
 		case <-ctx.Done():
 			// Leave an active detached unit running in its own systemd cgroup so
-			// the next soar-agent process can re-adopt or harvest response.json.
+			// the next vamos-agent process can re-adopt or harvest response.json.
 			return
 		case <-ticker.C:
 		}

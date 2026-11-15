@@ -23,14 +23,14 @@ mise run test:visual
 This opt-in task runs `npm ci --ignore-scripts`, `npm test`, and `npm run capture`
 in `integration/visual`. Dependency installation may need registry access; capture
 uses only an ephemeral loopback HTTP server, which it closes afterward. It does
-not contact deployment servers. Set `SOAR_VISUAL_CHROME` to an installed Chrome
+not contact deployment servers. Set `VAMOS_VISUAL_CHROME` to an installed Chrome
 executable if the default Playwright `chrome` channel is unavailable; no browser
 is downloaded by this harness. Fixture generation has a five-minute process
 limit (and a two-minute Go test limit); browser startup, capture, and cleanup
 steps have 30-second deadlines so stalled rendering can fail and clean up.
 
 Capture runs `TestPresentationVisualFixtures` in `internal/cli` with
-`SOAR_VISUAL_DIR` pointing to `.pi/visual`. That test supplies actual production
+`VAMOS_VISUAL_DIR` pointing to `.pi/visual`. That test supplies actual production
 renderer output in `fixtures.json`: an array of `{case, theme, width, ansi}`
 objects, not hand-written HTML replicas. Missing fixtures fail capture. The matrix
 covers 48/80/120 columns and light/dark/mono/terminal modes. Mono and inherited
@@ -44,7 +44,7 @@ Git-ignored `.pi/visual/`. Review the screenshots as well as the evaluation: thi
 is not a pixel-baseline regression test. Evaluation checks logical text (SGR
 removed, soft wraps joined, ASCII tabs expanded at eight-column stops, right
 space padding ignored), visible-cell contrast of at least 4.5:1 on the controlled
-backgrounds, and browser errors. Eligible standalone, unindented `soar` command
+backgrounds, and browser errors. Eligible standalone, unindented `vamos` command
 lines are selected through xterm into a non-executing textarea. This does not test
 the system clipboard, execute suggestions, or validate every help example.
 
@@ -95,14 +95,14 @@ it is not evidence of execution on native hardware of that architecture.
   The runner verifies these settings before sending source or running tests and
   removes `ORBENV` so ambient Mac variables are not opted into guest commands.
 - Only the repository's `cmd`, `internal`, `integration`, `examples`, `go.mod`,
-  `go.sum`, and `mise.toml` are archived. `.git`, `.soar`, `.pi`, `.env*`, and Python
+  `go.sum`, and `mise.toml` are archived. `.git`, `.vamos`, `.pi`, `.env*`, and Python
   caches are excluded; symlinks and special files are rejected. This captures
   current working files, including uncommitted code—not just HEAD.
 - The Linux suite runs the client as an unprivileged guest user against a real
   SSH server bound to guest loopback. The guest generates its own keys and pins
   its SSH host key using the trusted VM control channel. Mac SSH configuration,
-  keys, Soar registry, service bindings and Docker context are not used.
-- Soar's real bootstrap installs and manages Docker and Caddy inside the guest.
+  keys, Vamos registry, service bindings and Docker context are not used.
+- Vamos's real bootstrap installs and manages Docker and Caddy inside the guest.
   HTTPS uses `.localhost` names and Caddy's internal CA. Trust installation is
   confined to the guest; curl verifies the certificate and hostname. No public
   DNS, public ACME issuer, or Mac trust-store modification is needed.
@@ -197,7 +197,7 @@ A second app exercises recovery and diagnostics:
 
 Checkpoints use guest-only Docker/Caddy wrappers, private Unix sockets and Linux
 pidfds. They do not modify the production executor, inject timing-dependent sleeps,
-change Soar journals, or disable machine isolation. Nonmatching commands execute
+change Vamos journals, or disable machine isolation. Nonmatching commands execute
 the original binaries. A gate is one-shot and fails closed without its explicit
 release; both sides have bounded socket deadlines, and killing the worker also
 kills its blocked gate process. Restart is
@@ -275,7 +275,7 @@ The full base/CLI/recovery flow and owned-machine deletion passed together.
 ### Runtime feature acceptance
 
 The resource/release/replica-expanded suite passed on **Ubuntu 24.04.5 arm64**
-in owned run `soar-test-f5b6acb3fd56` (about 16 minutes). All seven runtime groups
+in owned run `vamos-test-f5b6acb3fd56` (about 16 minutes). All seven runtime groups
 in `runtime-summary.json` passed alongside the existing base, CLI and recovery
 scenarios, including coordinator-owned restart and deletion of the guest.
 The run built the real Rails image, migrated PostgreSQL, processed a Solid Queue
@@ -303,7 +303,7 @@ kernel and virtualization environment; results do not establish identical cloud
 kernel, firewall, reboot or power-loss behavior. In particular, the tested isolated
 guest rejects BuildKit's nested overlay mount. The suite creates a guest-only
 `docker-container` Buildx builder with the **native copying snapshotter**, retaining
-machine isolation rather than weakening it. Soar's managed Docker configuration
+machine isolation rather than weakening it. Vamos's managed Docker configuration
 and the Mac Docker daemon are unchanged. This tests real builds and containers,
 but not the droplet's default BuildKit snapshotter; the extra builder resources
 are disposed of with the VM.

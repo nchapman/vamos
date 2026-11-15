@@ -15,8 +15,8 @@ import time
 import traceback
 import urllib.request
 
-ROOT = Path('/opt/soar-test')
-OWNER = Path('/var/lib/soar-integration-owner')
+ROOT = Path('/opt/vamos-test')
+OWNER = Path('/var/lib/vamos-integration-owner')
 CA = Path('/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt')
 
 
@@ -46,7 +46,7 @@ class Harness:
         self.artifacts.mkdir(mode=0o700, exist_ok=True)
         self.sequence = max((int(p.name.split('.')[0]) for p in self.artifacts.glob('*.command.json')
                              if p.name.split('.')[0].isdigit()), default=0)
-        self.user = pwd.getpwnam('soartest')
+        self.user = pwd.getpwnam('vamostest')
         self.env = dict(os.environ, PATH='/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
                         GOTOOLCHAIN='local', DEBIAN_FRONTEND='noninteractive',
                         HOME=self.user.pw_dir, XDG_CONFIG_HOME=str(self.work / 'config'))
@@ -56,7 +56,7 @@ class Harness:
     def log(self, text):
         print(text, flush=True)
 
-    def command(self, argv, input=None, cwd=None, user='soartest', check=True, timeout=1200):
+    def command(self, argv, input=None, cwd=None, user='vamostest', check=True, timeout=1200):
         self.sequence += 1
         argv = [str(v) for v in argv]
         self.log(f'[{self.sequence:03}] {" ".join(argv)}')
@@ -80,7 +80,7 @@ class Harness:
         return result
 
     def cli(self, *args, cwd=None, input=None, expect_error=None):
-        result = self.command([ROOT / 'bin/soar', *args], cwd=cwd, input=input, check=expect_error is None)
+        result = self.command([ROOT / 'bin/vamos', *args], cwd=cwd, input=input, check=expect_error is None)
         if expect_error is not None:
             output = (result.stdout + result.stderr).decode(errors='replace')
             if result.returncode == 0 or expect_error not in output:
@@ -99,7 +99,7 @@ class Harness:
 
     def trust_local_ca(self):
         # Trust is deliberately confined to the disposable guest, never macOS.
-        shutil.copyfile(CA, '/usr/local/share/ca-certificates/soar-integration.crt')
+        shutil.copyfile(CA, '/usr/local/share/ca-certificates/vamos-integration.crt')
         self.command(['update-ca-certificates'], user='root')
 
     def https(self, host, path='/', data=None):
@@ -115,8 +115,8 @@ class Harness:
 
     def diagnostics(self):
         for args in (['systemctl', '--failed', '--no-pager'],
-                     ['systemctl', 'status', 'docker', 'caddy', 'soar-agent', '--no-pager'],
-                     ['journalctl', '-u', 'caddy', '-u', 'docker', '-u', 'soar-agent', '--no-pager', '-n', '150'],
+                     ['systemctl', 'status', 'docker', 'caddy', 'vamos-agent', '--no-pager'],
+                     ['journalctl', '-u', 'caddy', '-u', 'docker', '-u', 'vamos-agent', '--no-pager', '-n', '150'],
                      ['docker', 'ps', '-a', '--format', '{{.Names}}\t{{.Status}}'],
                      ['docker', 'volume', 'ls'], ['docker', 'network', 'ls']):
             try:
@@ -157,7 +157,7 @@ def bootstrap(h):
     h.command(['apt-get', 'update'], user='root')
     h.command(['apt-get', 'install', '-y', '--no-install-recommends', 'ca-certificates', 'curl',
                'openssh-server', 'build-essential', 'git'], user='root')
-    h.command(['chown', '-R', 'soartest:soartest', str(ROOT)], user='root')
+    h.command(['chown', '-R', 'vamostest:vamostest', str(ROOT)], user='root')
     install_go(h)
     ssh_dir = Path(h.user.pw_dir) / '.ssh'
     ssh_dir.mkdir(mode=0o700, exist_ok=True)
@@ -174,7 +174,7 @@ def bootstrap(h):
     known.write_text('127.0.0.1 ' + ' '.join(key[:2]) + '\n')
     known.chmod(0o600)
     os.chown(known, h.user.pw_uid, h.user.pw_gid)
-    Path('/etc/ssh/sshd_config.d/00-soar-integration.conf').write_text(
+    Path('/etc/ssh/sshd_config.d/00-vamos-integration.conf').write_text(
         'ListenAddress 127.0.0.1\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n'
         'PermitRootLogin prohibit-password\n')
     h.command(['systemctl', 'disable', '--now', 'ssh.socket'], user='root')
@@ -194,12 +194,12 @@ def checks(h):
     h.command(['go', 'tool', 'cover', '-html=' + str(coverage), '-o', str(h.artifacts / 'coverage.html')])
     h.command(['go', 'run', './cmd/build'])
     import versioning
-    executor = ROOT / 'bin' / ('soar-linux-' + ('arm64' if platform.machine() == 'aarch64' else 'amd64'))
+    executor = ROOT / 'bin' / ('vamos-linux-' + ('arm64' if platform.machine() == 'aarch64' else 'amd64'))
     versioning.run(h, executor)
     for example, tests in (('journal', '.'), ('ledger', 'tests')):
         h.command(['python3', '-m', 'unittest', 'discover', '-s', tests, '-v'], cwd=ROOT / 'examples' / example)
     h.command(['python3', '-m', 'unittest', 'discover', '-s', 'integration', '-p', 'test_*.py', '-v'])
-    for manifest in sorted((ROOT / 'examples').rglob('soar.yaml')):
+    for manifest in sorted((ROOT / 'examples').rglob('vamos.yaml')):
         h.cli('validate', '-f', str(manifest))
 
 

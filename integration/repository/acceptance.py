@@ -19,7 +19,7 @@ from scenarios import require
 
 # Docker Hub public metadata, retrieved 2026-11-13; multiarch amd64/arm64 index.
 IMAGE = 'rustfs/rustfs@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74'
-RESTIC = Path('/usr/local/lib/soar/tools/restic/0.19.1/restic')
+RESTIC = Path('/usr/local/lib/vamos/tools/restic/0.19.1/restic')
 
 
 def private(path):
@@ -33,7 +33,7 @@ def clean_output(output, credentials):
 
 
 def fixture_container_command(container, envfile, network):
-    return ['docker', 'run', '-d', '--name', container, '--label', 'soar.integration.repository=true', '--env-file', envfile, '--network', network, '-p', '127.0.0.1:19000:9000', IMAGE, '/data']
+    return ['docker', 'run', '-d', '--name', container, '--label', 'vamos.integration.repository=true', '--env-file', envfile, '--network', network, '-p', '127.0.0.1:19000:9000', IMAGE, '/data']
 
 
 def fixture_proxy_config(cert, key):
@@ -41,7 +41,7 @@ def fixture_proxy_config(cert, key):
         'tls': {'certificates': {'load_files': [{'certificate': str(cert), 'key': str(key)}]}},
         'http': {'servers': {'fixture': {
             'listen': ['127.0.0.1:19001'],
-            # Static TLS only: automatic redirects would steal Soar's port 80.
+            # Static TLS only: automatic redirects would steal Vamos's port 80.
             'automatic_https': {'disable': True},
             'tls_connection_policies': [{}],
             'routes': [{'handle': [{'handler': 'reverse_proxy', 'upstreams': [{'dial': '127.0.0.1:19000'}]}]}],
@@ -74,26 +74,26 @@ def run(h):
     work = h.work / 'repository-acceptance'
     work.mkdir(mode=0o700)  # Fail closed on reruns; never overwrite fixture state.
     os.chown(work, h.user.pw_uid, h.user.pw_gid)
-    credentials = {'access_key_id': 'soar' + secrets.token_hex(10), 'secret_access_key': secrets.token_hex(32)}
+    credentials = {'access_key_id': 'vamos' + secrets.token_hex(10), 'secret_access_key': secrets.token_hex(32)}
     envfile = work / 'fixture.env'
     envfile.write_text('RUSTFS_ACCESS_KEY=' + credentials['access_key_id'] + '\nRUSTFS_SECRET_KEY=' + credentials['secret_access_key'] + '\nRUSTFS_CONSOLE_ENABLE=false\n')
     envfile.chmod(0o600)
     cert, key = work / 'cert.pem', work / 'key.pem'
-    h.command(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=soar-s3-fixture', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', key, '-out', cert], user='root')
+    h.command(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=vamos-s3-fixture', '-addext', 'subjectAltName=IP:127.0.0.1', '-keyout', key, '-out', cert], user='root')
     key.chmod(0o600)
     credentials['ca_certificate'] = cert.read_text()
     proxy = work / 'caddy.json'
     proxy.write_text(json.dumps(fixture_proxy_config(cert, key)))
     helper = work / 's3-admin'
     h.command(['go', 'build', '-o', helper, './integration/repository'])
-    container = 'soar-repository-' + secrets.token_hex(8)
+    container = 'vamos-repository-' + secrets.token_hex(8)
     cid = None
     network = None
     proc = None
     try:
-        # Soar deliberately disables Docker's default bridge. This fixture owns
+        # Vamos deliberately disables Docker's default bridge. This fixture owns
         # a separate explicit network; never adopt an application network.
-        network = h.command(['docker', 'network', 'create', '--label', 'soar.integration.repository=true', container], user='root').stdout.decode().strip()
+        network = h.command(['docker', 'network', 'create', '--label', 'vamos.integration.repository=true', container], user='root').stdout.decode().strip()
         require(re.fullmatch('[0-9a-f]{64}', network), 'invalid fixture network ID')
         cid = h.command(fixture_container_command(container, envfile, network), user='root').stdout.decode().strip()
         require(re.fullmatch('[0-9a-f]{64}', cid), 'invalid fixture container ID')
@@ -118,7 +118,7 @@ def run(h):
         before_tmp = set(Path('/run').rglob('restic-*'))
         outputs = []
         def cli(action, *args, creds=None, success=True):
-            result = h.command([h.root / 'bin/soar', 'backup', 'repository', action, '--server', 'local', '--json', *args], input=json.dumps(creds).encode() if creds else None, check=False)
+            result = h.command([h.root / 'bin/vamos', 'backup', 'repository', action, '--server', 'local', '--json', *args], input=json.dumps(creds).encode() if creds else None, check=False)
             outputs.append(result.stdout + result.stderr)
             clean_output(outputs[-1], credentials)
             if creds:
@@ -126,7 +126,7 @@ def run(h):
             require((result.returncode == 0) == success, 'repository ' + action + ' unexpected exit status')
             return json.loads(result.stdout) if success else None
         def add(name, mode, prefix, creds, identity=None, success=True):
-            args = ['--mode', mode, '--endpoint', 'https://127.0.0.1:19001', '--bucket', 'soar-acceptance', '--prefix', prefix, '--region', 'us-east-1', '--lookup', 'path', '--credentials-stdin', '--recovery-file', str(work / (name + '.kit.json')), '--yes']
+            args = ['--mode', mode, '--endpoint', 'https://127.0.0.1:19001', '--bucket', 'vamos-acceptance', '--prefix', prefix, '--region', 'us-east-1', '--lookup', 'path', '--credentials-stdin', '--recovery-file', str(work / (name + '.kit.json')), '--yes']
             if identity:
                 args += ['--repository-id', identity]
             return cli('add', *args, name, creds=creds, success=success)
@@ -177,10 +177,10 @@ def run(h):
         unchanged()
         add('fixture-missing', 'connect', 'never-initialize', credentials, identity, success=False)
         unchanged()
-        for directory in (Path('/var/lib/soar/backups'), Path('/var/lib/soar/backups/repositories')):
+        for directory in (Path('/var/lib/vamos/backups'), Path('/var/lib/vamos/backups/repositories')):
             require(directory.stat().st_mode & 0o777 == 0o700 and directory.stat().st_uid == 0, 'retained credential directory is not root-private')
         for name in ('fixture-new', 'fixture-connect'):
-            record = Path('/var/lib/soar/backups/repositories') / (name + '.json')
+            record = Path('/var/lib/vamos/backups/repositories') / (name + '.json')
             private(record)
             require(record.stat().st_uid == 0, 'repository record not root-owned')
             retained = json.loads(record.read_text())

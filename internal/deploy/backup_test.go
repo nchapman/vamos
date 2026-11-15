@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/backupbackend"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 type repositoryBackend struct{ calls int }
@@ -32,7 +32,7 @@ func (b *repositoryBackend) CheckEmpty(context.Context, backupbackend.Config, ba
 
 func repositoryRequest(host lifecycle.Config) Request {
 	op := strings.Repeat("b", 32)
-	return Request{Version: 1, Action: "backup-repository", Host: host, Backup: &backup.Request{Action: "create", Name: "offsite", Operation: op, Confirm: true, Config: &backupbackend.Config{Endpoint: "https://s3.example.com", Bucket: "backups", Prefix: "soar/" + op, Region: "us-east-1", Lookup: "path"}}}
+	return Request{Version: 1, Action: "backup-repository", Host: host, Backup: &backup.Request{Action: "create", Name: "offsite", Operation: op, Confirm: true, Config: &backupbackend.Config{Endpoint: "https://s3.example.com", Bucket: "backups", Prefix: "vamos/" + op, Region: "us-east-1", Lookup: "path"}}}
 }
 func repositoryCredentials() []byte {
 	data, _ := json.Marshal(backupbackend.Credentials{AccessKeyID: "test-access-key", SecretAccessKey: "private-repository-credential", Password: strings.Repeat("c", 64)})

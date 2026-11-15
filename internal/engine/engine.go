@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 type Runner func(context.Context, string, []string, []byte) (process.Result, error)
@@ -170,7 +170,7 @@ var defaultBridgeOptions = map[string]string{
 }
 
 func ValidateBridgeNetwork(v *Inspection, hostID, app string) error {
-	if v == nil || v.Labels["soar.host"] != hostID || v.Labels["soar.app"] != app || v.Driver != "bridge" || v.Internal || v.EnableIPv6 || v.Ingress || (v.EnableIPv4 != nil && !*v.EnableIPv4) || (v.Scope != "" && v.Scope != "local") {
+	if v == nil || v.Labels["vamos.host"] != hostID || v.Labels["vamos.app"] != app || v.Driver != "bridge" || v.Internal || v.EnableIPv6 || v.Ingress || (v.EnableIPv4 != nil && !*v.EnableIPv4) || (v.Scope != "" && v.Scope != "local") {
 		return errors.New("foreign or unsafe app network")
 	}
 	for key, value := range v.Options {
@@ -284,7 +284,7 @@ func (c *Client) RunWithEnvFile(ctx context.Context, image string, args []string
 	if err := SafePath(dir); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(dir, ".soar-env-")
+	f, err := os.CreateTemp(dir, ".vamos-env-")
 	if err != nil {
 		return err
 	}

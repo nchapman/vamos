@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 func validHello() HelloResponse {
@@ -37,19 +37,19 @@ func TestHelloCompatibility(t *testing.T) {
 	tooOldClient := base
 	tooOldClient.APIMin, tooOldClient.APIMax = 2, 3
 	err := CheckCompatibility(1, 1, nil, tooOldClient)
-	if err == nil || !strings.Contains(err.Error(), "upgrade local soar CLI") {
+	if err == nil || !strings.Contains(err.Error(), "upgrade local vamos CLI") {
 		t.Fatalf("expected CLI upgrade guidance, got %v", err)
 	}
 
 	tooOldAgent := base
 	tooOldAgent.APIMin, tooOldAgent.APIMax = 1, 1
 	err = CheckCompatibility(2, 2, nil, tooOldAgent)
-	if err == nil || !strings.Contains(err.Error(), "soar server upgrade") {
+	if err == nil || !strings.Contains(err.Error(), "vamos server upgrade") {
 		t.Fatalf("expected server upgrade guidance, got %v", err)
 	}
 
 	err = CheckCompatibility(1, 2, []string{CapPerAppConcurrency}, base)
-	if err == nil || !strings.Contains(err.Error(), "soar server upgrade") || !strings.Contains(err.Error(), CapPerAppConcurrency) {
+	if err == nil || !strings.Contains(err.Error(), "vamos server upgrade") || !strings.Contains(err.Error(), CapPerAppConcurrency) {
 		t.Fatalf("expected missing capability upgrade guidance, got %v", err)
 	}
 

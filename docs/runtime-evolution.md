@@ -4,7 +4,7 @@ Design and compatibility contract for the implemented runtime features. Operator
 instructions are in [resources](resources.md), [release commands](release-commands.md)
 and [replica groups](multi-service.md#replica-groups); verification evidence is
 recorded separately in [testing](testing.md). No cloud scheduler, multi-host
-networking, or Rails behavior is added to Soar itself.
+networking, or Rails behavior is added to Vamos itself.
 
 ## Resource limits
 
@@ -138,7 +138,7 @@ Keep the existing fast, standard-library Python Ledger as a cross-framework
 fixture. Add `examples/rails-ledger` as a real, small Rails/PostgreSQL API with a
 separate Solid Queue worker, shared immutable app image, and no web-local storage.
 It is an unauthenticated disposable demo, not a production application template.
-Core Soar never recognizes Rails, Puma, or Solid Queue.
+Core Vamos never recognizes Rails, Puma, or Solid Queue.
 
 The Rails image must not migrate at boot. A release script checks connectivity
 with a bounded retry and then attempts migration once. Readiness checks the

@@ -23,9 +23,9 @@ Explicit zero is rejected rather than interpreted as unlimited.
 - `memory_mb`: an integer count of **MiB** (1024² bytes), from 6 to 1048576.
   The combined memory/swap limit is set to the same byte count, allowing no
   additional swap. Exceeding the memory limit may cause the kernel to kill a
-  process; Soar does not disable the OOM killer.
+  process; Vamos does not disable the OOM killer.
 
-Limits apply per container, including `soar run`, using that service's captured
+Limits apply per container, including `vamos run`, using that service's captured
 configuration. They do not limit BuildKit, reserve capacity, or prevent aggregate
 host pressure. Public replacement temporarily runs both old and new containers;
 budget for that overlap, databases, one-off commands, and host services.
@@ -36,7 +36,7 @@ captured-input resume, and code/config rollback. Removing `resources` explicitly
 returns a selected service to unlimited defaults through replacement. Omitted or
 protected services are not silently changed.
 
-Soar checks requested Docker/kernel capabilities before advancing a deployment's
+Vamos checks requested Docker/kernel capabilities before advancing a deployment's
 runtime changes, including before retiring a private service. Creation checks
 again rather than silently accepting discarded limits. Runtime inspection
 compares CPU, memory, and swap settings with the captured configuration and

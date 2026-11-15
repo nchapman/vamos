@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 func TestFormatAppResponseRedactsSecretsAndPreservesFailureStatus(t *testing.T) {

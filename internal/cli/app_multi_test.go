@@ -3,7 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 	"os"
 	"strings"
 	"testing"

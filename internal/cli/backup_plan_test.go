@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -179,7 +179,7 @@ sets:
 			if strings.Contains(out.String()+diagnostic.String(), "secret") {
 				t.Fatal("remote error leaked")
 			}
-			if mode == "apply-error" && !strings.Contains(diagnostic.String(), "soar backup plan --server home --app hello") {
+			if mode == "apply-error" && !strings.Contains(diagnostic.String(), "vamos backup plan --server home --app hello") {
 				t.Fatal("missing safe inspection guidance")
 			}
 			if success {

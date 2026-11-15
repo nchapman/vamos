@@ -14,23 +14,23 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 const (
-	WorkRoot = "/run/soar/work"
-	LockDir  = "/run/lock/soar"
+	WorkRoot = "/run/vamos/work"
+	LockDir  = "/run/lock/vamos"
 )
 
 var workerIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
-// ServeWorker executes one supervised mutating operation staged by soar-agent
-// inside its own transient systemd unit (soar-op-<id>.service). Writing a
+// ServeWorker executes one supervised mutating operation staged by vamos-agent
+// inside its own transient systemd unit (vamos-op-<id>.service). Writing a
 // complete response.json establishes a definitive worker outcome; if the unit
 // crashes or receives SIGTERM/SIGKILL before that rename, no response file is
-// published and soar-agent fences the operation as uncertain.
+// published and vamos-agent fences the operation as uncertain.
 func ServeWorker(ctx context.Context, workDir string) int {
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return 1
@@ -113,7 +113,7 @@ func serveWorkerInRoot(ctx context.Context, root, expectedParent, workDir string
 }
 
 // ExecuteRead performs an authorized non-mutating request directly inside
-// soar-agent without persisting queue records or spawning a transient unit,
+// vamos-agent without persisting queue records or spawning a transient unit,
 // while probing the same kernel locks workers hold to report status.Active.
 func ExecuteRead(ctx context.Context, request deploy.Request) (deploy.Response, error) {
 	return ExecuteReadInRoot(ctx, "/", request)
@@ -126,7 +126,7 @@ func ExecuteReadInRoot(ctx context.Context, root string, request deploy.Request)
 	if request.Mutating() {
 		return deploy.Response{}, errors.New("ExecuteRead requires a non-mutating request")
 	}
-	runtimeDir, err := os.MkdirTemp("", "soar-read-*")
+	runtimeDir, err := os.MkdirTemp("", "vamos-read-*")
 	if err != nil {
 		return deploy.Response{}, err
 	}
@@ -257,7 +257,7 @@ func acquireCoordinatedMutation(root string, request deploy.Request, app string,
 		return false, nil, err
 	}
 	// Shared host lock prevents host upgrade/teardown (which take an exclusive
-	// lock on soar-host.lock) while allowing concurrent multi-app workers.
+	// lock on vamos-host.lock) while allowing concurrent multi-app workers.
 	hostLock := flock.New(hostPath, flock.SetPermissions(0600))
 	ok, err := hostLock.TryRLock()
 	if err != nil {

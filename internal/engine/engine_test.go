@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 func TestValidateBridgeNetwork(t *testing.T) {
 	v := &Inspection{
 		Driver: "bridge",
-		Labels: map[string]string{"soar.host": "h1", "soar.app": "app"},
+		Labels: map[string]string{"vamos.host": "h1", "vamos.app": "app"},
 		Options: map[string]string{
 			"com.docker.network.bridge.enable_icc": "true",
 		},

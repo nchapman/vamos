@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func helperArgs(mode string) []string { return []string{"-test.run=^TestProcessHelper$", "--", mode} }
@@ -74,7 +74,7 @@ func TestRunFailures(t *testing.T) {
 		}
 	})
 	t.Run("missing executable", func(t *testing.T) {
-		_, err := process.Run(context.Background(), "soar-test-executable-does-not-exist", nil, nil)
+		_, err := process.Run(context.Background(), "vamos-test-executable-does-not-exist", nil, nil)
 		if err == nil {
 			t.Fatal("missing executable succeeded")
 		}

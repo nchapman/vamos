@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/buildcontext"
 )
 
 // Runtime errors intentionally never contain Docker output, environment values,
@@ -177,8 +177,8 @@ func hasAlias(v *inspection, n, alias string) bool {
 // exact names, and a retained identity. Only live slots may hold service aliases;
 // historical snapshots are retention references, not DNS admission authority.
 func validateMultiEndpoint(j *journal, v *inspection) error {
-	service := v.Config.Labels["soar.service"]
-	op := v.Config.Labels["soar.operation"]
+	service := v.Config.Labels["vamos.service"]
+	op := v.Config.Labels["vamos.operation"]
 	name := strings.TrimPrefix(v.Name, "/")
 	if !operation.MatchString(op) || (service == "" && hasServiceLabel(v.Config.Labels)) || (service != "" && !label.MatchString(service)) || name == "" {
 		return errors.New("foreign container on app network")
@@ -257,7 +257,7 @@ func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef,
 	if err != nil {
 		return nil, errors.New("inspect runtime container failed")
 	}
-	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Labels["soar.service"] != r.Service || (r.Service == "" && hasServiceLabel(v.Config.Labels)) || ((r.Service != "" || v.Name != "") && strings.TrimPrefix(v.Name, "/") != r.Container) || v.Config.Image != r.Image || imageVolumesAllowed(v, r.Config, true) != nil {
+	if !owned(v.Config.Labels, j, r.Operation) || v.Config.Labels["vamos.service"] != r.Service || (r.Service == "" && hasServiceLabel(v.Config.Labels)) || ((r.Service != "" || v.Name != "") && strings.TrimPrefix(v.Name, "/") != r.Container) || v.Config.Image != r.Image || imageVolumesAllowed(v, r.Config, true) != nil {
 		return nil, errors.New("foreign or unsafe runtime container")
 	}
 	if err := verifyResources(v, r.Config.Resources); err != nil {
@@ -306,14 +306,14 @@ func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef,
 	for key, value := range im.Config.Labels {
 		labels[key] = value
 	}
-	labels["soar.host"] = j.HostID
-	labels["soar.app"] = j.App
-	labels["soar.operation"] = r.Operation
+	labels["vamos.host"] = j.HostID
+	labels["vamos.app"] = j.App
+	labels["vamos.operation"] = r.Operation
 	if r.Ordinal > 0 {
-		labels["soar.replica"] = strconv.Itoa(r.Ordinal)
+		labels["vamos.replica"] = strconv.Itoa(r.Ordinal)
 	}
 	if r.Service != "" {
-		labels["soar.service"] = r.Service
+		labels["vamos.service"] = r.Service
 	}
 	if !reflect.DeepEqual(labels, v.Config.Labels) {
 		return nil, errors.New("runtime label configuration mismatch")
@@ -412,7 +412,7 @@ func unsafeMultiHostConfig(v *inspection) bool {
 	return h.Privileged || h.PublishAllPorts || h.ReadonlyRootfs || len(h.Binds) != 0 || len(h.CapAdd) != 0 || len(h.CapDrop) != 0 || len(h.Devices) != 0 || len(h.DeviceRequests) != 0 || len(h.VolumesFrom) != 0 || len(h.Links) != 0 || len(h.ExtraHosts) != 0 || len(h.DNS) != 0 || len(h.DNSOptions) != 0 || len(h.DNSSearch) != 0 || len(h.SecurityOpt) != 0 || h.PidMode != "" || h.UTSMode != "" || (h.IpcMode != "" && h.IpcMode != "private")
 }
 
-func hasServiceLabel(labels map[string]string) bool { _, ok := labels["soar.service"]; return ok }
+func hasServiceLabel(labels map[string]string) bool { _, ok := labels["vamos.service"]; return ok }
 
 func (m *Manager) multiEnsureCandidate(ctx context.Context, j *journal, r *release) error {
 	return m.multiEnsureRuntime(ctx, j, r, false)
@@ -489,7 +489,7 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		}
 		args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j)}
 		if r.Config.Volume != nil {
-			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", network(j), "--mount", volumeMountArgument("soar-vol-"+r.VolumeID, r.Config.Volume.Mount)}
+			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", network(j), "--mount", volumeMountArgument("vamos-vol-"+r.VolumeID, r.Config.Volume.Mount)}
 		}
 		args = append(args, resourceArgs(r.Config.Resources)...)
 		if r.Config.HTTP != nil {
@@ -497,9 +497,9 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		} else {
 			args = append(args, "--network-alias", r.Service)
 		}
-		args = append(args, "--label", "soar.host="+j.HostID, "--label", "soar.app="+j.App, "--label", "soar.operation="+r.Operation, "--label", "soar.service="+r.Service)
+		args = append(args, "--label", "vamos.host="+j.HostID, "--label", "vamos.app="+j.App, "--label", "vamos.operation="+r.Operation, "--label", "vamos.service="+r.Service)
 		if r.Ordinal > 0 {
-			args = append(args, "--label", "soar.replica="+strconv.Itoa(r.Ordinal))
+			args = append(args, "--label", "vamos.replica="+strconv.Itoa(r.Ordinal))
 		}
 		keys := make([]string, 0, len(r.Config.Env))
 		for k := range r.Config.Env {

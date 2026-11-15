@@ -37,7 +37,7 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 	switch a[0] {
 	case "list":
 		if f.mode == "existing" {
-			io.WriteString(out, `[{"name":"soar-test-0123456789ab"}]`)
+			io.WriteString(out, `[{"name":"vamos-test-0123456789ab"}]`)
 		} else {
 			io.WriteString(out, `[]`)
 		}
@@ -71,7 +71,7 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 		if f.mode == "replacement" && len(f.calls) > 4 {
 			id = "replacement"
 		}
-		name, network, forward := "soar-test-0123456789ab", "true", "false"
+		name, network, forward := "vamos-test-0123456789ab", "true", "false"
 		if (f.restarted && strings.HasPrefix(f.mode, "post-")) || (f.prepared && strings.HasPrefix(f.mode, "pre-")) {
 			switch strings.TrimPrefix(strings.TrimPrefix(f.mode, "post-"), "pre-") {
 			case "id":
@@ -165,7 +165,7 @@ func TestLifecycle(t *testing.T) {
 			defer cancel()
 			f := &fakeExec{t: t, mode: tc.mode, cancel: cancel}
 			r := runner{exec: f, out: io.Discard, stderr: io.Discard}
-			err := r.run(ctx, options{root: fixture(t), artifacts: t.TempDir(), name: "soar-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04", keep: tc.keep})
+			err := r.run(ctx, options{root: fixture(t), artifacts: t.TempDir(), name: "vamos-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04", keep: tc.keep})
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("error=%v", err)
 			}
@@ -189,7 +189,7 @@ func TestRestartPhasesHaveDeadlines(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			f := &fakeExec{t: t, mode: mode}
 			r := runner{exec: f, out: io.Discard, stderr: io.Discard}
-			err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "soar-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04"})
+			err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "vamos-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -202,7 +202,7 @@ func TestRestartTimeoutStillDeletesOwnedMachine(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			f := &fakeExec{t: t, mode: mode}
 			r := runner{exec: f, out: io.Discard, stderr: io.Discard, restartTimeout: 5 * time.Millisecond, verifyTimeout: 5 * time.Millisecond}
-			err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "soar-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04"})
+			err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "vamos-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04"})
 			if !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("expected phase timeout, got %v", err)
 			}
@@ -288,7 +288,7 @@ func TestRestartPhases(t *testing.T) {
 			t.Run(mode+map[bool]string{true: "-keep"}[keep], func(t *testing.T) {
 				f := &fakeExec{t: t, mode: mode}
 				r := runner{exec: f, out: io.Discard, stderr: io.Discard}
-				err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "soar-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04", keep: keep})
+				err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "vamos-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04", keep: keep})
 				if (err != nil) != (mode != "success") {
 					t.Fatalf("error=%v", err)
 				}

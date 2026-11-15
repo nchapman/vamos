@@ -13,7 +13,7 @@ func TestDuplicateReceiptFieldsRefused(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			m, f := newEngine(t)
 			runBuild(t, m)
-			path := filepath.Join(f.root, "var/lib/soar/buildkit/state.json")
+			path := filepath.Join(f.root, "var/lib/vamos/buildkit/state.json")
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -30,7 +30,7 @@ func TestUnsafeBuildxTreeStillStopsVerifiedDaemon(t *testing.T) {
 	m, f := newEngine(t)
 	runBuild(t, m)
 	f.container["State"] = map[string]any{"Running": true}
-	path := filepath.Join(f.root, "var/lib/soar/buildkit/buildx/foreign-link")
+	path := filepath.Join(f.root, "var/lib/vamos/buildkit/buildx/foreign-link")
 	if os.Symlink(f.root, path) != nil {
 		t.Fatal("symlink")
 	}
@@ -56,7 +56,7 @@ func TestInvalidHostAndSnapshotterNoNamespace(t *testing.T) {
 	if _, err := m.Build(context.Background(), testHost, "df", "iid", nil); err == nil {
 		t.Fatal("accepted unsupported snapshotter")
 	}
-	if _, err := os.Lstat(filepath.Join(f.root, "var/lib/soar/buildkit")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(f.root, "var/lib/vamos/buildkit")); !os.IsNotExist(err) {
 		t.Fatal("invalid option poisoned namespace")
 	}
 }

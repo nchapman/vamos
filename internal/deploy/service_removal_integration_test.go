@@ -2,8 +2,8 @@ package deploy
 
 import (
 	"context"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 	"strings"
 	"testing"
 )
@@ -94,7 +94,7 @@ func TestRemovalIntegratedAbandonAndSettledRollback(t *testing.T) {
 			inventory := newMultiMaintenanceInventory(t)
 			inventory.j = j
 			inventory.net.Name = network(j)
-			inventory.net.Labels = map[string]string{"soar.host": j.HostID, "soar.app": j.App}
+			inventory.net.Labels = map[string]string{"vamos.host": j.HostID, "vamos.app": j.App}
 			for _, slot := range j.ServiceStates {
 				for _, r := range []*release{slot.Current, slot.Candidate, slot.Retiring} {
 					if r != nil {
@@ -142,7 +142,7 @@ func TestRemovalIntegratedAbandonAndSettledRollback(t *testing.T) {
 			}
 			f.m.Run = originalRun
 			for n, c := range f.docker.containers {
-				if c.Config.Labels["soar.service"] == target {
+				if c.Config.Labels["vamos.service"] == target {
 					delete(f.docker.containers, n)
 				}
 			}

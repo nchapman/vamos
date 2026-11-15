@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/nchapman/soar/internal/agentproto"
+	"github.com/nchapman/vamos/internal/agentproto"
 	"golang.org/x/term"
 )
 

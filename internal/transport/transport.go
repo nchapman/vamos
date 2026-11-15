@@ -1,13 +1,13 @@
 // Package transport defines the client-to-host RPC seam separating CLI
-// workflows from SSH executor uploads and future soar-agent socket clients.
+// workflows from SSH executor uploads and future vamos-agent socket clients.
 package transport
 
 import (
 	"context"
 	"io"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
 )
 
 type Client interface {

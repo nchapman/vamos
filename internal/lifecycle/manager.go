@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 const caddyConfig = "{\n\tadmin 127.0.0.1:2019\n}\n"
@@ -50,15 +50,15 @@ func (m *Manager) bridgeKeyLine() []byte {
 
 var units = []string{"caddy.service", "docker.service", "docker.socket", "containerd.service"}
 
-const agentUnit = "soar-agent.service"
+const agentUnit = "vamos-agent.service"
 
 const agentServiceConfig = `[Unit]
-Description=Soar coordinator agent
+Description=Vamos coordinator agent
 After=docker.service caddy.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/lib/soar/soar-agent internal-agent
+ExecStart=/usr/local/lib/vamos/vamos-agent internal-agent
 Restart=on-failure
 RestartSec=2s
 User=root
@@ -70,8 +70,8 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 `
 
-const agentSSHConfig = `Match User soar
-    AuthorizedKeysFile /etc/soar/authorized_keys
+const agentSSHConfig = `Match User vamos
+    AuthorizedKeysFile /etc/vamos/authorized_keys
     PasswordAuthentication no
     KbdInteractiveAuthentication no
     PermitTTY no
@@ -98,7 +98,7 @@ const defaultAgentConfig = `{
 }
 `
 
-var dataPaths = []string{"/etc/caddy", "/etc/docker", "/etc/containerd", "/var/lib/caddy", "/var/lib/docker", "/var/lib/containerd", "/var/log/caddy", "/usr/local/lib/soar"}
+var dataPaths = []string{"/etc/caddy", "/etc/docker", "/etc/containerd", "/var/lib/caddy", "/var/lib/docker", "/var/lib/containerd", "/var/log/caddy", "/usr/local/lib/vamos"}
 
 type Runner func(context.Context, string, []string) (process.Result, error)
 
@@ -253,7 +253,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			return nil, err
 		}
 		// Retained repository keys/configuration remain bound to the old host.
-		backupPath := m.path("/var/lib/soar/backups")
+		backupPath := m.path("/var/lib/vamos/backups")
 		if err := rejectSymlink(backupPath); err != nil {
 			return nil, err
 		}
@@ -261,7 +261,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			return nil, errors.New("retained backup repository state prevents creating a new host identity; archive and reconcile its recovery material first")
 		}
 		// Retained secrets bind to the old host identity independently of app journals.
-		secretPath := m.path("/var/lib/soar/secrets")
+		secretPath := m.path("/var/lib/vamos/secrets")
 		if err := rejectSymlink(secretPath); err != nil {
 			return nil, err
 		}
@@ -330,53 +330,53 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 		}
 		// The restricted account's shell and forced command live here; sshd must
 		// be able to traverse to them while the files stay root-owned.
-		if err := os.MkdirAll(m.path("/usr/local/lib/soar"), 0755); err != nil {
+		if err := os.MkdirAll(m.path("/usr/local/lib/vamos"), 0755); err != nil {
 			return nil, err
 		}
-		if err := os.Chmod(m.path("/usr/local/lib/soar"), 0755); err != nil {
+		if err := os.Chmod(m.path("/usr/local/lib/vamos"), 0755); err != nil {
 			return nil, err
 		}
-		if err := atomicWrite(m.path("/etc/soar/agent.json"), []byte(defaultAgentConfig), 0600); err != nil {
+		if err := atomicWrite(m.path("/etc/vamos/agent.json"), []byte(defaultAgentConfig), 0600); err != nil {
 			return nil, err
 		}
 		// sshd reads authorized_keys while checking the restricted account's
 		// credentials, so the directory is traversable and the public key file
 		// is world-readable. The private policy and principal files remain 0600.
-		if err := os.MkdirAll(m.path("/etc/soar"), 0755); err != nil {
+		if err := os.MkdirAll(m.path("/etc/vamos"), 0755); err != nil {
 			return nil, err
 		}
-		if err := os.Chmod(m.path("/etc/soar"), 0755); err != nil {
+		if err := os.Chmod(m.path("/etc/vamos"), 0755); err != nil {
 			return nil, err
 		}
-		if err := atomicWrite(m.path("/etc/soar/principals.json"), []byte(defaultPrincipals), 0600); err != nil {
+		if err := atomicWrite(m.path("/etc/vamos/principals.json"), []byte(defaultPrincipals), 0600); err != nil {
 			return nil, err
 		}
-		if err := atomicWrite(m.path("/etc/soar/authorized_keys"), m.bridgeKeyLine(), 0644); err != nil {
+		if err := atomicWrite(m.path("/etc/vamos/authorized_keys"), m.bridgeKeyLine(), 0644); err != nil {
 			return nil, err
 		}
-		if err := atomicWrite(m.path("/etc/ssh/sshd_config.d/soar.conf"), []byte(agentSSHConfig), 0600); err != nil {
+		if err := atomicWrite(m.path("/etc/ssh/sshd_config.d/vamos.conf"), []byte(agentSSHConfig), 0600); err != nil {
 			return nil, err
 		}
 		if err := atomicWrite(m.path("/etc/systemd/system/"+agentUnit), []byte(agentServiceConfig), 0644); err != nil {
 			return nil, err
 		}
-		if _, err := m.command(ctx, "useradd", "--system", "--user-group", "--no-create-home", "--home-dir", "/", "--shell", AgentPath, "soar"); err != nil {
+		if _, err := m.command(ctx, "useradd", "--system", "--user-group", "--no-create-home", "--home-dir", "/", "--shell", AgentPath, "vamos"); err != nil {
 			return nil, err
 		}
 		if _, err := m.command(ctx, "sshd", "-t"); err != nil {
-			return nil, fmt.Errorf("validate restricted soar SSH configuration: %w", err)
+			return nil, fmt.Errorf("validate restricted vamos SSH configuration: %w", err)
 		}
 		// The running daemon must adopt the Match block before the restricted
 		// account can authenticate; reload keeps existing sessions untouched.
 		if _, err := m.command(ctx, "systemctl", "reload", "ssh"); err != nil {
-			return nil, fmt.Errorf("reload ssh for the restricted soar account: %w", err)
+			return nil, fmt.Errorf("reload ssh for the restricted vamos account: %w", err)
 		}
 		hash := sha256.Sum256(m.Executor)
 		s.ExecutorSHA = hex.EncodeToString(hash[:])
 		hash = sha256.Sum256(m.Agent)
 		s.AgentSHA = hex.EncodeToString(hash[:])
 		s.Accounts = map[string]string{}
-		for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker", "passwd:soar", "group:soar"} {
+		for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker", "passwd:vamos", "group:vamos"} {
 			parts := strings.Split(key, ":")
 			value, err := m.account(ctx, parts[0], parts[1])
 			if err != nil {
@@ -564,7 +564,7 @@ func (m *Manager) verifyFiles(s *State) error {
 }
 
 func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
-	for path, expected := range map[string]string{"/etc/docker/daemon.json": dockerConfig, "/etc/ssh/sshd_config.d/soar.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
+	for path, expected := range map[string]string{"/etc/docker/daemon.json": dockerConfig, "/etc/ssh/sshd_config.d/vamos.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
 		if err := rejectSymlink(m.path(path)); err != nil {
 			return err
 		}
@@ -598,15 +598,15 @@ func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
 	// Principals, policy, and the journal stay root-only. The authorized_keys
 	// file holds only public data and must be readable by sshd's credential
 	// check for the restricted account, so it is mode 0644.
-	for _, path := range []string{"/etc/soar/agent.json", "/etc/soar/principals.json"} {
+	for _, path := range []string{"/etc/vamos/agent.json", "/etc/vamos/principals.json"} {
 		info, err := os.Lstat(m.path(path))
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0600 {
 			return fmt.Errorf("managed ACL file %s is missing or unsafe", path)
 		}
 	}
-	keyInfo, err := os.Lstat(m.path("/etc/soar/authorized_keys"))
+	keyInfo, err := os.Lstat(m.path("/etc/vamos/authorized_keys"))
 	if err != nil || !keyInfo.Mode().IsRegular() || keyInfo.Mode()&os.ModeSymlink != 0 || keyInfo.Mode().Perm() != 0644 {
-		return errors.New("managed bridge key file /etc/soar/authorized_keys is missing or unsafe")
+		return errors.New("managed bridge key file /etc/vamos/authorized_keys is missing or unsafe")
 	}
 	for path, digest := range map[string]string{ExecutorPath: s.ExecutorSHA, AgentPath: s.AgentSHA} {
 		if err := rejectSymlink(m.path(path)); err != nil {
@@ -643,7 +643,7 @@ func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
 			return err
 		}
 	}
-	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/containerd": "config.toml", "/etc/soar": "agent.json authorized_keys principals.json"} {
+	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/containerd": "config.toml", "/etc/vamos": "agent.json authorized_keys principals.json"} {
 		entries, err := os.ReadDir(m.path(dir))
 		if errors.Is(err, os.ErrNotExist) {
 			continue

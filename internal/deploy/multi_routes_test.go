@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func routeTestJournal(name string) *journal {
@@ -460,13 +460,13 @@ func TestMultiRoutesPromoteResumesOnlyActiveService(t *testing.T) {
 						ports := map[string]any{"9090/tcp": []map[string]string{{"HostIP": "127.0.0.1", "HostPort": candidate.Port}}}
 						obj = map[string]any{
 							"Name":            "/" + candidate.Container,
-							"Config":          map[string]any{"Image": candidate.Image, "Labels": map[string]string{"soar.host": j.HostID, "soar.app": j.App, "soar.operation": candidate.Operation, "soar.service": "api"}},
+							"Config":          map[string]any{"Image": candidate.Image, "Labels": map[string]string{"vamos.host": j.HostID, "vamos.app": j.App, "vamos.operation": candidate.Operation, "vamos.service": "api"}},
 							"State":           map[string]any{"Running": true},
 							"HostConfig":      map[string]any{"NetworkMode": network(j), "RestartPolicy": map[string]string{"Name": "unless-stopped"}, "PortBindings": ports},
 							"NetworkSettings": map[string]any{"Ports": ports, "Networks": map[string]any{network(j): map[string]any{"Aliases": []string{"api"}}}},
 						}
 					case "network":
-						obj = map[string]any{"Driver": "bridge", "Labels": map[string]string{"soar.host": j.HostID, "soar.app": j.App}}
+						obj = map[string]any{"Driver": "bridge", "Labels": map[string]string{"vamos.host": j.HostID, "vamos.app": j.App}}
 					case "image":
 						obj = map[string]any{"Id": candidate.Image}
 					default:

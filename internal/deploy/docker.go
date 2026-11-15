@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/engine"
+	"github.com/nchapman/vamos/internal/engine"
 )
 
 type inspection = engine.Inspection
@@ -23,9 +23,9 @@ func (m *Manager) inspect(c context.Context, kind, name string) (*inspection, er
 	return m.engine().Inspect(c, kind, name)
 }
 func owned(labels map[string]string, j *journal, op string) bool {
-	return labels["soar.host"] == j.HostID && labels["soar.app"] == j.App && (op == "" || labels["soar.operation"] == op)
+	return labels["vamos.host"] == j.HostID && labels["vamos.app"] == j.App && (op == "" || labels["vamos.operation"] == op)
 }
-func network(j *journal) string { return "soar-" + j.App }
+func network(j *journal) string { return "vamos-" + j.App }
 func (m *Manager) container(c context.Context, j *journal, r *release) (*inspection, error) {
 	v, e := m.inspect(c, "container", r.Container)
 	if e != nil {
@@ -69,7 +69,7 @@ func (m *Manager) ensureNetwork(c context.Context, j *journal) (err error) {
 		return e
 	}
 	if !yes {
-		if _, e = m.cmd(c, "docker", "network", "create", "--driver", "bridge", "--label", "soar.host="+j.HostID, "--label", "soar.app="+j.App, n); e != nil {
+		if _, e = m.cmd(c, "docker", "network", "create", "--driver", "bridge", "--label", "vamos.host="+j.HostID, "--label", "vamos.app="+j.App, n); e != nil {
 			return e
 		}
 	}
@@ -94,7 +94,7 @@ func (m *Manager) validateAppNetwork(c context.Context, j *journal, v *inspectio
 		if !owned(v.Config.Labels, j, "") {
 			return errors.New("foreign container on app network")
 		}
-		if _, run := v.Config.Labels["soar.run"]; run {
+		if _, run := v.Config.Labels["vamos.run"]; run {
 			if e := m.verifyRunEndpoint(c, j, v); e != nil {
 				return e
 			}
@@ -226,7 +226,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 		if v.ID != id || len(v.Config.Volumes) > 0 {
 			return errors.New("image declares volumes or mismatched identity")
 		}
-		j.Candidate = &release{Container: "soar-" + j.App + "-" + j.Operation, Image: id, Operation: j.Operation, SecretRefs: j.SecretRefs}
+		j.Candidate = &release{Container: "vamos-" + j.App + "-" + j.Operation, Image: id, Operation: j.Operation, SecretRefs: j.SecretRefs}
 		j.Phase = "starting"
 		if e = m.save(j); e != nil {
 			return e
@@ -277,7 +277,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 			if len(v.Config.Volumes) > 0 {
 				return errors.New("image declares volumes")
 			}
-			args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j), "--publish", fmt.Sprintf("127.0.0.1:%s:%d", r.PublishPort, s.HTTP.Port), "--label", "soar.host=" + j.HostID, "--label", "soar.app=" + j.App, "--label", "soar.operation=" + j.Operation}
+			args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j), "--publish", fmt.Sprintf("127.0.0.1:%s:%d", r.PublishPort, s.HTTP.Port), "--label", "vamos.host=" + j.HostID, "--label", "vamos.app=" + j.App, "--label", "vamos.operation=" + j.Operation}
 			keys := make([]string, 0, len(s.Env))
 			for k := range s.Env {
 				keys = append(keys, k)

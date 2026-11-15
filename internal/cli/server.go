@@ -10,17 +10,17 @@ import (
 	"io"
 	"time"
 
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 const serverHelp = `Usage:
-  soar server inspect [--json] [--timeout 15s] TARGET
-  soar server add --yes --domain DOMAIN [--executor FILE] NAME TARGET
-  soar server upgrade --yes [--executor FILE] NAME [TARGET]
-  soar server connect --domain DOMAIN NAME TARGET
-  soar server status [--json] NAME [TARGET]
-  soar server teardown --yes --purge [--executor FILE] NAME [TARGET]
+  vamos server inspect [--json] [--timeout 15s] TARGET
+  vamos server add --yes --domain DOMAIN [--executor FILE] NAME TARGET
+  vamos server upgrade --yes [--executor FILE] NAME [TARGET]
+  vamos server connect --domain DOMAIN NAME TARGET
+  vamos server status [--json] NAME [TARGET]
+  vamos server teardown --yes --purge [--executor FILE] NAME [TARGET]
 
 TARGET is an SSH alias or [user@]host (unbracketed IPv6 is supported).
 Use SSH config for ports, identities, and jump hosts. Flags precede TARGET.

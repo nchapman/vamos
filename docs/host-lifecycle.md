@@ -6,14 +6,14 @@ Root SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm
 
 ```sh
 mise run build
-bin/soar server add --yes --domain apps.example.com test root@host
-bin/soar server status --json test
-bin/soar server teardown --yes --purge test
+bin/vamos server add --yes --domain apps.example.com test root@host
+bin/vamos server status --json test
+bin/vamos server teardown --yes --purge test
 ```
 
 Flags precede positional arguments. Setup and connect require both name and target. Status and teardown resolve a registered name, or accept `NAME TARGET` for recovery when no registration exists. An explicit target cannot override a conflicting local registration. Names are lowercase DNS labels; the base domain is a lowercase hostname without a scheme, port, or wildcard.
 
-`mise run build` bundles `soar-linux-amd64` and `soar-linux-arm64` beside the native client. Keep a matching client/Linux bundle; on root lifecycle commands (or when `--executor FILE` overrides artifact selection), the ELF architecture must match the inspected host and its `buildmeta.Stamp` must match the client. Artifacts are built locally, not downloaded from an unsigned release URL. Inspect, host status, and connect do not need an executor artifact. Bootstrap installs `/usr/local/lib/soar/executor` and `/usr/local/lib/soar/soar-agent`, enables `soar-agent.service`, and provisions the restricted `soar` SSH bridge user; repeat `server add` verifies recorded digests rather than silently upgrading them. Use `soar server upgrade --yes NAME` to upgrade the installed binaries cleanly.
+`mise run build` bundles `vamos-linux-amd64` and `vamos-linux-arm64` beside the native client. Keep a matching client/Linux bundle; on root lifecycle commands (or when `--executor FILE` overrides artifact selection), the ELF architecture must match the inspected host and its `buildmeta.Stamp` must match the client. Artifacts are built locally, not downloaded from an unsigned release URL. Inspect, host status, and connect do not need an executor artifact. Bootstrap installs `/usr/local/lib/vamos/executor` and `/usr/local/lib/vamos/vamos-agent`, enables `vamos-agent.service`, and provisions the restricted `vamos` SSH bridge user; repeat `server add` verifies recorded digests rather than silently upgrading them. Use `vamos server upgrade --yes NAME` to upgrade the installed binaries cleanly.
 
 See the [whole-system operations checklist](operations.md) for health monitoring, capacity, independent recovery custody, and the **unsupported distro package upgrade / post-bootstrap ACL CLI gaps**.
 
@@ -21,31 +21,31 @@ See the [whole-system operations checklist](operations.md) for health monitoring
 
 1. Validate identity, authorization, and local registration conflicts; inspect the host read-only.
 2. Send a fixed-name tar archive containing the Linux executable, checksum, and structured JSON request over strict OpenSSH. Request fields never become shell source.
-3. Start `soar-host-operation.service`, a transient systemd worker. A fixed unit name rejects concurrent launches; a separate kernel-backed lock at `/run/lock/soar-host.lock` serializes actual mutations, including direct executor use.
+3. Start `vamos-host-operation.service`, a transient systemd worker. A fixed unit name rejects concurrent launches; a separate kernel-backed lock at `/run/lock/vamos-host.lock` serializes actual mutations, including direct executor use.
 4. Refuse existing runtime packages/binaries, managed directories, service overrides, service accounts, busy web/admin ports, or unhealthy dpkg state.
 5. Refresh Ubuntu's configured APT indexes and simulate installing `docker.io`, `docker-buildx`, and `caddy` without recommendations. Refuse changes to pre-existing packages. Record every newly installed dependency and exact version **before** installing anything.
 6. Mask the new services so package scripts cannot start an unconfigured default Caddy site. Install the recorded package versions; reject package-plan drift. Installer logs are drained with bounded diagnostic tails, not killed for being verbose.
 7. Write a Caddy configuration with its admin listener on `127.0.0.1:2019` and no app routes. Configure Docker with no shared default bridge and the bounded `local` log driver. Record managed file digests and service-account identities, unmask/enable/start services, and check Docker, Buildx, Caddy, and Caddy's live configuration.
 8. Mark the host ready, then register it locally. The first local registration becomes the default. A local write failure does not undo a successful remote installation; use `server connect` with the same identity once host status confirms ready and no active worker.
 
-State lives in the private `/var/lib/soar/host.json` ownership manifest/journal. Writes use a synced temporary file and atomic replacement. The local registry is `soar/registry.json` under Go's platform user-config directory (`~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux, `%AppData%` on Windows), protected by a stable advisory lock. It is not app configuration and is not stored in the project.
+State lives in the private `/var/lib/vamos/host.json` ownership manifest/journal. Writes use a synced temporary file and atomic replacement. The local registry is `vamos/registry.json` under Go's platform user-config directory (`~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux, `%AppData%` on Windows), protected by a stable advisory lock. It is not app configuration and is not stored in the project.
 
 A repeated add with the same name/domain can verify an unchanged, bootstrap-only ready host without reinstalling packages or restarting healthy services. **Add is bootstrap, not reconnect:** on a populated host it may reject the app-managed Caddyfile because it differs from the bootstrap-only configuration. Do not rerun add to recover a lost local registry after deploying apps. Changing the identity, overwriting drifted configuration, adopting existing resources, and upgrading package/executor versions are not implicit operations.
 
 ## Reconnect from a fresh client
 
-Use this when the host still exists with its Soar ownership state, but the local server registry is missing. Obtain the expected installed server name, base domain, and installation ID from trusted operational records. Establish the SSH host key independently and restore noninteractive root key/agent access; connect does not accept unknown or changed keys. An SSH alias may supply the user, key, port, and jump host.
+Use this when the host still exists with its Vamos ownership state, but the local server registry is missing. Obtain the expected installed server name, base domain, and installation ID from trusted operational records. Establish the SSH host key independently and restore noninteractive root key/agent access; connect does not accept unknown or changed keys. An SSH alias may supply the user, key, port, and jump host.
 
 ```sh
 # Read-only host observations work before local registration.
-soar server inspect root@host
-soar server status --json test root@host
+vamos server inspect root@host
+vamos server status --json test root@host
 # Use the exact installed name and base domain; flags precede NAME TARGET.
-soar server connect --domain apps.example.com test root@host
+vamos server connect --domain apps.example.com test root@host
 # Inspect recorded apps, then live observations for each intended app.
-soar apps --server test
-soar status --server test --app workspace
-soar logs --server test --app workspace --service api --tail 100
+vamos apps --server test
+vamos status --server test --app workspace
+vamos logs --server test --app workspace --service api --tail 100
 ```
 
 Connect uses read-only inspection to require root on supported Ubuntu, then host status to require a valid `ready` ownership manifest, the exact name/domain, and no active host lifecycle worker. Conflicting local registrations are refused. It writes **only the local server registry**, prints the installation ID for comparison with your records, and makes the first registration the default. Repeating connect verifies the host again. The verification deadline defaults to 15 seconds (`--timeout 30s` can override it); there is no `--yes`, `--executor`, or `--json` option for connect. Ordinary SSH authentication/audit side effects still apply.
@@ -56,22 +56,22 @@ For app inventory/status/logs and service binding, supply the matching trusted c
 
 ```sh
 # These manifests declare the existing workspace app and their respective services.
-soar service bind web -f frontend/soar.yaml --server test
-soar service bind api -f api/soar.yaml --server test
+vamos service bind web -f frontend/vamos.yaml --server test
+vamos service bind api -f api/vamos.yaml --server test
 # Alternatively, from the intended directory, without loading a manifest:
-# soar service bind api --app workspace --server test
+# vamos service bind api --app workspace --server test
 ```
 
 `-f` saves the service binding beside that manifest; `--app` saves it in the current directory. Repeat for every existing service the directory will manage. Binding reads remote status and writes local metadata only. An explicit `--server` selects this invocation, not a new normal project target; keep it on subsequent commands unless the project's default-target binding has been deliberately established and checked. Do not copy or edit identity records to bypass a stale binding. See [independent service directories](services.md#explicit-identity-bindings).
 
-This is **lost-client-registration recovery, not host-loss recovery**. Missing/corrupt ownership state, a different host identity, or a non-ready host requires diagnosis, not forced registration. Recovering application data on a newly commissioned host requires a separately tested external migration/recovery procedure; Soar application capture/restore is not implemented.
+This is **lost-client-registration recovery, not host-loss recovery**. Missing/corrupt ownership state, a different host identity, or a non-ready host requires diagnosis, not forced registration. Recovering application data on a newly commissioned host requires a separately tested external migration/recovery procedure; Vamos application capture/restore is not implemented.
 
 ## Teardown
 
 Both `--yes` and `--purge` are required. The latter authorizes removal of owned runtime data and certificates; it **does not** authorize deleting workloads. Teardown checks the journal and name, then refuses:
 
 - Retained [secret stores](secrets.md), even after app destruction. A new host bootstrap also refuses retained secrets rather than adopting an old identity.
-- Missing ownership evidence, active/incomplete or unexpected Soar app/state files, symlinked managed paths, or mounts at/under owned data directories (including app receipts).
+- Missing ownership evidence, active/incomplete or unexpected Vamos app/state files, symlinked managed paths, or mounts at/under owned data directories (including app receipts).
 - Changed managed configuration/executor, systemd overrides, service-account/group changes, or changed package versions.
 - Docker containers (including stopped ones), images, volumes, custom networks, or build cache.
 - Retained volume registry ownership, even if a recorded volume is missing; purge does not delete app data. See [storage lifecycle](volumes.md).
@@ -83,24 +83,24 @@ After approval it masks/stops owned services, purges only recorded packages **wi
 
 The host receipt and runtime lock remain so a repeated teardown is safe. Reboot naturally clears `/run` locks. A subsequent add performs fresh-host checks again, creates a new installation identity, and re-registers the server. OS package indexes/caches, system journals, and authentication logs are retained. Kernel networking artifacts can outlive daemon removal until reboot; teardown never flushes the host firewall globally. This is installation removal, not a pristine-OS snapshot restore.
 
-Do not run other installers, administrators' runtime changes, or workloads concurrently with setup/teardown. Soar's lock coordinates Soar operations, not arbitrary root activity or all system package managers.
+Do not run other installers, administrators' runtime changes, or workloads concurrently with setup/teardown. Vamos's lock coordinates Vamos operations, not arbitrary root activity or all system package managers.
 
 ## Interruption and recovery
 
 The client defaults to a 25-minute wait, while the executor has a 20-minute operation deadline and its systemd worker a 21-minute hard limit. Request reading is separately bounded to 15 seconds. Ctrl-C, SSH loss, or a short client `--timeout` does not imply rollback or stop an already-launched worker.
 
 ```sh
-bin/soar server status test root@host
+bin/vamos server status test root@host
 # If active=true, let the worker settle. For an incomplete bootstrap only,
 # retry the SAME captured identity with the original matching executor bundle.
-bin/soar server add --yes --domain apps.example.com test root@host
+bin/vamos server add --yes --domain apps.example.com test root@host
 # If setup instead reached ready, recover local registration with connect:
-bin/soar server connect --domain apps.example.com test root@host
+bin/vamos server connect --domain apps.example.com test root@host
 # Alternatively, explicitly remove a partial installation after diagnosis:
-bin/soar server teardown --yes --purge test root@host
+bin/vamos server teardown --yes --purge test root@host
 ```
 
-Status is read-only and shows the saved phase/step, active-worker flag, and last recorded error; it is not a runtime health check. Unexpected systemd output or a failed system-bus query returns an error rather than falsely reporting an inactive worker (the recognized missing-unit result is distinct). A lost response after successful setup/teardown is recoverable through the receipt. Worker staging directories normally disappear on completion. A hard crash during upload or before worker launch can leave a private `/run/soar-stage.*` directory until reboot; do not remove a stage belonging to an active worker.
+Status is read-only and shows the saved phase/step, active-worker flag, and last recorded error; it is not a runtime health check. Unexpected systemd output or a failed system-bus query returns an error rather than falsely reporting an inactive worker (the recognized missing-unit result is distinct). A lost response after successful setup/teardown is recoverable through the receipt. Worker staging directories normally disappear on completion. A hard crash during upload or before worker launch can leave a private `/run/vamos-stage.*` directory until reboot; do not remove a stage belonging to an active worker.
 
 Partial package transactions are not repaired by a broad `apt --fix-broken`, `dpkg --configure -a`, autoremove, or prune command. Retry uses the captured package list; broken dpkg state or unavailable pinned versions may require operator diagnosis. Resolve the exact reported problem before retrying. If a stopped/unhealthy daemon prevents proving that data is unused, restore it and inspect resources rather than bypassing the guard. A deadline during APT can leave pending dpkg work; the receipt is not a promise of transactional OS rollback.
 
@@ -110,7 +110,7 @@ The internal JSON protocol adds `bootstrap` and `teardown` operations with `conf
 
 There is **no supported in-place host upgrade or ownership-reconciliation API**. Neither add nor connect blesses new package versions, managed file hashes, or an executor replacement. Package drift can block setup/teardown even while app operations still work. Do not edit ownership journals or hashes to make checks pass, and do not freeze vulnerable packages as a workaround.
 
-The [maintenance procedure](operations.md#os-and-runtime-maintenance-boundary) describes operator-controlled distro maintenance: test on a disposable equivalent host, establish independently tested recovery, schedule an outage, exclude concurrent root/Soar operations, and verify daemon restart, runtime, route, and data invariants afterward. This is an operator procedure, not a supported automated Soar workflow; the gap remains until implemented and tested. For a supported fresh-identity host lifecycle, commission a new host and use a tested external application migration rather than pretending Soar restore exists.
+The [maintenance procedure](operations.md#os-and-runtime-maintenance-boundary) describes operator-controlled distro maintenance: test on a disposable equivalent host, establish independently tested recovery, schedule an outage, exclude concurrent root/Vamos operations, and verify daemon restart, runtime, route, and data invariants afterward. This is an operator procedure, not a supported automated Vamos workflow; the gap remains until implemented and tested. For a supported fresh-identity host lifecycle, commission a new host and use a tested external application migration rather than pretending Vamos restore exists.
 
 ## Verification
 

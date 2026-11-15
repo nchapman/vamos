@@ -42,7 +42,7 @@ func TestRoundTrip(t *testing.T) {
 			t.Fatalf("roundtrip: %v %v", got, err)
 		}
 	}
-	if state.Records["web"].DockerName() != "soar-vol-"+strings.Repeat("b", 32) {
+	if state.Records["web"].DockerName() != "vamos-vol-"+strings.Repeat("b", 32) {
 		t.Fatal("docker name")
 	}
 }

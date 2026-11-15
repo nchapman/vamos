@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestDockerDefaultOOMNormalizationDoesNotStrandBuilder(t *testing.T) {

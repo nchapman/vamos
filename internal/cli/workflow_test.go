@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 	"reflect"
 	"strings"
 	"testing"
@@ -84,7 +84,7 @@ func TestScopedDeploymentPreviewAndApproval(t *testing.T) {
 		if !strings.Contains(out.String(), `current-image="old" desired-image="new" downtime=true`) || strings.Contains(out.String(), "Whole-app") || strings.Contains(diagnostic.String(), "resume") {
 			t.Fatalf("out=%s err=%s", &out, &diagnostic)
 		}
-		if !approve && !strings.Contains(out.String(), "soar deploy --service web --yes") {
+		if !approve && !strings.Contains(out.String(), "vamos deploy --service web --yes") {
 			t.Fatal(&out)
 		}
 	}

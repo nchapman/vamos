@@ -9,8 +9,8 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 // SecretUpdate is a runtime-only v8 operation. Unlike source-keyed build results,

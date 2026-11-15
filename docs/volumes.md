@@ -44,7 +44,7 @@ restart policies; retired writers remain restart-disabled.
 ## Permissions, retention and visibility
 
 Applications initialize new empty storage and choose numeric UID/GID permissions.
-Soar never silently copies, migrates, or recursively chowns existing data.
+Vamos never silently copies, migrates, or recursively chowns existing data.
 Entrypoints must tolerate repeated initialization after interrupted startup.
 
 Status exposes logical names, bindings and immutable identities, missing/retained

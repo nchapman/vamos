@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // flowEngine models only external boundaries; journals, archives and Caddyfiles
@@ -112,9 +112,9 @@ func (f *flowEngine) run(_ context.Context, n string, a []string, b []byte) (pro
 				if f.net == nil {
 					return process.Result{}, nil
 				}
-				return out(map[string]string{"Name": "soar-notes"})
+				return out(map[string]string{"Name": "vamos-notes"})
 			case "create":
-				f.net = &inspection{Driver: "bridge", Labels: map[string]string{"soar.host": strings.Repeat("a", 32), "soar.app": "notes"}}
+				f.net = &inspection{Driver: "bridge", Labels: map[string]string{"vamos.host": strings.Repeat("a", 32), "vamos.app": "notes"}}
 				return process.Result{}, nil
 			case "inspect":
 				return out([]*inspection{f.net})
@@ -175,7 +175,7 @@ func (f *flowEngine) run(_ context.Context, n string, a []string, b []byte) (pro
 			v.HostConfig.NetworkMode = arg("--network")
 			v.HostConfig.RestartPolicy.Name = arg("--restart")
 			v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: strings.Split(arg("--publish"), ":")[1]}}}
-			v.NetworkSettings.Networks = map[string]json.RawMessage{"soar-notes": json.RawMessage(`{}`)}
+			v.NetworkSettings.Networks = map[string]json.RawMessage{"vamos-notes": json.RawMessage(`{}`)}
 			v.NetworkSettings.Ports = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: strings.Split(arg("--publish"), ":")[1]}}}
 			v.State.Running = !f.stopped
 			f.containers[name] = v
@@ -332,7 +332,7 @@ func TestFlowForeignCandidateNeverMutated(t *testing.T) {
 				j := f.execute(r, "archive", true)
 				v := f.containers[j.Candidate.Container]
 				if kind == "labels" {
-					v.Config.Labels["soar.operation"] = strings.Repeat("b", 32)
+					v.Config.Labels["vamos.operation"] = strings.Repeat("b", 32)
 				} else {
 					v.Config.Cmd = []string{"foreign"}
 				}

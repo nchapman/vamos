@@ -6,9 +6,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/transport"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/transport"
 )
 
 // Transport implements transport.Client using per-command SSH executor staging.

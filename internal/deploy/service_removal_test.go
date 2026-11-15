@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 	"strings"
 	"testing"
 )

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/buildmeta"
 )
 
 func fixture(t *testing.T) string {
@@ -22,10 +22,10 @@ func fixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	for name, data := range map[string]string{
-		"go.mod":                          "module github.com/nchapman/soar\n\ngo 1.25.0\n",
+		"go.mod":                          "module github.com/nchapman/vamos\n\ngo 1.25.0\n",
 		"go.sum":                          "",
 		"internal/buildmeta/buildmeta.go": string(meta),
-		"cmd/soar/main.go":                "package main\nimport (\"fmt\";\"github.com/nchapman/soar/internal/buildmeta\")\nfunc main(){fmt.Println(buildmeta.Version())}\n",
+		"cmd/vamos/main.go":               "package main\nimport (\"fmt\";\"github.com/nchapman/vamos/internal/buildmeta\")\nfunc main(){fmt.Println(buildmeta.Version())}\n",
 	} {
 		write(t, filepath.Join(root, name), data)
 	}
@@ -62,7 +62,7 @@ func TestBuildProducesMatchingBundle(t *testing.T) {
 		if err = buildmeta.Check(stamp, data); err != nil {
 			t.Fatal(err)
 		}
-		if strings.HasPrefix(target.name, "soar-linux-") {
+		if strings.HasPrefix(target.name, "vamos-linux-") {
 			binary, err := elf.Open(path)
 			if err != nil {
 				t.Fatal(err)
@@ -85,7 +85,7 @@ func TestBuildProducesMatchingBundle(t *testing.T) {
 	if err = Build(context.Background(), root, out, "v1.2.4", io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	newer, err := os.ReadFile(filepath.Join(out, "soar-linux-arm64"))
+	newer, err := os.ReadFile(filepath.Join(out, "vamos-linux-arm64"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestBuildProducesMatchingBundle(t *testing.T) {
 
 func TestIdentityTracksAllCapturedInputs(t *testing.T) {
 	files := map[string][]byte{
-		"cmd/soar/main.go":    []byte("source"),
+		"cmd/vamos/main.go":   []byte("source"),
 		"internal/ssh/app.sh": []byte("embedded"),
 		"go.mod":              []byte("module"),
 		"go.sum":              []byte("sums"),
@@ -133,12 +133,12 @@ func TestSnapshotDoesNotDependOnGitOrLaterEdits(t *testing.T) {
 	if identity(first, "go1", "dev") != identity(second, "go1", "dev") {
 		t.Fatal("Git affected build")
 	}
-	write(t, filepath.Join(root, "cmd", "soar", "main.go"), "edited after snapshot")
-	captured, err := os.ReadFile(filepath.Join(dest, "cmd", "soar", "main.go"))
+	write(t, filepath.Join(root, "cmd", "vamos", "main.go"), "edited after snapshot")
+	captured, err := os.ReadFile(filepath.Join(dest, "cmd", "vamos", "main.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(captured) != string(first["cmd/soar/main.go"]) {
+	if string(captured) != string(first["cmd/vamos/main.go"]) {
 		t.Fatal("source edit affected snapshot")
 	}
 }
@@ -148,7 +148,7 @@ func TestFailedBuildDoesNotPublish(t *testing.T) {
 	out := t.TempDir()
 	dest := filepath.Join(out, targets()[0].name)
 	write(t, dest, "old-binary")
-	write(t, filepath.Join(root, "cmd/soar/main.go"), "this is not Go")
+	write(t, filepath.Join(root, "cmd/vamos/main.go"), "this is not Go")
 	if err := Build(context.Background(), root, out, "dev", io.Discard); err == nil {
 		t.Fatal("broken build succeeded")
 	}
@@ -160,7 +160,7 @@ func TestFailedBuildDoesNotPublish(t *testing.T) {
 
 func TestLocalModuleReplacementRefused(t *testing.T) {
 	root := fixture(t)
-	write(t, filepath.Join(root, "go.mod"), "module github.com/nchapman/soar\ngo 1.25.0\nreplace example.com/module => ../outside\n")
+	write(t, filepath.Join(root, "go.mod"), "module github.com/nchapman/vamos\ngo 1.25.0\nreplace example.com/module => ../outside\n")
 	err := Build(context.Background(), root, t.TempDir(), "dev", io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "local module replacements") {
 		t.Fatal(err)

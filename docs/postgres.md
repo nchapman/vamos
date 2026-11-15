@@ -10,9 +10,9 @@ From the example directory, after configuring a server and staging
 `database-password`:
 
 ```sh
-soar deploy --service db
-soar run --service web -- ./bin/migrate
-soar deploy
+vamos deploy --service db
+vamos run --service web -- ./bin/migrate
+vamos deploy
 ```
 
 The first command creates only db, requiring only its secrets and no web build.
@@ -31,7 +31,7 @@ It refuses requested protected image, environment, command, secrets or policy
 changes rather than silently ignoring them. Explicit existing db updates use:
 
 ```sh
-soar deploy --service db --yes
+vamos deploy --service db --yes
 ```
 
 This acknowledges the scoped plan and possible downtime. It does not deploy
@@ -41,7 +41,7 @@ responsibility, not something this command makes safe.
 
 ## One-off execution and durable results
 
-`soar run --service web -- ./bin/migrate` uses the selected service image,
+`vamos run --service web -- ./bin/migrate` uses the selected service image,
 configured environment and latest selected staged secrets on the existing app
 network. It needs no healthy/running web container. It starts no dependencies,
 mounts no volumes, publishes no ports, and overrides CMD while retaining
@@ -52,8 +52,8 @@ services.
 After failure or disconnect, inspect the recorded operation:
 
 ```sh
-soar status --run OP
-soar logs --run OP
+vamos status --run OP
+vamos logs --run OP
 ```
 
 Never assume a lost connection cancelled SQL. Commands are never automatically
@@ -99,8 +99,8 @@ and secrets. A single local volume is neither a backup nor high availability.
 ## Code rollback is not database recovery
 
 ```sh
-soar rollback --service web        # preview captured web code/config
-soar rollback --service web --yes # apply after checking schema compatibility
+vamos rollback --service web        # preview captured web code/config
+vamos rollback --service web --yes # apply after checking schema compatibility
 ```
 
 [Rollback](rollback.md) restores captured local images, configuration and secret
@@ -108,7 +108,7 @@ versions, not SQL or schema state. The manual `db` service is never rolled back,
 even with `--service db`; intentional database changes require a vetted scoped
 deploy. Use backward-compatible migrations so old web code can read current data.
 Captured credentials may have been revoked, and staged secrets are not selected.
-`soar run` remains noninteractive and is never automatically retried or undone.
+`vamos run` remains noninteractive and is never automatically retried or undone.
 
 ## Verification for this milestone
 
@@ -134,8 +134,8 @@ The workflow was exercised from macOS against the existing dedicated Ubuntu
   remained readable. The API still returned its original row.
 - Destroy removed probe containers, network, routes and captured operation files.
   Only the original hello containers remained; hello's HTTPS route stayed healthy.
-  The synthetic secret and volume `soar-vol-2563ad8359829fd94e57f53d607f3749`
-  were intentionally retained, with `/var/lib/soar/volumes/pgprobe.json` provenance.
+  The synthetic secret and volume `vamos-vol-2563ad8359829fd94e57f53d607f3749`
+  were intentionally retained, with `/var/lib/vamos/volumes/pgprobe.json` provenance.
 
 Local verification passed formatting, vet, the full race-enabled Go suite,
 native and Linux amd64/arm64 builds, Windows package cross-compilation, the ledger

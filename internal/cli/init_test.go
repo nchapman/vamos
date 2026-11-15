@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 func initFixture(t *testing.T) (string, *registry.Store, func() (*registry.Store, error)) {
@@ -40,11 +40,11 @@ func TestInitGenerationAndBindings(t *testing.T) {
 				if err := bindProject(dir, "notes", home); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Remove(filepath.Join(dir, ".soar", ".gitignore")); err != nil {
+				if err := os.Remove(filepath.Join(dir, ".vamos", ".gitignore")); err != nil {
 					t.Fatal(err)
 				}
 			}
-			path := filepath.Join(dir, "soar.yaml")
+			path := filepath.Join(dir, "vamos.yaml")
 			args := []string{"notes", "--port", "8080", "-f", path}
 			if mode == "explicit" {
 				args = append(args, "--server", "other", "--service", "api", "--health", "/ready")
@@ -95,7 +95,7 @@ func TestInitGenerationAndBindings(t *testing.T) {
 				if bound != nil {
 					t.Fatal("unexpected binding")
 				}
-				if _, err := os.Lstat(filepath.Join(dir, ".soar")); !errors.Is(err, os.ErrNotExist) {
+				if _, err := os.Lstat(filepath.Join(dir, ".vamos")); !errors.Is(err, os.ErrNotExist) {
 					t.Fatal("unbound metadata side effect")
 				}
 			} else {
@@ -106,7 +106,7 @@ func TestInitGenerationAndBindings(t *testing.T) {
 				if bound == nil || bound.Server != wanted || bound.App != "notes" {
 					t.Fatalf("%+v", bound)
 				}
-				ignore, err := os.ReadFile(filepath.Join(dir, ".soar", ".gitignore"))
+				ignore, err := os.ReadFile(filepath.Join(dir, ".vamos", ".gitignore"))
 				if err != nil || string(ignore) != "*\n" {
 					t.Fatal("unprotected metadata", err)
 				}
@@ -131,7 +131,7 @@ func TestInitFlagHandlingAndValidation(t *testing.T) {
 			dir, _, reg := initFixture(t)
 			var out, diag bytes.Buffer
 			// Put the output option before --, if present.
-			args = append([]string{"-f", filepath.Join(dir, "soar.yaml")}, args...)
+			args = append([]string{"-f", filepath.Join(dir, "vamos.yaml")}, args...)
 			if code := initCommand(args, &out, &diag, reg); code != 0 {
 				t.Fatalf("%d %s", code, &diag)
 			}
@@ -141,7 +141,7 @@ func TestInitFlagHandlingAndValidation(t *testing.T) {
 		t.Run("reject "+strings.Join(args, " "), func(t *testing.T) {
 			dir, _, reg := initFixture(t)
 			var out, diag bytes.Buffer
-			path := filepath.Join(dir, "soar.yaml")
+			path := filepath.Join(dir, "vamos.yaml")
 			if code := initCommand(append([]string{"-f", path}, args...), &out, &diag, reg); code == 0 {
 				t.Fatal("accepted invalid args")
 			}
@@ -152,15 +152,15 @@ func TestInitFlagHandlingAndValidation(t *testing.T) {
 	}
 }
 func TestInitUnsafeMetadataAndOutput(t *testing.T) {
-	for _, kind := range []string{"existing", "output-symlink", "parent-symlink", "soar-symlink", "binding-mismatch", "binding-symlink", "ignore-symlink", "ignore-content", "lock-symlink", "metadata-output"} {
+	for _, kind := range []string{"existing", "output-symlink", "parent-symlink", "vamos-symlink", "binding-mismatch", "binding-symlink", "ignore-symlink", "ignore-content", "lock-symlink", "metadata-output"} {
 		t.Run(kind, func(t *testing.T) {
 			dir, store, reg := initFixture(t)
 			home := registry.Server{Name: "home", Target: "root@home", Domain: "example.com"}
 			if err := store.Put(home); err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(dir, "soar.yaml")
-			root := filepath.Join(dir, ".soar")
+			path := filepath.Join(dir, "vamos.yaml")
+			root := filepath.Join(dir, ".vamos")
 			unrelated := filepath.Join(dir, "unrelated")
 			if err := os.WriteFile(unrelated, []byte("keep"), 0600); err != nil {
 				t.Fatal(err)
@@ -180,8 +180,8 @@ func TestInitUnsafeMetadataAndOutput(t *testing.T) {
 				symlink(unrelated, path)
 			case "parent-symlink":
 				symlink(dir, filepath.Join(dir, "link"))
-				path = filepath.Join(dir, "link", "soar.yaml")
-			case "soar-symlink":
+				path = filepath.Join(dir, "link", "vamos.yaml")
+			case "vamos-symlink":
 				symlink(t.TempDir(), root)
 			case "binding-mismatch":
 				if err := bindProject(dir, "other-app", home); err != nil {
@@ -224,7 +224,7 @@ func TestInitUnsafeMetadataAndOutput(t *testing.T) {
 }
 func TestInitRegistryFailureDoesNotWrite(t *testing.T) {
 	dir, _, _ := initFixture(t)
-	path := filepath.Join(dir, "soar.yaml")
+	path := filepath.Join(dir, "vamos.yaml")
 	var out, diag bytes.Buffer
 	if initCommand([]string{"notes", "--port", "80", "-f", path}, &out, &diag, func() (*registry.Store, error) { return nil, errors.New("registry unavailable") }) == 0 {
 		t.Fatal("ignored registry error")
@@ -239,7 +239,7 @@ type initFailWriter struct{}
 func (initFailWriter) Write([]byte) (int, error) { return 0, errors.New("output failed") }
 func TestInitReportsCompletedWriteWhenOutputFails(t *testing.T) {
 	dir, _, reg := initFixture(t)
-	path := filepath.Join(dir, "soar.yaml")
+	path := filepath.Join(dir, "vamos.yaml")
 	var diag bytes.Buffer
 	if initCommand([]string{"notes", "--private", "-f", path}, initFailWriter{}, &diag, reg) == 0 || !strings.Contains(diag.String(), "partially wrote") {
 		t.Fatal(&diag)

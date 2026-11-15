@@ -36,15 +36,15 @@ class CommandTests(unittest.TestCase):
         self.h = suite.Harness.__new__(suite.Harness)
         self.h.artifacts = Path(self.temp.name)
         self.h.sequence = 0
-        self.h.env = {'HOME': '/home/soartest'}
+        self.h.env = {'HOME': '/home/vamostest'}
         self.h.log = lambda text: None
 
     def test_secret_input_not_logged_or_placed_in_argv(self):
         result = subprocess.CompletedProcess([], 0, b'acknowledged', b'')
         with patch.object(suite.subprocess, 'run', return_value=result) as run:
-            self.h.command(['soar', 'secrets', 'stage', '--stdin', 'password'], input=b'private-value')
+            self.h.command(['vamos', 'secrets', 'stage', '--stdin', 'password'], input=b'private-value')
         args, kwargs = run.call_args
-        self.assertEqual(args[0][:4], ['runuser', '-u', 'soartest', '--'])
+        self.assertEqual(args[0][:4], ['runuser', '-u', 'vamostest', '--'])
         self.assertEqual(kwargs['input'], b'private-value')
         for file in self.h.artifacts.iterdir():
             self.assertNotIn(b'private-value', file.read_bytes())
@@ -67,11 +67,11 @@ class CommandTests(unittest.TestCase):
 
     def test_https_pins_local_ca_and_hostname_without_insecure_flag(self):
         with patch.object(suite.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, b'{}', b'')) as run:
-            self.h.https('orders.soar.localhost', '/entries', {'amount_cents': 10})
+            self.h.https('orders.vamos.localhost', '/entries', {'amount_cents': 10})
         args, kwargs = run.call_args
         self.assertNotIn('--insecure', args[0])
         self.assertIn('--cacert', args[0])
-        self.assertIn('orders.soar.localhost:443:127.0.0.1', args[0])
+        self.assertIn('orders.vamos.localhost:443:127.0.0.1', args[0])
         self.assertEqual(json.loads(kwargs['input']), {'amount_cents': 10})
 
 

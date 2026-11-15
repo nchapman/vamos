@@ -13,54 +13,54 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 	type help struct{ usage, flags, notes, example string }
 	commands := map[string]help{
 		"deploy": {
-			"soar deploy [OPTIONS]", "service yes supersede re-add reuse-data",
+			"vamos deploy [OPTIONS]", "service yes supersede re-add reuse-data",
 			"Update automatic services, or only --service NAME. Existing manual services preview unless --yes.\n--yes requires --service; --re-add additionally authorizes recreating a removed service.\n--reuse-data is separate approval for exact retained-volume reuse after destroy.\nPrivate and volume-backed replacements use stop/start; application data is not rolled back.",
-			"soar deploy -f api/soar.yaml --server home --service web",
+			"vamos deploy -f api/vamos.yaml --server home --service web",
 		},
 		"run": {
-			"soar run [OPTIONS] --service NAME -- COMMAND [ARG...]", "service",
+			"vamos run [OPTIONS] --service NAME -- COMMAND [ARG...]", "service",
 			"Run captured code noninteractively: no stdin, TTY, implicit shell, or automatic retry.\nThe remote worker has a 20-minute deadline. Inspect an unknown outcome with status --run, not rerun.",
-			"soar run --service web -- python migrate.py",
+			"vamos run --service web -- python migrate.py",
 		},
 		"status": {
-			"soar status [OPTIONS]", "app service run json",
+			"vamos status [OPTIONS]", "app service run json",
 			"Inspect recorded operation and runtime state. --run selects a captured one-off operation\nand cannot be combined with --service. --json emits the status object, not a response envelope.",
-			"soar status --server home --app notes --json",
+			"vamos status --server home --app notes --json",
 		},
 		"logs": {
-			"soar logs [OPTIONS]", "app service replica run candidate follow tail",
+			"vamos logs [OPTIONS]", "app service replica run candidate follow tail",
 			"Multi-instance services require --replica ORDINAL (1-based); singleton services default to their sole instance.\nSnapshot logs are byte bounded; --follow streams one pinned container and never retargets replacements.\nSnapshot deadline defaults to 15s; follow defaults to no deadline (explicit --timeout 0 is also unlimited).\n--run diagnostics are snapshots and cannot combine with --follow, --service, --replica, or --candidate.\n-f remains the configuration file. Snapshot workload logs go to stdout; target metadata goes to stderr.",
-			"soar logs --service web --follow --tail 100",
+			"vamos logs --service web --follow --tail 100",
 		},
 		"resume": {
-			"soar resume [OPTIONS] OPERATION", "app",
+			"vamos resume [OPTIONS] OPERATION", "app",
 			"Resume the existing deployment/maintenance operation using captured inputs, not local edits.\nThis does not retry an unknown one-off run. Flags must precede the operation ID.",
-			"soar resume --server home --app notes OPERATION",
+			"vamos resume --server home --app notes OPERATION",
 		},
 		"rollback": {
-			"soar rollback [OPTIONS]", "app service yes allow-downtime",
+			"vamos rollback [OPTIONS]", "app service yes allow-downtime",
 			"Preview unless --yes. Use captured images and secret versions, never local source or builds.\n--allow-downtime authorizes stop/start rollback; application data is not rolled back.\nCaptured credentials may have been revoked.",
-			"soar rollback --server home --app notes --service web",
+			"vamos rollback --server home --app notes --service web",
 		},
 		"cleanup": {
-			"soar cleanup [OPTIONS]", "app yes json",
+			"vamos cleanup [OPTIONS]", "app yes json",
 			"Preview owned-resource cleanup unless --yes. Retained data and secrets are not deleted.\n--json emits the full response; large plans explicitly summarize details with exact totals. Preview success does not mean resources were deleted.",
-			"soar cleanup --server home --app notes --json",
+			"vamos cleanup --server home --app notes --json",
 		},
 		"destroy": {
-			"soar destroy [OPTIONS]", "app yes json",
+			"vamos destroy [OPTIONS]", "app yes json",
 			"Preview app destruction unless --yes. Retain data and secret versions; remove live app resources.\n--json emits the full response; large plans explicitly summarize details with exact totals. Preview success does not mean the app was destroyed.",
-			"soar destroy --server home --app notes",
+			"vamos destroy --server home --app notes",
 		},
 		"service-bind": {
-			"soar service bind NAME [OPTIONS]", "app",
+			"vamos service bind NAME [OPTIONS]", "app",
 			"Explicitly adopt an existing service identity locally; no deployment is performed.\n-f writes the binding beside that manifest. --app with --server writes it in the current directory.",
-			"soar service bind web -f api/soar.yaml --server home",
+			"vamos service bind web -f api/vamos.yaml --server home",
 		},
 		"service-remove": {
-			"soar service remove NAME [OPTIONS]", "app yes allow-protected json",
+			"vamos service remove NAME [OPTIONS]", "app yes allow-protected json",
 			"Preview service removal unless --yes. A manual service also requires --allow-protected.\nRetain data and secret versions. --json emits the full response; large plans explicitly summarize details with exact totals.",
-			"soar service remove worker --server home --app notes",
+			"vamos service remove worker --server home --app notes",
 		},
 	}
 	h := commands[action]

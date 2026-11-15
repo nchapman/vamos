@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestMultiBuildKeepsBoundedBuildDiagnostics(t *testing.T) {

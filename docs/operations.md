@@ -1,6 +1,6 @@
 # Whole-system operations
 
-A practical checklist for operating Soar's current single-host implementation.
+A practical checklist for operating Vamos's current single-host implementation.
 Commands below are observation or preview examples unless explicitly described
 otherwise; substitute your recorded server, app, service, and operation IDs.
 This guide does not turn proposed backup/restore or host-upgrade workflows into
@@ -13,7 +13,7 @@ implemented features.
   noninteractive; do not weaken strict known-host checking to restore access.
 - Trust all administrators, application code, Dockerfiles, and build inputs.
   [Build networking](builds.md) isolates the builder from host-local services and
-  Soar app bridges, but the privileged builder is not a hostile-code sandbox.
+  Vamos app bridges, but the privileged builder is not a hostile-code sandbox.
   App networks and local identity bindings are not a hostile multi-tenant
   security boundary. Coordinate firewall changes with builds; do not remove
   their network guards while a builder is running.
@@ -52,14 +52,14 @@ See [host lifecycle](host-lifecycle.md), [deployment](deployment.md), and
   coordinating the change. Do not start new work over an uncertain operation.
 
 ```sh
-soar server status --json home
-soar apps --server home
-soar status --server home --app workspace --json
-soar logs --server home --app workspace --service web --tail 100
+vamos server status --json home
+vamos apps --server home
+vamos status --server home --app workspace --json
+vamos logs --server home --app workspace --service web --tail 100
 ```
 
 `apps` is recorded inventory, including retained state, not a runtime probe.
-Status adds live observations but does not replace external monitoring. Soar's
+Status adds live observations but does not replace external monitoring. Vamos's
 logs and journals are bounded diagnostics, not an external monitoring/audit store.
 
 ## Capacity and retention
@@ -74,21 +74,21 @@ Budget **aggregate peak usage**, not just steady-state container limits:
   or aggregate admission control. Omitted limits are unlimited. They do not cap
   BuildKit. Memory limits permit no additional swap; exceeding them can cause OOM
   termination. Do not size the host by adding only the new group's limits.
-- Track filesystem bytes/inodes for Docker data, volumes, captured source, Soar
+- Track filesystem bytes/inodes for Docker data, volumes, captured source, Vamos
   metadata, secret stores, system journals, and certificates. The bounded Docker
   `local` log driver does not bound database growth or all host logs.
 - Schedule reviewed [cleanup](app-lifecycle.md) before inventories become large:
 
   ```sh
-  soar cleanup --server home --app workspace        # Preview only
-  # After review: soar cleanup --server home --app workspace --yes
+  vamos cleanup --server home --app workspace        # Preview only
+  # After review: vamos cleanup --server home --app workspace --yes
   ```
 
   Apply recomputes its plan. Cleanup retains effective versions, per-service
   predecessors, current/previous completed app snapshots, and required inputs.
   It does not delete volumes, secrets, shared base images, **BuildKit cache**, or
   unknown resources. Tagged/digested or otherwise referenced images may remain.
-  There is no automatic Soar garbage collection or Soar-managed BuildKit cache
+  There is no automatic Vamos garbage collection or Vamos-managed BuildKit cache
   budget; measure cache separately and plan operator-controlled maintenance,
   not broad prune.
 - Public maintenance details are bounded to 1,024 resource/retention entries
@@ -116,7 +116,7 @@ Budget **aggregate peak usage**, not just steady-state container limits:
 - Private replacements stop old instances first. Workers must handle stop signals,
   stop accepting work, and finish or safely release jobs within the stop budget.
   Use application-level idempotency, durable acknowledgements/leases, and tested
-  retry behavior. Soar does not drain queues or guarantee exactly-once jobs.
+  retry behavior. Vamos does not drain queues or guarantee exactly-once jobs.
 - Volume-backed replacement has explicit downtime and retained data; code rollback
   is not data rollback. Multi-service changes are not atomic: earlier promotions
   remain effective if a later service fails.
@@ -141,11 +141,11 @@ After timeout, disconnect, or an unexpected result:
 3. Inspect current/candidate instances and logs, plus explicit run results:
 
    ```sh
-   soar status --server home --app workspace
-   soar logs --server home --app workspace --service web --candidate --tail 100
+   vamos status --server home --app workspace
+   vamos logs --server home --app workspace --service web --candidate --tail 100
    # Add --replica N when a group has multiple instances.
-   soar status --server home --app workspace --run RUN_OPERATION
-   soar logs --server home --app workspace --run RUN_OPERATION
+   vamos status --server home --app workspace --run RUN_OPERATION
+   vamos logs --server home --app workspace --run RUN_OPERATION
    ```
 
    Release-run and owning deployment IDs are distinct. `logs --follow` pins one
@@ -155,9 +155,9 @@ After timeout, disconnect, or an unexpected result:
    under the trusted root SSH workflow. For example, on the host:
 
    ```sh
-   systemctl status soar-agent.service docker.service caddy.service --no-pager
-   systemctl list-units 'soar-op-*.service' soar-host-operation.service --no-pager
-   journalctl -u soar-agent.service -u docker.service -u caddy.service --since '1 hour ago' --no-pager
+   systemctl status vamos-agent.service docker.service caddy.service --no-pager
+   systemctl list-units 'vamos-op-*.service' vamos-host-operation.service --no-pager
+   journalctl -u vamos-agent.service -u docker.service -u caddy.service --since '1 hour ago' --no-pager
    df -h
    df -i
    free -h
@@ -170,7 +170,7 @@ After timeout, disconnect, or an unexpected result:
    deploy or migration:
 
    ```sh
-   soar resume --server home --app workspace DEPLOYMENT_OPERATION
+   vamos resume --server home --app workspace DEPLOYMENT_OPERATION
    ```
 
    Resume preserves captured inputs and reconciles supported transitions. It is
@@ -191,11 +191,11 @@ If only the local registry was lost, independently verify the SSH host key and
 restore root credentials, then use the **existing installed** name/domain:
 
 ```sh
-soar server status --json home root@host
-soar server connect --domain apps.example.com home root@host
-soar apps --server home
-soar status --server home --app workspace
-soar service bind api -f api/soar.yaml --server home
+vamos server status --json home root@host
+vamos server connect --domain apps.example.com home root@host
+vamos apps --server home
+vamos status --server home --app workspace
+vamos service bind api -f api/vamos.yaml --server home
 ```
 
 Connect verifies identity/ready host ownership and writes only local registration;
@@ -235,25 +235,25 @@ access to a surviving installation; it cannot recover a lost host or its data.
 
 **There is no supported host upgrade or ownership-reconciliation API.** The
 following is a documented **operator procedure**, not an automated or validated
-Soar in-place upgrade workflow. This gap remains until implemented and tested.
+Vamos in-place upgrade workflow. This gap remains until implemented and tested.
 
 1. Test the specific distro/runtime/security updates on a disposable equivalent
-   host with representative apps, data, package versions, and the same Soar bundle.
+   host with representative apps, data, package versions, and the same Vamos bundle.
    Exercise daemon restart/reboot and application recovery there first.
 2. Ensure independently tested external recovery and artifacts are available;
    schedule an outage and define recovery/cutover criteria. Do not promise rolling
    availability on one host. Coordinate writes/jobs as required for consistency.
-3. Prevent concurrent root/Soar operations, automation, and package-manager work;
+3. Prevent concurrent root/Vamos operations, automation, and package-manager work;
    establish that workers and uncertain executions are settled before maintenance.
-   Soar's lock is not a general maintenance lock.
+   Vamos's lock is not a general maintenance lock.
 4. Perform reviewed, **operator-controlled distro maintenance** appropriate to the
-   host and security advisory. Do not freeze vulnerable packages to satisfy Soar's
+   host and security advisory. Do not freeze vulnerable packages to satisfy Vamos's
    recorded versions. There is no generic safe APT repair/prune recipe here.
 5. Verify daemon restart and runtime invariants: Docker/Caddy functioning, intended
    containers and restart behavior, resource limits, networks, loopback ports,
    persistent volume identity/mounts, and no unexpected exposed listeners. Verify
    durable/live route agreement, public HTTPS, database integrity and read/write
-   behavior, and queue progress. Use Soar status plus independent checks; do not
+   behavior, and queue progress. Use Vamos status plus independent checks; do not
    use add as the maintenance validation command.
 6. Record package/configuration changes and remaining limitations. **Package drift
    can block setup/teardown even if app operations still work.** Connect does not
@@ -263,7 +263,7 @@ Soar in-place upgrade workflow. This gap remains until implemented and tested.
 
 If a supported **fresh-identity host lifecycle** is required, commission a new
 fresh host through bootstrap and migrate applications using a tested external
-procedure, with planned data consistency and cutover. This is not Soar restore;
+procedure, with planned data consistency and cutover. This is not Vamos restore;
 there is no supported automated host-loss migration or in-place re-adoption path.
 Do not assume the old populated host can be torn down with `--purge`: retained
 workloads/data and drift still trigger the documented refusal guards.

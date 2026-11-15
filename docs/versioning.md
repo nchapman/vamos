@@ -1,7 +1,7 @@
 # Client, executor, and coordinator versioning
 
-Ordinary CLI app commands route through the installed `soar-agent` coordinator
-over the restricted `soar` SSH bridge using a framed API/capability handshake
+Ordinary CLI app commands route through the installed `vamos-agent` coordinator
+over the restricted `vamos` SSH bridge using a framed API/capability handshake
 ([agent protocol](agent-protocol.md)). Host lifecycle operations (`server add`,
 `server upgrade`, `server teardown`) and explicit `--executor FILE` overrides
 connect as `root` and enforce an **exact matching local bundle** before
@@ -12,18 +12,18 @@ happen first to discover the host architecture.
 
 ```sh
 mise run build
-bin/soar version
+bin/vamos version
 # Optional human-readable release label:
 mise exec -- go run ./cmd/build -version 0.2.0-dev
 ```
 
-The output directory contains the native `soar` (`soar.exe` on Windows),
-`soar-linux-amd64`, and `soar-linux-arm64`. Keep all three together when installing
+The output directory contains the native `vamos` (`vamos.exe` on Windows),
+`vamos-linux-amd64`, and `vamos-linux-arm64`. Keep all three together when installing
 or updating. `-out DIRECTORY` selects another output directory. Build from the
 repository root. The former standalone `build:host-*` tasks are replaced by the
 single bundle build; do not update just one artifact.
 
-`soar version` prints the label and full SHA-256 build identity. The default label
+`vamos version` prints the label and full SHA-256 build identity. The default label
 is `dev`, but its identity distinguishes different source snapshots. A release
 label alone is not used as the compatibility check.
 
@@ -55,7 +55,7 @@ valid embedded bundle marker matching its own. Validation and upload use the
 same bounded bytes. It never executes the foreign-architecture artifact locally.
 `--executor FILE` chooses a different location, **not a mismatch bypass**.
 
-A raw `go build ./cmd/soar` or `go run ./cmd/soar` is unversioned and cannot issue
+A raw `go build ./cmd/vamos` or `go run ./cmd/vamos` is unversioned and cannot issue
 commands requiring an executor. Such builds can still validate manifests and use
 host inspect/status/connect. Use the bundle builder for app operations (including
 app status/logs) and host setup/teardown. The old `-X main.version=...` recipe does
@@ -76,12 +76,12 @@ downgrade clients against newer state. Coordinate operator/automation upgrades
 and retain the original bundle when diagnosing incomplete operations.
 
 This build identity also supplies the deterministic `agent_build_id` /
-`agent_version` metadata used by the installed `soar-agent` API handshake.
-`soar server add` installs the paired `executor` and `soar-agent` under
-`/usr/local/lib/soar/`; `soar server upgrade --yes NAME` replaces that pair
+`agent_version` metadata used by the installed `vamos-agent` API handshake.
+`vamos server add` installs the paired `executor` and `vamos-agent` under
+`/usr/local/lib/vamos/`; `vamos server upgrade --yes NAME` replaces that pair
 after strict ownership, idle-queue, and health checks. Host inspect/status/connect
 still require no executor artifact. Within a compatible API range and capability
-set, the CLI and `soar-agent` interoperate across patch builds; incompatible
+set, the CLI and `vamos-agent` interoperate across patch builds; incompatible
 API ranges or missing capabilities fail fast with an explicit upgrade message.
 See [the agent protocol](agent-protocol.md) for compatibility and reattachment
 semantics.

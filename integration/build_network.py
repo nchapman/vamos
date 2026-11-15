@@ -7,8 +7,8 @@ import socket
 from pathlib import Path
 
 IMAGE = 'python:3.14-alpine@sha256:5862d971d1f0ae26b258cefa4e893556b1d3aba81bd2ff30888704ad378bab67'
-STATE = Path('/var/lib/soar/buildkit/state.json')
-NATIVE_CONFIG = Path('/etc/systemd/system.conf.d/soar-integration-builder.conf')
+STATE = Path('/var/lib/vamos/buildkit/state.json')
+NATIVE_CONFIG = Path('/etc/systemd/system.conf.d/vamos-integration-builder.conf')
 
 
 def require(value, message):
@@ -17,12 +17,12 @@ def require(value, message):
 
 
 def configure_native(h):
-    require(h.root == Path('/opt/soar-test'), 'requires the owned guest harness')
+    require(h.root == Path('/opt/vamos-test'), 'requires the owned guest harness')
     # This is a disposable-guest accommodation for nested overlay mount denial,
     # not a different builder/network implementation or relaxed machine isolation.
     path = NATIVE_CONFIG
     path.parent.mkdir(parents=True, exist_ok=True)
-    expected = '[Manager]\nDefaultEnvironment=SOAR_BUILDKIT_SNAPSHOTTER=native\n'
+    expected = '[Manager]\nDefaultEnvironment=VAMOS_BUILDKIT_SNAPSHOTTER=native\n'
     try:
         with path.open('x') as stream:
             stream.write(expected)
@@ -31,8 +31,8 @@ def configure_native(h):
                 'existing guest builder configuration differs')
     h.command(['systemctl', 'daemon-reexec'], user='root')
     h.command(['systemd-run', '--quiet', '--collect', '--wait', '--pipe',
-               '--unit=soar-integration-builder-env', '/bin/sh', '-c',
-               'test "$SOAR_BUILDKIT_SNAPSHOTTER" = native'], user='root')
+               '--unit=vamos-integration-builder-env', '/bin/sh', '-c',
+               'test "$VAMOS_BUILDKIT_SNAPSHOTTER" = native'], user='root')
 
 
 def probe_source(targets):
@@ -52,7 +52,7 @@ def probe_source(targets):
 
 @contextmanager
 def host_listener(h, host_name, host_port, server):
-    require(h.root == Path('/opt/soar-test'), 'requires the owned guest harness')
+    require(h.root == Path('/opt/vamos-test'), 'requires the owned guest harness')
     host_id = None
     try:
         with socket.socket() as ready:
@@ -78,7 +78,7 @@ def host_listener(h, host_name, host_port, server):
 
 
 def run(h):
-    require(h.root == Path('/opt/soar-test'), 'requires the owned guest harness')
+    require(h.root == Path('/opt/vamos-test'), 'requires the owned guest harness')
     app = 'buildnet-' + secrets.token_hex(4)
     directory = h.work / app
     directory.mkdir()
@@ -95,9 +95,9 @@ def run(h):
         'probe': {'build': {'context': '.', 'dockerfile': 'Dockerfile'},
                   'command': ['python', '-c', idle]},
     }}
-    (directory / 'soar.yaml').write_text(json.dumps(manifest))
+    (directory / 'vamos.yaml').write_text(json.dumps(manifest))
     (directory / 'Dockerfile').write_text(f'FROM {IMAGE}\n')
-    h.command(['chown', '-R', 'soartest:soartest', directory], user='root')
+    h.command(['chown', '-R', 'vamostest:vamostest', directory], user='root')
     h.cli('deploy', '--server', 'local', cwd=directory)
     state = json.loads(STATE.read_text())
     for key in ('ContainerID', 'NetworkID'):
@@ -106,7 +106,7 @@ def run(h):
     container_id = state['ContainerID']
     target = h.status(app)['services']['target']['container']
     target_info = json.loads(h.command(['docker', 'inspect', target], user='root').stdout)[0]
-    target_ip = target_info['NetworkSettings']['Networks']['soar-' + app]['IPAddress']
+    target_ip = target_info['NetworkSettings']['Networks']['vamos-' + app]['IPAddress']
     network = json.loads(h.command(['docker', 'network', 'inspect', state['NetworkID']], user='root').stdout)[0]
     gateway = network['IPAM']['Config'][0]['Gateway']
     addresses = json.loads(h.command(['ip', '-j', 'address', 'show'], user='root').stdout)
@@ -126,7 +126,7 @@ def run(h):
                    (target_ip, app_port), *[(ip, host_port) for ip in host_ips]]
         (directory / 'probe.py').write_text(probe_source(targets))
         (directory / 'Dockerfile').write_text(f'FROM {IMAGE}\nCOPY probe.py /probe.py\nRUN python /probe.py\n')
-        h.command(['chown', '-R', 'soartest:soartest', directory], user='root')
+        h.command(['chown', '-R', 'vamostest:vamostest', directory], user='root')
         h.cli('deploy', '--server', 'local', '--service', 'probe', cwd=directory)
         builder = json.loads(h.command(['docker', 'inspect', container_id], user='root').stdout)[0]
         require(not builder['State']['Running'], 'builder left running after deployment')
@@ -135,7 +135,7 @@ def run(h):
         # daemon must still refuse them. No app journals are edited or bypassed.
         env = ['env', '-u', 'DOCKER_CONTEXT', '-u', 'DOCKER_TLS', '-u', 'DOCKER_TLS_VERIFY',
                '-u', 'DOCKER_CERT_PATH', '-u', 'BUILDKIT_HOST', '-u', 'BUILDX_BUILDER',
-               'DOCKER_HOST=unix:///var/run/docker.sock', 'BUILDX_CONFIG=/var/lib/soar/buildkit/buildx']
+               'DOCKER_HOST=unix:///var/run/docker.sock', 'BUILDX_CONFIG=/var/lib/vamos/buildkit/buildx']
         h.command(['docker', 'start', container_id], user='root')
         try:
             h.command([*env, 'docker', 'buildx', 'inspect', '--bootstrap', state['Builder']], user='root')

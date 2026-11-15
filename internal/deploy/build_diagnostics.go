@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // buildDiagnostic is only for build output, never runtime logs or inspect data.

@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func TestRollbackPreviewResponseRoundTrip(t *testing.T) {

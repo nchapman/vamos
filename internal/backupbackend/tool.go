@@ -78,7 +78,7 @@ func (b *Backend) ensure(ctx context.Context, scratch string) (string, error) {
 	if !safeDirectory(b.root, false) {
 		return "", errTool
 	}
-	dir := filepath.Join(b.root, "usr/local/lib/soar/tools/restic", Version)
+	dir := filepath.Join(b.root, "usr/local/lib/vamos/tools/restic", Version)
 	if !safeDirectory(dir, true) {
 		return "", errTool
 	}

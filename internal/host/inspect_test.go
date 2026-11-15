@@ -11,7 +11,7 @@ import (
 )
 
 func frame(kernel, arch, uid, init, manager, status, metadata string) []byte {
-	return []byte(strings.Join([]string{"soar-inspect-v1", kernel, arch, uid, init, manager, status, metadata}, "\n"))
+	return []byte(strings.Join([]string{"vamos-inspect-v1", kernel, arch, uid, init, manager, status, metadata}, "\n"))
 }
 
 func ubuntu(version string) []byte {
@@ -74,7 +74,7 @@ func TestMalformedProbeOutput(t *testing.T) {
 	for name, input := range map[string]string{
 		"empty":              "",
 		"banner":             "Welcome\n" + good,
-		"truncated":          "soar-inspect-v1\nLinux\n",
+		"truncated":          "vamos-inspect-v1\nLinux\n",
 		"wrong version":      strings.Replace(good, "v1", "v2", 1),
 		"bad scalar":         strings.Replace(good, "x86_64", "x86_64\x1b[31m", 1),
 		"bad UID":            strings.Replace(good, "1000", "user", 1),

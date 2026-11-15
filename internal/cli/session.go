@@ -9,16 +9,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/ssh"
 	"golang.org/x/term"
 )
 
 const sessionHelp = `Usage:
-  soar exec [-f soar.yaml | --server NAME --app APP] [--service NAME] [--replica ORDINAL] [-i] [-t] -- COMMAND [ARG...]
-  soar console [-f soar.yaml | --server NAME --app APP] [--service NAME] [--replica ORDINAL] [--shell /bin/sh]
+  vamos exec [-f vamos.yaml | --server NAME --app APP] [--service NAME] [--replica ORDINAL] [-i] [-t] -- COMMAND [ARG...]
+  vamos console [-f vamos.yaml | --server NAME --app APP] [--service NAME] [--replica ORDINAL] [--shell /bin/sh]
 
 Both accept --executor FILE and --timeout DURATION (default: no session deadline).
 Exec preserves arguments without an implicit shell. -i/--interactive forwards stdin;

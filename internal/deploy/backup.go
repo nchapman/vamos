@@ -4,8 +4,8 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 var (

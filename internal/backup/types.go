@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nchapman/soar/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/backupbackend"
 )
 
 const MaxPrivateBytes = 64 * 1024

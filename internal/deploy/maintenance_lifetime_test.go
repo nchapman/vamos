@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // Exercise the actual inventory planner, not just a fabricated public Plan.

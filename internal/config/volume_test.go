@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 func TestSingularVolumeConfiguration(t *testing.T) {

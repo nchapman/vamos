@@ -46,7 +46,7 @@ def terminal_check(h, app, directory):
     import pty
     import termios
 
-    argv = ['runuser', '-u', 'soartest', '--', str(h.root / 'bin/soar'),
+    argv = ['runuser', '-u', 'vamostest', '--', str(h.root / 'bin/vamos'),
             'console', '--server', 'local', '--app', app, '--service', 'web']
     pid, master = pty.fork()
     if pid == 0:
@@ -59,8 +59,8 @@ def terminal_check(h, app, directory):
     try:
         capture.until(b'Session: app=')
         # Split sentinels so terminal echo cannot impersonate command output.
-        os.write(master, b"printf '__SOAR_%s__\\n' READY; id -u; pwd; stty size\n")
-        capture.until(b'__SOAR_READY__\r\n10001\r\n/app\r\n24 80')
+        os.write(master, b"printf '__VAMOS_%s__\\n' READY; id -u; pwd; stty size\n")
+        capture.until(b'__VAMOS_READY__\r\n10001\r\n/app\r\n24 80')
         os.write(master, b"python -u -c 'import time; print(\"__BLOCK_\"+\"READY__\",flush=True); time.sleep(60)'\n")
         capture.until(b'__BLOCK_READY__')
         os.write(master, b'\x03')
@@ -104,9 +104,9 @@ def terminal_check(h, app, directory):
 def follow_check(h, app, host, directory):
     initial, later = 'initial-' + uuid.uuid4().hex, 'later-' + uuid.uuid4().hex
     h.https(host, '/' + initial)
-    argv = [str(h.root / 'bin/soar'), 'logs', '--server', 'local', '--app', app,
+    argv = [str(h.root / 'bin/vamos'), 'logs', '--server', 'local', '--app', app,
             '--follow', '--tail', '1', '--timeout', '10s']
-    process = subprocess.Popen(['runuser', '-u', 'soartest', '--', *argv],
+    process = subprocess.Popen(['runuser', '-u', 'vamostest', '--', *argv],
                                cwd=directory, env=h.env, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                start_new_session=True)
@@ -133,19 +133,19 @@ def dx_check(h, app, host, image):
     project.mkdir()
     manifest = project / 'service config.yaml'
     manifest.write_text(f'app: {app}\nservices:\n  web:\n    image: {json.dumps(image)}\n    update: manual\n    http: {{port: 8080, health: /}}\n')
-    h.command(['chown', '-R', 'soartest:soartest', project], user='root')
+    h.command(['chown', '-R', 'vamostest:vamostest', project], user='root')
     refused = h.cli('deploy', '-f', manifest, '--server', 'local', '--service', 'web',
                     cwd=h.work, expect_error='explicitly adopt only the intended service')
     bind_line = next(line.strip() for line in refused.stderr.decode().splitlines()
-                     if line.strip().startswith('soar service bind '))
+                     if line.strip().startswith('vamos service bind '))
     binding = shlex.split(bind_line)
-    assert binding == ['soar', 'service', 'bind', 'web', '-f', str(manifest), '--server', 'local']
+    assert binding == ['vamos', 'service', 'bind', 'web', '-f', str(manifest), '--server', 'local']
     h.cli(*binding[1:], cwd=h.work)
-    assert (project / '.soar').is_dir()
+    assert (project / '.vamos').is_dir()
     preview = h.cli('deploy', '-f', manifest, '--server', 'local', '--service', 'web', cwd=h.work)
     approval = next(line.removeprefix('Approve: ') for line in preview.stdout.decode().splitlines()
                     if line.startswith('Approve: '))
-    assert shlex.split(approval) == ['soar', 'deploy', '--service', 'web', '--yes', '-f', str(manifest), '--server', 'local']
+    assert shlex.split(approval) == ['vamos', 'deploy', '--service', 'web', '--yes', '-f', str(manifest), '--server', 'local']
     # Do not approve the preview: this check must leave the running service alone.
     inventory = h.cli('apps', '--server', 'local').stdout
     assert b'local (' in inventory and b'recorded inventory (not live health)' in inventory
@@ -163,7 +163,7 @@ def dx_check(h, app, host, image):
     # Fault injection is restricted to this disposable app and always restored.
     canary = ('dx-private-' + uuid.uuid4().hex).encode()
     h.cli('secrets', 'stage', '--server', 'local', '--app', app, '--stdin', 'dx-secret', input=canary)
-    store = Path('/var/lib/soar/secrets') / (app + '.json')
+    store = Path('/var/lib/vamos/secrets') / (app + '.json')
     try:
         h.command(['chmod', '0644', store], user='root')
         refusal = h.cli('secrets', 'list', '--server', 'local', '--app', app,
@@ -179,11 +179,11 @@ def run(h):
     app = 'cli-' + uuid.uuid4().hex[:8]
     directory = h.work / app
     directory.mkdir()
-    h.command(['chown', '-R', 'soartest:soartest', directory], user='root')
+    h.command(['chown', '-R', 'vamostest:vamostest', directory], user='root')
     h.cli('init', app, '--port', '8080', cwd=directory)
-    original = (directory / 'soar.yaml').read_bytes()
+    original = (directory / 'vamos.yaml').read_bytes()
     h.cli('init', app, '--port', '9090', cwd=directory, expect_error='never overwrites')
-    assert (directory / 'soar.yaml').read_bytes() == original
+    assert (directory / 'vamos.yaml').read_bytes() == original
     h.cli('validate', cwd=directory)
     (directory / 'Dockerfile').write_text('FROM python:3.13-slim\nWORKDIR /app\nCOPY server.py .\nUSER 10001:10001\nCMD ["python", "-u", "server.py"]\n')
     (directory / 'server.py').write_text('''from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -194,8 +194,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b"cli acceptance")
 HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
 ''')
-    h.command(['chown', '-R', 'soartest:soartest', directory], user='root')
-    host = app + '.soar.localhost'
+    h.command(['chown', '-R', 'vamostest:vamostest', directory], user='root')
+    host = app + '.vamos.localhost'
     h.hosts([host])
     h.cli('deploy', cwd=directory)
     status = h.status(app)
@@ -205,7 +205,7 @@ HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
     entry = next(value for value in inventory if value['app'] == app)
     assert entry['phase'] == 'ready' and entry['services'] == ['web']
     assert any(value['phase'] == 'destroyed' and value['retained_secrets'] for value in inventory)
-    command_args = ['', 'two words', '$(touch /tmp/soar-never-create)', "'\"; café", 'line\nbreak', '--']
+    command_args = ['', 'two words', '$(touch /tmp/vamos-never-create)', "'\"; café", 'line\nbreak', '--']
     code = 'import os,sys,json; print(json.dumps([os.getuid(),os.getcwd(),sys.argv[1:]]))'
     result = h.cli('exec', '--service', 'web', '--', 'python', '-c', code, *command_args, cwd=directory)
     assert json.loads(result.stdout) == [10001, '/app', command_args]
@@ -215,7 +215,7 @@ HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
                    cwd=directory, input=payload)
     assert result.stdout == payload and b'separate-stderr' in result.stderr
     for exit_code in (0, 1, 42, 127, 255):
-        result = h.command([h.root / 'bin/soar', 'exec', '--server', 'local', '--app', app,
+        result = h.command([h.root / 'bin/vamos', 'exec', '--server', 'local', '--app', app,
                             '--service', 'web', '--', 'python', '-c', f'raise SystemExit({exit_code})'], check=False)
         assert result.returncode == (1 if exit_code == 255 else exit_code)
         if exit_code == 255:
@@ -223,7 +223,7 @@ HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
     h.cli('console', '--server', 'local', '--app', app, expect_error='real input/output terminals')
     h.cli('exec', '--server', 'local', '--app', app, '--', '/missing-executable', expect_error='executable')
     terminal_check(h, app, directory)
-    session_root = Path('/run/soar-sessions')
+    session_root = Path('/run/vamos-sessions')
     assert not [p for p in session_root.iterdir() if p.name != '.lock'], 'ordinary sessions left staging behind'
     follow_check(h, app, host, directory)
     assert h.status(app)['services']['web']['container'] == identity

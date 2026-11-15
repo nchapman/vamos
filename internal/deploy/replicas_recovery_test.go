@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func replicaFlow(t *testing.T) *multiFlow {
@@ -52,7 +52,7 @@ func TestReplicaPublicPortIntentAndLostCreate(t *testing.T) {
 			failed := false
 			capturedPort := ""
 			f.m.Run = func(c context.Context, n string, args []string, b []byte) (process.Result, error) {
-				if n == "docker" && args[0] == "run" && strings.Contains(strings.Join(args, " "), "soar.replica=2") && !failed {
+				if n == "docker" && args[0] == "run" && strings.Contains(strings.Join(args, " "), "vamos.replica=2") && !failed {
 					member := f.load().ServiceStates["web"].Candidate.Instances[1]
 					capturedPort = member.PublishPort
 					if capturedPort == "" || !strings.Contains(strings.Join(args, " "), "127.0.0.1:"+capturedPort+":") {
@@ -140,7 +140,7 @@ func TestReplicaInterruptedAliasAndRetirement(t *testing.T) {
 			}
 			if step == "private-retire" {
 				for _, v := range f.docker.containers {
-					if v.Config.Labels["soar.operation"] == op && v.Config.Labels["soar.service"] == "backend" {
+					if v.Config.Labels["vamos.operation"] == op && v.Config.Labels["vamos.service"] == "backend" {
 						t.Fatal("new worker created before all old stopped")
 					}
 				}
@@ -234,14 +234,14 @@ func TestReplicaOwnershipAndDegradedStatus(t *testing.T) {
 	r := j.ServiceStates["web"].Current
 	ref := runtimeRefs(r)[1]
 	v := f.docker.containers[ref.Container]
-	v.Config.Labels["soar.replica"] = "1"
+	v.Config.Labels["vamos.replica"] = "1"
 	if _, err := f.m.instanceInspect(context.Background(), j, ref, false, true); err == nil {
 		t.Fatal("wrong member label authorized")
 	}
 	if err := validateMultiEndpoint(j, v); err == nil {
 		t.Fatal("network admitted wrong member label")
 	}
-	v.Config.Labels["soar.replica"] = "2"
+	v.Config.Labels["vamos.replica"] = "2"
 	v.State.Running = false
 	q := Request{Version: 1, Action: "status", App: j.App, Host: f.req.Host}
 	resp, err := f.m.Execute(context.Background(), q, nil)
@@ -312,7 +312,7 @@ func TestReplicaSingletonCandidateStatus(t *testing.T) {
 	f := replicaFlow(t)
 	run := f.m.Run
 	f.m.Run = func(c context.Context, n string, args []string, b []byte) (process.Result, error) {
-		if n == "docker" && args[0] == "run" && strings.Contains(strings.Join(args, " "), "soar.service=web") {
+		if n == "docker" && args[0] == "run" && strings.Contains(strings.Join(args, " "), "vamos.service=web") {
 			return process.Result{}, errors.New("interrupted singleton creation")
 		}
 		return run(c, n, args, b)

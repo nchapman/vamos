@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/backupbackend"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func privateRepositoryInput() []byte {
@@ -67,7 +67,7 @@ func TestRepositoryWorkerClassificationAndSanitizedFailures(t *testing.T) {
 			op := strings.Repeat("b", 32)
 			var private []byte
 			if r.Backup.NeedsCredentials() {
-				r.Backup.Config = &backupbackend.Config{Endpoint: "https://storage.example", Bucket: "backups", Prefix: "soar/" + op, Region: "us-east-1", Lookup: "path"}
+				r.Backup.Config = &backupbackend.Config{Endpoint: "https://storage.example", Bucket: "backups", Prefix: "vamos/" + op, Region: "us-east-1", Lookup: "path"}
 				private = privateRepositoryInput()
 				if action != "probe" {
 					r.Backup.Operation = op

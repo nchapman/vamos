@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	StatePath    = "/var/lib/soar/host.json"
-	ExecutorPath = "/usr/local/lib/soar/executor"
-	AgentPath    = "/usr/local/lib/soar/soar-agent"
-	LockPath     = "/run/lock/soar-host.lock"
+	StatePath    = "/var/lib/vamos/host.json"
+	ExecutorPath = "/usr/local/lib/vamos/executor"
+	AgentPath    = "/usr/local/lib/vamos/vamos-agent"
+	LockPath     = "/run/lock/vamos-host.lock"
 )
 
 type Config struct {
@@ -142,7 +142,7 @@ func ValidateState(s *State) error {
 		return errors.New("invalid host lifecycle step")
 	}
 	for key := range s.Accounts {
-		if key != "passwd:caddy" && key != "group:caddy" && key != "group:docker" && key != "passwd:soar" && key != "group:soar" {
+		if key != "passwd:caddy" && key != "group:caddy" && key != "group:docker" && key != "passwd:vamos" && key != "group:vamos" {
 			return errors.New("invalid service account record")
 		}
 	}
@@ -189,7 +189,7 @@ func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(filename), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(filename), ".soar-write-")
+	f, err := os.CreateTemp(filepath.Dir(filename), ".vamos-write-")
 	if err != nil {
 		return err
 	}

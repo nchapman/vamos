@@ -1,4 +1,4 @@
-// Package agentproto defines the versioned soar-agent socket RPC envelope,
+// Package agentproto defines the versioned vamos-agent socket RPC envelope,
 // capability handshake, durable queue schema, host concurrency policy, and
 // principal ACL checks shared by the client, agent, and upgrade workflows.
 package agentproto
@@ -13,9 +13,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/nchapman/soar/internal/buildmeta"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 const (
@@ -135,14 +135,14 @@ func CheckCompatibility(clientMin, clientMax int, requiredCaps []string, hello H
 		return err
 	}
 	if clientMax < hello.APIMin {
-		return fmt.Errorf("local soar CLI (API v%d..v%d) is too old for server agent (supports v%d..v%d); upgrade local soar CLI", clientMin, clientMax, hello.APIMin, hello.APIMax)
+		return fmt.Errorf("local vamos CLI (API v%d..v%d) is too old for server agent (supports v%d..v%d); upgrade local vamos CLI", clientMin, clientMax, hello.APIMin, hello.APIMax)
 	}
 	if clientMin > hello.APIMax {
-		return fmt.Errorf("server agent (API v%d..v%d) is older than required client minimum v%d; run 'soar server upgrade'", hello.APIMin, hello.APIMax, clientMin)
+		return fmt.Errorf("server agent (API v%d..v%d) is older than required client minimum v%d; run 'vamos server upgrade'", hello.APIMin, hello.APIMax, clientMin)
 	}
 	for _, req := range requiredCaps {
 		if !slices.Contains(hello.Capabilities, req) {
-			return fmt.Errorf("server agent does not advertise required capability %q; run 'soar server upgrade'", req)
+			return fmt.Errorf("server agent does not advertise required capability %q; run 'vamos server upgrade'", req)
 		}
 	}
 	return nil

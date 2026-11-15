@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // Fail only the final promotion check, after startup and alias admission have
@@ -128,7 +128,7 @@ func TestSupersedeCancelsProvenUnservedPromotion(t *testing.T) {
 			other.live = f.live
 			other.req.App = "other"
 			other.docker.j.App = "other"
-			other.docker.net.Labels["soar.app"] = "other"
+			other.docker.net.Labels["vamos.app"] = "other"
 			a := app()
 			a.Name = "other"
 			if _, err := other.deploy(a, strings.Repeat("4", 32)); err != nil {

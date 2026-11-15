@@ -9,40 +9,40 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/executor"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/executor"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
-const help = `Soar — a small app platform for one server
+const help = `Vamos — a small app platform for one server
 
 Usage:
-  soar apps [--server NAME] [--json]      List app deployment and retained state
-  soar init APP --port PORT              Write a minimal configuration without overwriting
-  soar exec [--service NAME] [-i] [-t] -- COMMAND
+  vamos apps [--server NAME] [--json]      List app deployment and retained state
+  vamos init APP --port PORT              Write a minimal configuration without overwriting
+  vamos exec [--service NAME] [-i] [-t] -- COMMAND
                                         Run a command inside an existing service
-  soar console [--service NAME]          Open an interactive shell in an existing service
-  soar run --service NAME -- COMMAND    Run a noninteractive command
-  soar deploy [-f soar.yaml]             Build and deploy the app's services
-  soar status [--json]                   Inspect the app's actual running state
-  soar logs [--tail 100] [--follow]      Read a snapshot or follow one container's logs
-  soar rollback [--service NAME] [--allow-downtime] [--yes]
+  vamos console [--service NAME]          Open an interactive shell in an existing service
+  vamos run --service NAME -- COMMAND    Run a noninteractive command
+  vamos deploy [-f vamos.yaml]             Build and deploy the app's services
+  vamos status [--json]                   Inspect the app's actual running state
+  vamos logs [--tail 100] [--follow]      Read a snapshot or follow one container's logs
+  vamos rollback [--service NAME] [--allow-downtime] [--yes]
                                         Preview or restore captured service images
-  soar resume OPERATION                 Resume captured operation inputs
-  soar cleanup [--yes]                  Preview or remove obsolete app resources
-  soar destroy [--yes]                  Preview or remove an app
-  soar service bind|remove NAME [flags]  Bind locally or preview/remove a service
-  soar secrets stage|set|list [flags]        Stage/set secrets or list retained version metadata
-  soar validate [-f soar.yaml]           Validate local app configuration
-  soar server inspect [flags] TARGET    Inspect a host over SSH without provisioning
-  soar server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
-  soar server connect --domain DOMAIN NAME TARGET
+  vamos resume OPERATION                 Resume captured operation inputs
+  vamos cleanup [--yes]                  Preview or remove obsolete app resources
+  vamos destroy [--yes]                  Preview or remove an app
+  vamos service bind|remove NAME [flags]  Bind locally or preview/remove a service
+  vamos secrets stage|set|list [flags]        Stage/set secrets or list retained version metadata
+  vamos validate [-f vamos.yaml]           Validate local app configuration
+  vamos server inspect [flags] TARGET    Inspect a host over SSH without provisioning
+  vamos server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
+  vamos server connect --domain DOMAIN NAME TARGET
                                       Register an existing host without remote changes
-  soar server status NAME [TARGET]     Read the host lifecycle journal
-  soar server teardown [flags] NAME    Remove an unused owned installation
-  soar backup repository [COMMAND]      Register and inspect backup repositories
-  soar version                          Print the build version
-  soar help [COMMAND [SUBCOMMAND [ACTION]]]      Show general or command-specific help
+  vamos server status NAME [TARGET]     Read the host lifecycle journal
+  vamos server teardown [flags] NAME    Remove an unused owned installation
+  vamos backup repository [COMMAND]      Register and inspect backup repositories
+  vamos version                          Print the build version
+  vamos help [COMMAND [SUBCOMMAND [ACTION]]]      Show general or command-specific help
 
 Setup/teardown require explicit authorization. Deploy supports 1–8 built or prebuilt public/private
 services, with one optional named volume per service. Use deploy --service NAME for scoped updates;
@@ -78,13 +78,13 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return 0
 	case "version", "--version":
 		if args[0] == "version" && len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
-			fmt.Fprintln(stdout, "Usage: soar version\nPrint the build version.")
+			fmt.Fprintln(stdout, "Usage: vamos version\nPrint the build version.")
 			return 0
 		}
 		if len(args) != 1 {
 			return usageError(stderr, "version does not accept arguments")
 		}
-		fmt.Fprintf(stdout, "soar %s\n", version)
+		fmt.Fprintf(stdout, "vamos %s\n", version)
 		return 0
 	case "backup":
 		return backupCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
@@ -126,7 +126,7 @@ func validate(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	filename := flags.String("f", config.DefaultFile, "path to app configuration")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: soar validate [-f soar.yaml]")
+		fmt.Fprintln(flags.Output(), "Usage: vamos validate [-f vamos.yaml]")
 		flags.PrintDefaults()
 	}
 	if err := parseFlags(flags, args, stdout, stderr); err != nil {
@@ -158,9 +158,9 @@ func validate(args []string, stdout, stderr io.Writer) int {
 
 func usageError(stderr io.Writer, message string) int {
 	if view := presentationFor(stderr); view != nil {
-		_ = view.write(stderr, view.ink("error", "Usage error", true)+"\n"+view.prose(message)+"\n"+view.command("soar help"))
+		_ = view.write(stderr, view.ink("error", "Usage error", true)+"\n"+view.prose(message)+"\n"+view.command("vamos help"))
 		return 2
 	}
-	fmt.Fprintf(stderr, "error: %s\nRun 'soar help' for usage.\n", message)
+	fmt.Fprintf(stderr, "error: %s\nRun 'vamos help' for usage.\n", message)
 	return 2
 }

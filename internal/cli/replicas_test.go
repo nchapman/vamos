@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func TestReplicaSessionFlags(t *testing.T) {

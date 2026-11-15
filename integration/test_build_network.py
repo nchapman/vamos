@@ -14,7 +14,7 @@ except ImportError:
 
 class BuildNetworkTests(unittest.TestCase):
     def test_native_configuration_accepts_only_identical_existing_content(self):
-        h = SimpleNamespace(root=Path('/opt/soar-test'), command=MagicMock())
+        h = SimpleNamespace(root=Path('/opt/vamos-test'), command=MagicMock())
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(build_network, 'NATIVE_CONFIG', Path(directory) / 'native.conf'):
             build_network.configure_native(h)
@@ -30,7 +30,7 @@ class BuildNetworkTests(unittest.TestCase):
 
     def test_host_listener_is_removed_if_readiness_fails(self):
         container = 'a' * 64
-        h = SimpleNamespace(root=Path('/opt/soar-test'),
+        h = SimpleNamespace(root=Path('/opt/vamos-test'),
                             command=MagicMock(return_value=SimpleNamespace(stdout=container.encode())))
         with patch.object(build_network.socket, 'socket') as socket_factory:
             ready = socket_factory.return_value.__enter__.return_value
@@ -42,7 +42,7 @@ class BuildNetworkTests(unittest.TestCase):
         h.command.assert_any_call(['docker', 'rm', '-f', container], user='root')
 
     def test_invalid_listener_identity_never_authorizes_removal(self):
-        h = SimpleNamespace(root=Path('/opt/soar-test'),
+        h = SimpleNamespace(root=Path('/opt/vamos-test'),
                             command=MagicMock(return_value=SimpleNamespace(stdout=b'foreign-container')))
         with patch.object(build_network.socket, 'socket') as socket_factory:
             ready = socket_factory.return_value.__enter__.return_value

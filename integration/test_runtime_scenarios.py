@@ -138,7 +138,7 @@ class ProjectEvidenceTests(unittest.TestCase):
             h = SimpleNamespace(root=root, work=root / 'work', hosts=lambda names: None)
             with patch.object(runtime.secrets, 'token_hex', return_value='12345678'):
                 project = runtime.Project(h, 'fixture', 'runtime-')
-            self.assertEqual(project.host, 'runtime-12345678.soar.localhost')
+            self.assertEqual(project.host, 'runtime-12345678.vamos.localhost')
 
     def test_stable_rejects_restart_even_when_docker_id_did_not_change(self):
         project = object.__new__(runtime.Project)
@@ -153,7 +153,7 @@ class ProjectEvidenceTests(unittest.TestCase):
     def test_release_requires_one_actual_docker_runner(self):
         project = object.__new__(runtime.Project)
         status = status_fixture()
-        status['release']['container'] = 'soar-run-hook'
+        status['release']['container'] = 'vamos-run-hook'
         info = {'id': 'docker-id', 'running': False, 'cpus': 500_000_000,
                 'memory': 536_870_912, 'swap': 536_870_912}
         for output in (b'', b'docker-id\nsecond-id\n', b'different-id\n'):

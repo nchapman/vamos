@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 func TestTransportInspectsSelectsArtifactAndRuns(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 // DomainStatus describes aliases only; certificate readiness is a local observation,

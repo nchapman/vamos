@@ -64,7 +64,7 @@ def secret_args(action, app, names):
 
 
 def run(h):
-    require(h.root == Path('/opt/soar-test'), 'requires the owned guest harness')
+    require(h.root == Path('/opt/vamos-test'), 'requires the owned guest harness')
     app = 'secretset-' + secrets.token_hex(4)
     directory = h.work / app
     directory.mkdir()
@@ -78,10 +78,10 @@ def run(h):
     services['web'].update(replicas=2, http={'port': 8080, 'health': '/'})
     services['protected'].update(update='manual', secrets={'ONE': 'protected-key'})
     manifest = {'app': app, 'services': services}
-    (directory / 'soar.yaml').write_text(json.dumps(manifest))
+    (directory / 'vamos.yaml').write_text(json.dumps(manifest))
     (directory / 'server.py').write_text(SERVER)
     (directory / 'Dockerfile').write_text('FROM python:3.13-slim\nCOPY server.py /server.py\n')
-    h.command(['chown', '-R', 'soartest:soartest', directory], user='root')
+    h.command(['chown', '-R', 'vamostest:vamostest', directory], user='root')
 
     def cli(action, values, error=None):
         result = h.cli(*secret_args(action, app, values), cwd=h.work,
@@ -127,11 +127,11 @@ def run(h):
         (directory / 'Dockerfile').write_text('THIS IS NOT A DOCKERFILE\n')
         for service in services.values():
             service['env']['MARKER'] = 'pending'
-        (directory / 'soar.yaml').write_text(json.dumps(manifest))
+        (directory / 'vamos.yaml').write_text(json.dumps(manifest))
         infra = infrastructure()
         updated = {name: secrets.token_urlsafe(32).encode() for name in ('key-one', 'key-two')}
         cli('set', updated)
-        journal = json.loads((Path('/var/lib/soar/apps') / app / 'state.json').read_text())
+        journal = json.loads((Path('/var/lib/vamos/apps') / app / 'state.json').read_text())
         require(journal.get('version') == 8 and journal.get('SecretUpdate'),
                 'missing generated v8 secret update journal')
         after = snapshot()

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestBuildNeverRequestsHostNetworking(t *testing.T) {
@@ -34,9 +34,9 @@ func TestContainerInventoryAcceptsStructuredPlatformMetadata(t *testing.T) {
 	// an object-valued Platform alongside the string-valued Names field.
 	m := NewManager()
 	m.Run = func(context.Context, string, []string, []byte) (process.Result, error) {
-		return process.Result{Stdout: []byte(`{"Names":"soar-hello-current","Image":"cb8598c1c7aa","Platform":{"architecture":"amd64","os":"linux"},"State":"running"}` + "\n")}, nil
+		return process.Result{Stdout: []byte(`{"Names":"vamos-hello-current","Image":"cb8598c1c7aa","Platform":{"architecture":"amd64","os":"linux"},"State":"running"}` + "\n")}, nil
 	}
-	found, err := m.exists(context.Background(), "container", "soar-hello-current")
+	found, err := m.exists(context.Background(), "container", "vamos-hello-current")
 	if err != nil || !found {
 		t.Fatalf("found=%t error=%v", found, err)
 	}

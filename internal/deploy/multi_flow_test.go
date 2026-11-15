@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 type multiFlow struct {
@@ -95,7 +95,7 @@ func newMultiFlow(t *testing.T) *multiFlow {
 			for _, bindings := range v.HostConfig.PortBindings {
 				for _, binding := range bindings {
 					if req.URL.Host == "127.0.0.1:"+binding.HostPort && v.State.Running && len(v.NetworkSettings.Networks) > 0 {
-						name := v.Config.Labels["soar.service"]
+						name := v.Config.Labels["vamos.service"]
 						if name == "" {
 							name = "web"
 						}
@@ -113,7 +113,7 @@ func newMultiFlow(t *testing.T) *multiFlow {
 
 func (f *multiFlow) bundle(a *config.App) []byte {
 	f.t.Helper()
-	b, err := buildcontext.Bundle("soar.yaml", a, func(_ string, s config.Build) ([]byte, error) { return []byte("captured:" + s.Dockerfile), nil })
+	b, err := buildcontext.Bundle("vamos.yaml", a, func(_ string, s config.Build) ([]byte, error) { return []byte("captured:" + s.Dockerfile), nil })
 	if err != nil {
 		f.t.Fatal(err)
 	}

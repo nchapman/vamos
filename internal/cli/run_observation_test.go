@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func TestRunMetadataDoesNotHideLogsOrAppStatus(t *testing.T) {

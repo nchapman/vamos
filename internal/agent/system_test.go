@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nchapman/soar/internal/agentproto"
+	"github.com/nchapman/vamos/internal/agentproto"
 )
 
 const testEd25519Key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIQqLpYe5SEsOj8XvbqPYYu76rg3HtBUOTcX7BBFWG4i deployer@example"
@@ -27,7 +27,7 @@ func TestValidateAuthorizedKeysAcceptsLifecycleBridgeLine(t *testing.T) {
 	principals := map[string]agentproto.Principal{
 		"default-deployer": {Apps: []string{"*"}},
 	}
-	path := writeKeys(t, `restrict,command="/usr/local/lib/soar/soar-agent internal-agent bridge --principal default-deployer" `+testEd25519Key)
+	path := writeKeys(t, `restrict,command="/usr/local/lib/vamos/vamos-agent internal-agent bridge --principal default-deployer" `+testEd25519Key)
 	if err := ValidateAuthorizedKeys(path, principals); err != nil {
 		t.Fatalf("lifecycle-generated bridge line rejected: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestValidateAuthorizedKeysRejectsUnknownPrincipal(t *testing.T) {
 	principals := map[string]agentproto.Principal{
 		"default-deployer": {Apps: []string{"*"}},
 	}
-	path := writeKeys(t, `restrict,command="/usr/local/lib/soar/soar-agent internal-agent bridge --principal mallory" `+testEd25519Key)
+	path := writeKeys(t, `restrict,command="/usr/local/lib/vamos/vamos-agent internal-agent bridge --principal mallory" `+testEd25519Key)
 	err := ValidateAuthorizedKeys(path, principals)
 	if err == nil {
 		t.Fatal("expected unknown principal to be rejected")
@@ -56,7 +56,7 @@ func TestValidateAuthorizedKeysRejectsUnrestrictedLine(t *testing.T) {
 	if err := ValidateAuthorizedKeys(path, principals); err == nil {
 		t.Fatal("expected unrestricted key line to be rejected")
 	}
-	path = writeKeys(t, `command="/usr/local/lib/soar/soar-agent internal-agent bridge --principal default-deployer" `+testEd25519Key)
+	path = writeKeys(t, `command="/usr/local/lib/vamos/vamos-agent internal-agent bridge --principal default-deployer" `+testEd25519Key)
 	if err := ValidateAuthorizedKeys(path, principals); err == nil {
 		t.Fatal("expected key line without restrict option to be rejected")
 	}
@@ -67,7 +67,7 @@ func TestValidateAuthorizedKeysAndConfigRejectSymlinks(t *testing.T) {
 	principals := map[string]agentproto.Principal{
 		"default-deployer": {Apps: []string{"*"}},
 	}
-	realKeys := writeKeys(t, `restrict,command="/usr/local/lib/soar/executor internal-agent bridge --principal default-deployer" `+testEd25519Key)
+	realKeys := writeKeys(t, `restrict,command="/usr/local/lib/vamos/executor internal-agent bridge --principal default-deployer" `+testEd25519Key)
 	if err := ValidateAuthorizedKeys(realKeys, principals); err != nil {
 		t.Fatalf("executor forced key rejected: %v", err)
 	}

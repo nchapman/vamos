@@ -7,7 +7,7 @@ import socket
 import subprocess
 import sys
 
-CONFIG = '/run/soar-integration/gate.json'
+CONFIG = '/run/vamos-integration/gate.json'
 MAX_EVENT = 65536
 RELEASE = b'R'
 

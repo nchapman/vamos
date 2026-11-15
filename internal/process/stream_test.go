@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestStreamPreservesLargeBinaryInputAndSeparateOutput(t *testing.T) {
@@ -46,7 +46,7 @@ func TestStreamExitAndCancellation(t *testing.T) {
 		}
 	})
 	t.Run("start failure", func(t *testing.T) {
-		code, err := process.Stream(context.Background(), "soar-test-missing-executable", nil, nil, io.Discard, io.Discard)
+		code, err := process.Stream(context.Background(), "vamos-test-missing-executable", nil, nil, io.Discard, io.Discard)
 		if code != -1 || err == nil {
 			t.Fatalf("code=%d err=%v", code, err)
 		}

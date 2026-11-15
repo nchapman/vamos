@@ -3,7 +3,7 @@ package deploy
 import (
 	"context"
 	"errors"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 	"strings"
 	"testing"
 )

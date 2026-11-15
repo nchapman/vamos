@@ -38,7 +38,7 @@ func TestUpgradePreservesLiveCaddyRoutesAndRefusesBusyQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	customPrincipals := "[{\"id\":\"ci-billing\",\"role\":\"deployer\",\"apps\":[\"billing\"]}]\n"
-	if err := os.WriteFile(m.path("/etc/soar/principals.json"), []byte(customPrincipals), 0600); err != nil {
+	if err := os.WriteFile(m.path("/etc/vamos/principals.json"), []byte(customPrincipals), 0600); err != nil {
 		t.Fatal(err)
 	}
 	m.Executor = []byte("executor-v2")
@@ -48,7 +48,7 @@ func TestUpgradePreservesLiveCaddyRoutesAndRefusesBusyQueue(t *testing.T) {
 	}
 
 	// An active or unresolved queue operation blocks upgrade without overwriting binaries.
-	opsDir := m.path("/var/lib/soar/queue/operations")
+	opsDir := m.path("/var/lib/vamos/queue/operations")
 	if err := os.MkdirAll(opsDir, 0700); err != nil {
 		t.Fatal(err)
 	}

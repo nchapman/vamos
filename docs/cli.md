@@ -10,8 +10,8 @@ Application backup capture, restore, scheduling and pruning are not implemented 
 
 ## CLI conventions
 
-Use `soar help COMMAND` (or `soar COMMAND --help`) for options, for example
-`soar help deploy` and `soar help service remove`. Group help also accepts `-h`.
+Use `vamos help COMMAND` (or `vamos COMMAND --help`) for options, for example
+`vamos help deploy` and `vamos help service remove`. Group help also accepts `-h`.
 Successful help goes to stdout; usage errors and diagnostics go to stderr.
 
 Flags normally precede positional arguments. `init` accepts flags on either side
@@ -32,9 +32,9 @@ setup is host-level; it does not load an application manifest.
 If missing or invalid YAML blocks observation or recovery, use an explicit target:
 
 ```sh
-soar status --server home --app notes
-soar logs --server home --app notes --service web
-soar resume --server home --app notes OPERATION
+vamos status --server home --app notes
+vamos logs --server home --app notes --service web
+vamos resume --server home --app notes OPERATION
 ```
 
 These hints do not trust partially parsed YAML or choose an app identity for you.
@@ -79,8 +79,8 @@ plain format, even on a terminal. `NO_COLOR` or `CLICOLOR=0` disables ANSI while
 retaining the terminal layout and hierarchy.
 
 By default, presentation is neutral: it inherits the terminal foreground and uses
-bold for emphasis. `SOAR_THEME=light` or `SOAR_THEME=dark` explicitly selects colors
-for that background. Soar does not set the terminal background or query stdin to
+bold for emphasis. `VAMOS_THEME=light` or `VAMOS_THEME=dark` explicitly selects colors
+for that background. Vamos does not set the terminal background or query stdin to
 detect a theme. Choose the matching theme yourself; contrast is not guaranteed on
 arbitrary terminal backgrounds or customized palettes. Meaning is also conveyed
 through labels and layout, not color alone.
@@ -91,9 +91,9 @@ matrix and its limits.
 ## List apps
 
 ```sh
-soar apps
-soar apps --server home
-soar apps --server home --json
+vamos apps
+vamos apps --server home
+vamos apps --server home --json
 ```
 
 `apps` queries the selected registered server, or the registered default. It does
@@ -119,12 +119,12 @@ may require another explicit read. `--timeout` defaults to 15 seconds;
 ## Create a minimal configuration
 
 ```sh
-soar init notes --port 8080
-soar init notes --port 8080 --health /readyz --server home
-soar init dispatch --private --service worker
+vamos init notes --port 8080
+vamos init notes --port 8080 --health /readyz --server home
+vamos init dispatch --private --service worker
 ```
 
-`init` writes `soar.yaml` (or `-f FILE`) for a Dockerfile build with context `.`.
+`init` writes `vamos.yaml` (or `-f FILE`) for a Dockerfile build with context `.`.
 The default service is `web`, and the default public health path is `/`.
 Public services require an explicit port. `--private` omits HTTP and cannot be
 combined with `--port` or `--health`. Flags may appear before or after the app name.
@@ -135,7 +135,7 @@ output paths and incompatible local bindings are refused; there is no force flag
 Output parent directories must already exist. A write/binding failure can leave
 new files behind and reports that partial result without removing unrelated work.
 
-With a registered default, `init` creates a Git-ignored `.soar/` binding. An explicit
+With a registered default, `init` creates a Git-ignored `.vamos/` binding. An explicit
 `--server` must be registered. With no registered server, it creates an unbound
 configuration; register a server before deployment. It does not adopt or bind an
 existing remote service incarnation: use `service bind` deliberately for that.
@@ -146,9 +146,9 @@ For a service with multiple current or candidate instances, `logs`, `exec` and
 `console` require `--replica N`, using the 1-based ordinal shown by status:
 
 ```sh
-soar logs --service web --replica 2 --follow
-soar exec --service web --replica 1 -- ruby --version
-soar console --service web --replica 2
+vamos logs --service web --replica 2 --follow
+vamos exec --service web --replica 1 -- ruby --version
+vamos console --service web --replica 2
 ```
 
 Singleton services retain the default selection. `--candidate` selects the
@@ -160,9 +160,9 @@ observations and group counts; no member is silently chosen for an ambiguous gro
 ## Follow service logs
 
 ```sh
-soar logs --follow
-soar logs --service worker --follow --tail 25
-soar logs --server home --app notes --candidate --follow --timeout 5m
+vamos logs --follow
+vamos logs --service worker --follow --tail 25
+vamos logs --server home --app notes --candidate --follow --timeout 5m
 ```
 
 `-f` still selects the configuration file; only `--follow` means streaming.
@@ -186,10 +186,10 @@ Runtime logs are not arbitrarily secret-redacted; inspect output before sharing 
 ## Execute in an existing service
 
 ```sh
-soar exec --service web -- python --version
-soar exec --server home --app notes --service web -- sh -c 'printf "%s\n" "$HOME"'
-printf 'input\n' | soar exec --service web -i -- cat
-soar exec --service db -i -t -- psql -U app
+vamos exec --service web -- python --version
+vamos exec --server home --app notes --service web -- sh -c 'printf "%s\n" "$HOME"'
+printf 'input\n' | vamos exec --service web -i -- cat
+vamos exec --service db -i -t -- psql -U app
 ```
 
 `exec` uses the current running service container, its configured user and working
@@ -220,9 +220,9 @@ and a matching Linux executor artifact.
 ## Open a console
 
 ```sh
-soar console
-soar console --service worker
-soar console --server home --app notes --service web --shell /bin/bash
+vamos console
+vamos console --service worker
+vamos console --server home --app notes --service web --shell /bin/bash
 ```
 
 `console` is interactive exec of `/bin/sh`, not framework-specific REPL detection.
@@ -248,14 +248,14 @@ application data while the application itself continues running. Code rollback
 cannot undo those side effects.
 
 Known remote command exit codes 0–254 are propagated. SSH exit 255 is ambiguous
-between transport failure and a command returning 255, so Soar reports an unknown
+between transport failure and a command returning 255, so Vamos reports an unknown
 outcome and exits 1. Cancellation or connection loss also cannot prove an exec
 command stopped: a Docker exec process may keep running after its client disappears.
 There is no automatic retry, reconnect, cancellation guarantee or `status --run`
 record for exec. Inspect the application before deciding whether to repeat a command.
 
 Artifact upload is separate from workload stdin and never runs through a PTY.
-Private, root-owned `/run/soar-sessions` staging uses single-use tokens, attach-time
+Private, root-owned `/run/vamos-sessions` staging uses single-use tokens, attach-time
 identity checks, a two-minute unclaimed preparation expiry, and a 16-session limit.
 Ordinary completion removes staging. The client also attempts cleanup with a fresh
 10-second deadline after cancellation. Inactive expired staging is pruned by the

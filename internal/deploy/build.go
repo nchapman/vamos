@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/nchapman/soar/internal/buildkit"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildkit"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // dockerCommandArgs recognizes the build backend's endpoint-constrained wrapper
@@ -42,7 +42,7 @@ func builderSnapshotter(m *Manager) string {
 	if m.Snapshotter != "" {
 		return m.Snapshotter
 	}
-	return os.Getenv("SOAR_BUILDKIT_SNAPSHOTTER")
+	return os.Getenv("VAMOS_BUILDKIT_SNAPSHOTTER")
 }
 
 func (m *Manager) buildImage(ctx context.Context, hostID, dockerfile, iidfile string, archive []byte) (process.Result, error) {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func replicaApp(n int) *config.App {
@@ -49,7 +49,7 @@ func TestReplicaScaleAndRollback(t *testing.T) {
 		}
 		for i, ref := range runtimeRefs(s.Current) {
 			v := f.docker.containers[ref.Container]
-			if v == nil || v.Config.Labels["soar.replica"] != fmt.Sprint(i+1) {
+			if v == nil || v.Config.Labels["vamos.replica"] != fmt.Sprint(i+1) {
 				t.Fatal("missing exact replica label")
 			}
 			if !retainedContainer(j, ref.Container) {
@@ -116,7 +116,7 @@ func TestReplicaPartialCreateResume(t *testing.T) {
 	run := f.m.Run
 	failed := false
 	f.m.Run = func(c context.Context, n string, a []string, b []byte) (process.Result, error) {
-		if n == "docker" && a[0] == "run" && strings.Contains(strings.Join(a, " "), "soar.replica=2") && !failed {
+		if n == "docker" && a[0] == "run" && strings.Contains(strings.Join(a, " "), "vamos.replica=2") && !failed {
 			failed = true
 			return process.Result{}, errors.New("interrupted create")
 		}

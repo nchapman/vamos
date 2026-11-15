@@ -10,7 +10,7 @@ import (
 	"runtime"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 type serviceBinding struct {
@@ -21,7 +21,7 @@ type serviceBindings map[string]serviceBinding
 
 // Target and app are hashed, never interpolated into filesystem paths.
 func serviceBindingPath(dir, target, app string) string {
-	return filepath.Join(dir, ".soar", fmt.Sprintf("services-%x.json", sha256.Sum256([]byte(target+"\x00"+app))))
+	return filepath.Join(dir, ".vamos", fmt.Sprintf("services-%x.json", sha256.Sum256([]byte(target+"\x00"+app))))
 }
 func safeMetadata(path string) error {
 	info, err := os.Lstat(path)
@@ -38,10 +38,10 @@ func safeMetadata(path string) error {
 }
 func readServiceBindings(dir, target, app string) (serviceBindings, error) {
 	result := serviceBindings{}
-	root := filepath.Join(dir, ".soar")
+	root := filepath.Join(dir, ".vamos")
 	if info, err := os.Lstat(root); err == nil {
 		if !info.IsDir() {
-			return nil, errors.New(".soar must not be a symlink")
+			return nil, errors.New(".vamos must not be a symlink")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -71,12 +71,12 @@ func readServiceBindings(dir, target, app string) (serviceBindings, error) {
 	return result, nil
 }
 func writeServiceBindings(dir, target, app string, updates serviceBindings) error {
-	root := filepath.Join(dir, ".soar")
+	root := filepath.Join(dir, ".vamos")
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return err
 	}
 	if info, err := os.Lstat(root); err != nil || !info.IsDir() {
-		return errors.New(".soar must not be a symlink")
+		return errors.New(".vamos must not be a symlink")
 	}
 	lockPath := filepath.Join(root, "services.lock")
 	if err := safeMetadata(lockPath); err != nil {
@@ -97,7 +97,7 @@ func writeServiceBindings(dir, target, app string, updates serviceBindings) erro
 	}
 	if data, err := os.ReadFile(ignore); err == nil {
 		if string(data) != "*\n" && string(data) != "*" {
-			return errors.New(".soar/.gitignore must contain '*'")
+			return errors.New(".vamos/.gitignore must contain '*'")
 		}
 	} else if errors.Is(err, os.ErrNotExist) {
 		if err := os.WriteFile(ignore, []byte("*\n"), 0600); err != nil {

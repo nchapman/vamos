@@ -105,7 +105,7 @@ func (m *Manager) checkMounts() error {
 	}
 	// Completed app receipts are also explicitly removed during host purge,
 	// but are not recursive dataPaths: each receipt is validated separately.
-	return checkMountInfo(data, append(append([]string{}, dataPaths...), "/var/lib/soar/apps"))
+	return checkMountInfo(data, append(append([]string{}, dataPaths...), "/var/lib/vamos/apps"))
 }
 
 func checkMountInfo(data []byte, paths []string) error {

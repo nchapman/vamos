@@ -12,7 +12,7 @@ type guard struct {
 }
 
 func (b *build) guards() []guard {
-	comment := "soar-buildkit:" + b.s.Host
+	comment := "vamos-buildkit:" + b.s.Host
 	return []guard{
 		{"PREROUTING", []string{"-i", bridge, "-m", "addrtype", "--dst-type", "LOCAL", "-m", "comment", "--comment", comment, "-j", "DROP"}},
 		{"FORWARD", []string{"-i", bridge, "-o", "br-+", "-m", "comment", "--comment", comment, "-j", "DROP"}},

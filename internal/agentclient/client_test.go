@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/agentproto"
-	"github.com/nchapman/soar/internal/buildmeta"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 func TestHandshakeSubmitAndReattachStatus(t *testing.T) {

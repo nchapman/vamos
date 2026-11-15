@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func sessionRequest() SessionRequest {
@@ -253,16 +253,16 @@ func TestSessionRejectsUnsafeRuntime(t *testing.T) {
 		{"missing", func(f *multiFlow, v *inspection) { delete(f.docker.containers, strings.TrimPrefix(v.Name, "/")) }, false},
 		{"empty id", func(_ *multiFlow, v *inspection) { v.ID = "" }, false},
 		{"short id", func(_ *multiFlow, v *inspection) { v.ID = "abcdef123456" }, false},
-		{"foreign host", func(_ *multiFlow, v *inspection) { v.Config.Labels["soar.host"] = strings.Repeat("f", 32) }, false},
-		{"foreign service", func(_ *multiFlow, v *inspection) { v.Config.Labels["soar.service"] = "other" }, false},
-		{"foreign operation", func(_ *multiFlow, v *inspection) { v.Config.Labels["soar.operation"] = strings.Repeat("f", 32) }, false},
+		{"foreign host", func(_ *multiFlow, v *inspection) { v.Config.Labels["vamos.host"] = strings.Repeat("f", 32) }, false},
+		{"foreign service", func(_ *multiFlow, v *inspection) { v.Config.Labels["vamos.service"] = "other" }, false},
+		{"foreign operation", func(_ *multiFlow, v *inspection) { v.Config.Labels["vamos.operation"] = strings.Repeat("f", 32) }, false},
 		{"foreign mount", func(_ *multiFlow, v *inspection) {
 			v.Mounts = []json.RawMessage{json.RawMessage(`{"Type":"bind","Source":"/etc","Destination":"/data"}`)}
 		}, false},
 		{"foreign network", func(_ *multiFlow, v *inspection) {
 			v.NetworkSettings.Networks = map[string]json.RawMessage{"other": json.RawMessage(`{}`)}
 		}, false},
-		{"foreign network owner", func(f *multiFlow, _ *inspection) { f.docker.net.Labels["soar.host"] = strings.Repeat("f", 32) }, false},
+		{"foreign network owner", func(f *multiFlow, _ *inspection) { f.docker.net.Labels["vamos.host"] = strings.Repeat("f", 32) }, false},
 		{"image", func(_ *multiFlow, v *inspection) { v.Config.Image = "sha256:" + strings.Repeat("f", 64) }, false},
 		{"privileged", func(_ *multiFlow, v *inspection) { v.HostConfig.Privileged = true }, false},
 		{"environment", func(_ *multiFlow, v *inspection) { v.Config.Env = append(v.Config.Env, "UNRECORDED=secret") }, false},
@@ -451,7 +451,7 @@ func TestSessionMaintenanceAdmission(t *testing.T) {
 			inventory := newMultiMaintenanceInventory(t)
 			inventory.j = j
 			inventory.net.Name = network(j)
-			inventory.net.Labels = map[string]string{"soar.host": j.HostID, "soar.app": j.App}
+			inventory.net.Labels = map[string]string{"vamos.host": j.HostID, "vamos.app": j.App}
 			for _, slot := range j.ServiceStates {
 				inventory.add(slot.Current).State.Running = true
 			}

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/backupbackend"
 )
 
 func TestRepositoryPrivateFileBoundary(t *testing.T) {

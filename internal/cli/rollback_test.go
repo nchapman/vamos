@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func TestRollbackCapturedInputs(t *testing.T) {
@@ -26,7 +26,7 @@ func TestRollbackCapturedInputs(t *testing.T) {
 			previous = r.Operation
 			return deploy.Response{Version: 1, Status: &deploy.Status{App: "hello", Phase: "ready"}, RollbackPreview: &deploy.RollbackPreview{TargetOperation: "old", NeedsConfirmation: !apply, Services: []deploy.RollbackService{{Name: "web", CurrentImage: "current", TargetImage: "target", Downtime: true, SecretVersions: map[string]string{"TOKEN": "v1"}}, {Name: "worker", ExcludedReason: "no previous image"}}}}, nil
 		}
-		args := []string{"--app", "hello", "--server", "home", "-f", "/nonexistent/soar.yaml", "--service", "web", "--allow-downtime"}
+		args := []string{"--app", "hello", "--server", "home", "-f", "/nonexistent/vamos.yaml", "--service", "web", "--allow-downtime"}
 		if apply {
 			args = append(args, "--yes")
 		}

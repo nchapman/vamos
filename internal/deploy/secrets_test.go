@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 const secretCanary = "not-a-real-credential: $ # = \\\" café\t "
@@ -169,7 +169,7 @@ func TestSecretRotationPinsResumeAndRetainedRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".soar-env-") {
+		if strings.HasPrefix(entry.Name(), ".vamos-env-") {
 			t.Fatal("runtime secret file retained")
 		}
 	}

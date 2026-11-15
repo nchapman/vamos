@@ -71,12 +71,12 @@ func TestUnsafeStagingRefusedAndLeftIntact(t *testing.T) {
 func TestUnexpectedRootEntryRequiresOperatorCorrection(t *testing.T) {
 	f := setup(t)
 	f.prepare(t, testToken)
-	foreign := filepath.Join(f.m.Root, "not-a-soar-token")
+	foreign := filepath.Join(f.m.Root, "not-a-vamos-token")
 	if err := os.WriteFile(foreign, []byte("preserve operator data"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.m.Prepare(context.Background(), strings.Repeat("b", 32), f.req, f.exe); err == nil {
-		t.Fatal("accepted a session root containing non-Soar state")
+		t.Fatal("accepted a session root containing non-Vamos state")
 	}
 	data, err := os.ReadFile(foreign)
 	if err != nil || string(data) != "preserve operator data" {

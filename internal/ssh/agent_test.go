@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 func TestBridgeTargetDerivation(t *testing.T) {
@@ -14,9 +14,9 @@ func TestBridgeTargetDerivation(t *testing.T) {
 		in, want string
 		err      string
 	}{
-		{"root@192.168.1.10", "soar@192.168.1.10", ""},
-		{"soar@host", "soar@host", ""},
-		{"host.example.com", "soar@host.example.com", ""},
+		{"root@192.168.1.10", "vamos@192.168.1.10", ""},
+		{"vamos@host", "vamos@host", ""},
+		{"host.example.com", "vamos@host.example.com", ""},
 		{"", "", "target must"},
 		{"a@b@c", "", "target must"},
 	} {

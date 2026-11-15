@@ -56,7 +56,7 @@ export function expectedLines(plain, width) {
 // standalone, unindented command lines, never table descriptions or templates.
 // This is selection eligibility, not shell parsing; nothing is ever executed.
 export function standaloneCommands(plain) {
-  return plain.split('\n').filter(line => /^soar [a-z]/.test(line) &&
+  return plain.split('\n').filter(line => /^vamos [a-z]/.test(line) &&
     !/[\t\r\n]| {2,}|[<>\[\]|]/.test(line) && line === line.trimEnd());
 }
 

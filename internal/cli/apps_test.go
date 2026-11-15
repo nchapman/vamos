@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 func TestAppsSelectsRegisteredServerWithoutProjectSideEffects(t *testing.T) {
@@ -21,10 +21,10 @@ func TestAppsSelectsRegisteredServerWithoutProjectSideEffects(t *testing.T) {
 			dir, store, reg := initFixture(t)
 			t.Chdir(dir)
 			// A corrupt project binding and no config must be irrelevant to inventory.
-			if err := os.Mkdir(".soar", 0700); err != nil {
+			if err := os.Mkdir(".vamos", 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(".soar", "server.json"), []byte("untouched"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(".vamos", "server.json"), []byte("untouched"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			for _, server := range []registry.Server{{Name: "home", Target: "root@home", Domain: "example.com"}, {Name: "other", Target: "root@other", Domain: "other.example.com"}} {
@@ -79,11 +79,11 @@ func TestAppsSelectsRegisteredServerWithoutProjectSideEffects(t *testing.T) {
 			if calls != 3 {
 				t.Fatal(calls)
 			}
-			data, _ := os.ReadFile(filepath.Join(".soar", "server.json"))
+			data, _ := os.ReadFile(filepath.Join(".vamos", "server.json"))
 			if string(data) != "untouched" {
 				t.Fatal("changed binding")
 			}
-			entries, err := os.ReadDir(".soar")
+			entries, err := os.ReadDir(".vamos")
 			if err != nil || len(entries) != 1 {
 				t.Fatal("created metadata", err)
 			}

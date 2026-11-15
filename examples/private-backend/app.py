@@ -21,7 +21,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"ok\n")
             return
 
-        result = {"service": role, "message": "Hello from Soar"}
+        result = {"service": role, "message": "Hello from Vamos"}
         if role == "web":
             try:
                 # Resolve service DNS on each request; reconnect after replacement.

@@ -17,14 +17,14 @@ func TestPendingIntentDoesNotAdoptWrongNonceOrShape(t *testing.T) {
 			s.ContainerID = ""
 			s.ContainerConfig = nil
 			s.ContainerHost = nil
-			if save(filepath.Join(f.root, "var/lib/soar/buildkit"), s) != nil {
+			if save(filepath.Join(f.root, "var/lib/vamos/buildkit"), s) != nil {
 				t.Fatal("save")
 			}
 			cfg := f.container["Config"].(map[string]any)
 			host := f.container["HostConfig"].(map[string]any)
 			switch kind {
 			case "nonce":
-				cfg["Labels"] = map[string]string{"org.soar.buildkit.host": testHost, "org.soar.buildkit.nonce": strings.Repeat("0", 32), "org.soar.buildkit.role": "container"}
+				cfg["Labels"] = map[string]string{"org.vamos.buildkit.host": testHost, "org.vamos.buildkit.nonce": strings.Repeat("0", 32), "org.vamos.buildkit.role": "container"}
 			case "env":
 				cfg["Env"] = []string{"HTTP_PROXY=unowned"}
 			case "bind":

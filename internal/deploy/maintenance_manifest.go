@@ -50,7 +50,7 @@ type maintenanceManifestPage struct {
 
 func maintenanceDigest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
 func (m *Manager) maintenanceManifestDir(app string) string {
-	return m.path("/var/lib/soar/maintenance/" + app)
+	return m.path("/var/lib/vamos/maintenance/" + app)
 }
 func maintenancePageName(i int) string { return fmt.Sprintf("%016x.json", i) }
 func maintenanceDiskIntent(w *maintenance) maintenance {

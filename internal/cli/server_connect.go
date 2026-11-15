@@ -8,9 +8,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/registry"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/registry"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 // serverConnect recovers local access without invoking bootstrap or inspecting

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 func isMulti(j *journal) bool {

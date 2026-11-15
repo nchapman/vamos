@@ -4,9 +4,9 @@ This document covers the read-only inspection boundary. Provisioning and removal
 
 ## Fresh-host path
 
-`soar server inspect [--json] [--timeout 15s] TARGET` invokes the client's system OpenSSH directly, without a local shell. The remote command is the constant `/bin/sh -s`; stdin contains the fixed embedded `internal/host/inspect.sh` collector. No target or other user input is interpolated into remote shell code.
+`vamos server inspect [--json] [--timeout 15s] TARGET` invokes the client's system OpenSSH directly, without a local shell. The remote command is the constant `/bin/sh -s`; stdin contains the fixed embedded `internal/host/inspect.sh` collector. No target or other user input is interpolated into remote shell code.
 
-This bootstrap path needs no remote Soar binary. It is deliberately separate from the installed executor's JSON transport: sending a binary to a fresh machine would require a write, which inspection does not need.
+This bootstrap path needs no remote Vamos binary. It is deliberately separate from the installed executor's JSON transport: sending a binary to a fresh machine would require a write, which inspection does not need.
 
 The collector gathers:
 
@@ -39,7 +39,7 @@ Killing SSH does not prove that arbitrary proxy or remote descendants terminated
 
 ## Installed executor protocol
 
-The same executable exposes `soar internal-executor`. A caller sends one JSON document and **closes stdin**:
+The same executable exposes `vamos internal-executor`. A caller sends one JSON document and **closes stdin**:
 
 ```json
 {"version":1,"operation":"inspect"}
@@ -91,7 +91,7 @@ CI is configured to run these on Ubuntu 24.04, macOS, and Windows. Linux/macOS u
 
 ### Observed real-host results
 
-A DigitalOcean droplet running **Ubuntu 26.04 / amd64 / systemd**, accessed as root from the macOS client, passed both JSON and human-readable inspection. An independent SSH check confirmed the reported OS, architecture, PID 1, and UID. No Soar, Docker, or Caddy executable was installed, and `/var/lib/soar` was absent after inspection.
+A DigitalOcean droplet running **Ubuntu 26.04 / amd64 / systemd**, accessed as root from the macOS client, passed both JSON and human-readable inspection. An independent SSH check confirmed the reported OS, architecture, PID 1, and UID. No Vamos, Docker, or Caddy executable was installed, and `/var/lib/vamos` was absent after inspection.
 
 The initial connection correctly failed because the ED25519 host key was unknown. After the operator confirmed the displayed fingerprint, that exact key was added to the client's `known_hosts` and inspection succeeded. This changed local SSH trust only; no software was installed or host configuration changed. An already-expired CLI deadline also returned exit 1 with no success report; this does not establish cancellation of an in-flight remote command.
 
@@ -99,13 +99,13 @@ Still unverified on a real remote host: Ubuntu 24.04 specifically, arm64, non-ro
 
 ### Real-host smoke-test checklist
 
-Use a disposable Ubuntu 24.04 amd64 or arm64 machine with systemd, SSH access, and no Soar binary installed. Do not use production infrastructure as the first test target.
+Use a disposable Ubuntu 24.04 amd64 or arm64 machine with systemd, SSH access, and no Vamos binary installed. Do not use production infrastructure as the first test target.
 
 1. Verify its SSH host key through a trusted channel and configure ordinary noninteractive SSH access.
-2. Run `soar server inspect --json <alias>` as a non-root user. Expect supported=true and root=false, without a sudo prompt.
+2. Run `vamos server inspect --json <alias>` as a non-root user. Expect supported=true and root=false, without a sudo prompt.
 3. Repeat as root if available. Expect the same OS facts with UID 0.
 4. Use a separate known older-Ubuntu or non-systemd test host to confirm incompatibility produces facts and exit 1.
 5. With isolated SSH aliases, exercise an untrusted key, invalid identity, unreachable port, and a short overall timeout. Expect actionable errors, never automatic trust acceptance.
-6. Confirm Soar has not created app directories, uploaded binaries, or changed Docker/Caddy/systemd configuration. Authentication/audit logs are expected.
+6. Confirm Vamos has not created app directories, uploaded binaries, or changed Docker/Caddy/systemd configuration. Authentication/audit logs are expected.
 
 No real remote host is part of the offline test suite. Record native CI and smoke-test results separately before relying on this boundary for provisioning.

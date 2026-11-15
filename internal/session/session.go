@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 const (
@@ -75,14 +75,14 @@ type Manager struct {
 }
 
 func NewManager() *Manager {
-	return &Manager{Root: "/run/soar-sessions", Now: time.Now,
+	return &Manager{Root: "/run/vamos-sessions", Now: time.Now,
 		Resolve: deploy.NewManager().ResolveSession, Run: process.Stream, RunPTY: runPTY}
 }
 
 func (m *Manager) defaults() Manager {
 	n := *m
 	if n.Root == "" {
-		n.Root = "/run/soar-sessions"
+		n.Root = "/run/vamos-sessions"
 	}
 	if n.Now == nil {
 		n.Now = time.Now
@@ -190,7 +190,7 @@ func (m *Manager) Attach(ctx context.Context, token string, stdin io.Reader, std
 	return m.attach(ctx, token, false, nil, nil, stdin, stdout, stderr)
 }
 
-// AttachAgent consumes a preparation on behalf of soar-agent, allocating a
+// AttachAgent consumes a preparation on behalf of vamos-agent, allocating a
 // host PTY for TTY sessions because the restricted SSH bridge runs pipe-only.
 func (m *Manager) AttachAgent(ctx context.Context, token string, initial *WindowSize, resizes <-chan WindowSize, stdin io.Reader, stdout, stderr io.Writer) (code int, err error) {
 	return m.attach(ctx, token, true, initial, resizes, stdin, stdout, stderr)

@@ -3,7 +3,7 @@ package deploy
 import (
 	"errors"
 	"fmt"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/secrets"
 	"testing"
 )
 

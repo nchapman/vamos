@@ -5,7 +5,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/nchapman/soar/internal/backup"
+	"github.com/nchapman/vamos/internal/backup"
 )
 
 func readRepositoryFile(path string) ([]byte, error) {

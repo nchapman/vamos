@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 type transport func(*http.Request) (*http.Response, error)
@@ -98,7 +98,7 @@ func TestPromotionCrashRecoveryAndDrift(t *testing.T) {
 	for _, drift := range []bool{false, true} {
 		t.Run(map[bool]string{false: "reconcile", true: "drift"}[drift], func(t *testing.T) {
 			m, r := setup(t)
-			j := &journal{Status: Status{App: r.App, URL: "https://notes.example.com", Operation: r.Operation, Phase: "promoting"}, Archive: r.Operation + ".context.tar", HostID: strings.Repeat("a", 32), Config: r.Config, Candidate: &release{Container: "soar-" + r.App + "-" + r.Operation, Image: "sha256:" + strings.Repeat("d", 64), Operation: r.Operation, Port: "12345"}}
+			j := &journal{Status: Status{App: r.App, URL: "https://notes.example.com", Operation: r.Operation, Phase: "promoting"}, Archive: r.Operation + ".context.tar", HostID: strings.Repeat("a", 32), Config: r.Config, Candidate: &release{Container: "vamos-" + r.App + "-" + r.Operation, Image: "sha256:" + strings.Repeat("d", 64), Operation: r.Operation, Port: "12345"}}
 			m.save(j)
 			old, _ := m.routes(j, false)
 			next, _ := m.routes(j, true)
@@ -126,7 +126,7 @@ func TestPromotionCrashRecoveryAndDrift(t *testing.T) {
 				if n == "docker" && a[0] == "container" {
 					v := inspection{}
 					v.Config.Image = j.Candidate.Image
-					v.Config.Labels = map[string]string{"soar.host": j.HostID, "soar.app": j.App, "soar.operation": j.Operation}
+					v.Config.Labels = map[string]string{"vamos.host": j.HostID, "vamos.app": j.App, "vamos.operation": j.Operation}
 					v.State.Running = true
 					v.NetworkSettings.Networks = map[string]json.RawMessage{network(j): json.RawMessage(`{}`)}
 					b, _ := json.Marshal(v)
@@ -216,7 +216,7 @@ func TestRejectReusedOperationAndUnjournaledDirectory(t *testing.T) {
 		t.Run(fmt.Sprint(prior), func(t *testing.T) {
 			m, r := setup(t)
 			if prior {
-				m.save(&journal{Status: Status{App: r.App, URL: "https://notes.example.com", Operation: r.Operation, Phase: "ready"}, Archive: r.Operation + ".context.tar", HostID: strings.Repeat("a", 32), Config: r.Config, Current: &release{Operation: r.Operation, Container: "soar-" + r.App + "-" + r.Operation, Image: "sha256:" + strings.Repeat("d", 64), Port: "12345"}})
+				m.save(&journal{Status: Status{App: r.App, URL: "https://notes.example.com", Operation: r.Operation, Phase: "ready"}, Archive: r.Operation + ".context.tar", HostID: strings.Repeat("a", 32), Config: r.Config, Current: &release{Operation: r.Operation, Container: "vamos-" + r.App + "-" + r.Operation, Image: "sha256:" + strings.Repeat("d", 64), Port: "12345"}})
 			} else {
 				os.MkdirAll(m.dir(r.App), 0700)
 				os.WriteFile(filepath.Join(m.dir(r.App), "foreign"), []byte("keep"), 0600)

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 func (m *Manager) readRunResponse(ctx context.Context, r Request, j *journal, state *secrets.State, active bool) (Response, error) {

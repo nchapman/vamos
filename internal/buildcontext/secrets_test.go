@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 func TestSecretFilesRequireSelectedIgnoreRule(t *testing.T) {
@@ -14,7 +14,7 @@ func TestSecretFilesRequireSelectedIgnoreRule(t *testing.T) {
 	put(t, root, ".dockerignore", ".env\n")
 	capture := func() map[string]string {
 		t.Helper()
-		b, err := Archive(filepath.Join(root, "soar.yaml"), config.Build{Context: ".", Dockerfile: "Dockerfile"})
+		b, err := Archive(filepath.Join(root, "vamos.yaml"), config.Build{Context: ".", Dockerfile: "Dockerfile"})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,18 +1,18 @@
 # Rollback: captured code and configuration
 
-`soar rollback` is preview-first. It restores eligible services from captured
+`vamos rollback` is preview-first. It restores eligible services from captured
 release history, without a build, pull, or source archive. It is not automatic
 failure recovery, database recovery, or an atomic transaction across services.
 
 ```sh
-soar rollback                         # preview target, exclusions and downtime
-soar rollback --yes                   # apply eligible automatic services
-soar rollback --service web           # preview only web
-soar rollback --service web --yes     # apply only web
+vamos rollback                         # preview target, exclusions and downtime
+vamos rollback --yes                   # apply eligible automatic services
+vamos rollback --service web           # preview only web
+vamos rollback --service web --yes     # apply only web
 
 # Outside a project: no local source/config required
-soar rollback --app ledger --server home
-soar rollback --app ledger --server home --service web --yes
+vamos rollback --app ledger --server home
+vamos rollback --app ledger --server home --service web --yes
 ```
 
 ## Selection and immutable inputs
@@ -49,8 +49,8 @@ Explicitly select a volume-backed automatic service, acknowledge data
 compatibility, and authorize downtime when applying:
 
 ```sh
-soar rollback --service web --allow-downtime       # preview
-soar rollback --service web --allow-downtime --yes # apply
+vamos rollback --service web --allow-downtime       # preview
+vamos rollback --service web --allow-downtime --yes # apply
 ```
 
 `--allow-downtime` is for scoped rollback; it does not authorize manual-service
@@ -62,15 +62,15 @@ routing until readiness and activation. Private replacement also has downtime.
 **Rollback cannot undo volume writes, database schemas, committed SQL, external
 side effects, or one-off commands.** Old code must tolerate current data. Use
 backward-compatible migrations; do not automatically start an old database binary
-against data modified by a newer one. `soar run` remains noninteractive, with no
+against data modified by a newer one. `vamos run` remains noninteractive, with no
 stdin/TTY and no automatic retry or undo. See [PostgreSQL](postgres.md) and
 [persistent volumes](volumes.md).
 
 ## Recovery and journal compatibility
 
-Pending routing promotion/retirement transitions require `soar resume OP` first.
+Pending routing promotion/retirement transitions require `vamos resume OP` first.
 Rollback does not bypass active-operation or uncertain-runtime recovery guards.
-Interrupted rollback uses the normal `soar resume OP` command and captured inputs;
+Interrupted rollback uses the normal `vamos resume OP` command and captured inputs;
 do not add new rollback selection or authorization flags to resume.
 
 For no-alias apps, rollback writes a **v5 rollback-only journal**. Older v1–v4 journals remain
@@ -108,8 +108,8 @@ Live acceptance used disposable ledger app `rbprobe` on the existing Ubuntu
   v2 from retained history while the row remained readable.
 - Destroy removed the probe's containers, network, routes and captured operation
   files. Hello's original containers and HTTPS route stayed healthy. Synthetic
-  secret versions and volume `soar-vol-f98f97740bf1293515fe6b5b34f129dd` were
-  intentionally retained with `/var/lib/soar/volumes/rbprobe.json` provenance;
+  secret versions and volume `vamos-vol-f98f97740bf1293515fe6b5b34f129dd` were
+  intentionally retained with `/var/lib/vamos/volumes/rbprobe.json` provenance;
   previously retained PostgreSQL data was also left intact.
 
 The first public probe encountered certificate provisioning delay; HTTPS worked

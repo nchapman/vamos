@@ -2,7 +2,7 @@ package deploy
 
 import (
 	"errors"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 	"os"
 	"strings"
 	"testing"

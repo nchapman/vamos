@@ -1,8 +1,8 @@
-# Soar: a small app platform for one server
+# Vamos: a small app platform for one server
 
 **Status: multi-service deployment, persistent local volumes and the PostgreSQL workflow are implemented.** Configuration validation, host inspection/setup/teardown, public/private Dockerfile-built or prebuilt-image services with same-app DNS, status/logs/resume/supersede, preview-first app cleanup/destruction, and staged runtime secrets work. Protected manual updates, scoped deployment and noninteractive one-off migration commands work. Preview-first code/config [rollback](docs/rollback.md) is implemented. App inventory, safe local initialization, streaming logs, existing-container exec and interactive console are implemented; see [CLI contracts](docs/cli.md). Backup/restore and other broader workflows below remain proposed. Examples below that use these deferred commands describe design targets, not available CLI APIs. See [README.md](README.md), [host lifecycle](docs/host-lifecycle.md), [deployment](docs/deployment.md), [multi-service semantics](docs/multi-service.md), [app lifecycle](docs/app-lifecycle.md), and [secrets](docs/secrets.md) for the exact boundary and verification limits.
 
-[Per-container resources](docs/resources.md), [operation-scoped release commands](docs/release-commands.md), and [single-host replica groups](docs/multi-service.md#replica-groups) are implemented. The [runtime compatibility contract](docs/runtime-evolution.md) describes their boundaries; the [Rails reference app](examples/rails-ledger/README.md) complements the Python Ledger without framework-specific behavior in Soar.
+[Per-container resources](docs/resources.md), [operation-scoped release commands](docs/release-commands.md), and [single-host replica groups](docs/multi-service.md#replica-groups) are implemented. The [runtime compatibility contract](docs/runtime-evolution.md) describes their boundaries; the [Rails reference app](examples/rails-ledger/README.md) complements the Python Ledger without framework-specific behavior in Vamos.
 
 The implemented [storage lifecycle](docs/volumes.md) supersedes the original volume proposal. It uses immutable owned local volumes, single-writer stop/start, durable public 503 routes, retained data, and explicit `--reuse-data` after destroy. Storage journals use v3; ready/incomplete v1/v2 remain recoverable. Backup/restore/preparation and data deletion are deferred. Database/manual-update/scoped-deploy and prebuilt images are implemented; custom domains are implemented via normal deploy; code/config rollback is implemented; acceptance scenarios are not claims of completed live or full-suite validation.
 
@@ -29,21 +29,21 @@ interruptions and machine-restart coverage.
 
 [Server coordinator agent, non-root deploys, and shared engine boundary](docs/agent-proposal.md)
 captures the evolution from per-command `root` SSH executor uploads and
-immediate busy-refusal locking to an installed `soar-agent` coordinator with
-non-root CI deployment access (`soar` SSH bridge), durable server-owned
-queueing, hierarchical host/app/ingress locking, supervised `soar-op-<id>.service`
-workers, explicit version handshakes + `soar server upgrade`, and a shared
+immediate busy-refusal locking to an installed `vamos-agent` coordinator with
+non-root CI deployment access (`vamos` SSH bridge), durable server-owned
+queueing, hierarchical host/app/ingress locking, supervised `vamos-op-<id>.service`
+workers, explicit version handshakes + `vamos server upgrade`, and a shared
 container engine boundary.
 
 Current gaps and deferred items:
-- **Phase 4 (`soar dev`)** is deferred; local development stacks are not implemented yet.
-- **Post-bootstrap ACL/key management CLI:** `/etc/soar/principals.json` and `/etc/soar/authorized_keys` are validated by `soar-agent` and preserved across `soar server upgrade`, and `soar server add` provisions the initial `default-deployer` key (`--deploy-key` or local SSH key), but there is not yet a CLI subcommand (`soar server principal ...`) to add, rotate, or revoke scoped CI keys after bootstrap.
-- **Pre-agent hosts:** Servers bootstrapped before the coordinator existed require a `root` `soar server upgrade` before ordinary CLI app commands can connect over the `soar` SSH bridge.
-- **Native Windows & distro package upgrades:** Native Windows live acceptance remains unverified, and unattended OS/Docker/Caddy package upgrades remain outside `soar server upgrade`.
+- **Phase 4 (`vamos dev`)** is deferred; local development stacks are not implemented yet.
+- **Post-bootstrap ACL/key management CLI:** `/etc/vamos/principals.json` and `/etc/vamos/authorized_keys` are validated by `vamos-agent` and preserved across `vamos server upgrade`, and `vamos server add` provisions the initial `default-deployer` key (`--deploy-key` or local SSH key), but there is not yet a CLI subcommand (`vamos server principal ...`) to add, rotate, or revoke scoped CI keys after bootstrap.
+- **Pre-agent hosts:** Servers bootstrapped before the coordinator existed require a `root` `vamos server upgrade` before ordinary CLI app commands can connect over the `vamos` SSH bridge.
+- **Native Windows & distro package upgrades:** Native Windows live acceptance remains unverified, and unattended OS/Docker/Caddy package upgrades remain outside `vamos server upgrade`.
 
 ## 1. The goal
 
-Rent a good Ubuntu 24.04+ server, install Soar once, and deploy our apps from Dockerfiles. Keep Fly's app-oriented experience without building a cloud provider.
+Rent a good Ubuntu 24.04+ server, install Vamos once, and deploy our apps from Dockerfiles. Keep Fly's app-oriented experience without building a cloud provider.
 
 The user should think about:
 
@@ -71,41 +71,41 @@ They should not repeatedly configure servers, registries, reverse proxies, certi
 
 ```sh
 # Once: install prerequisites, configure the host, remember it locally.
-soar server add --yes --domain apps.example.com home root@203.0.113.10
+vamos server add --yes --domain apps.example.com home root@203.0.113.10
 
 # In a project containing a Dockerfile:
-soar init notes --port 8080       # Write a small soar.yaml; do not infer a framework.
-soar deploy                     # Use the project's bound server; no registry configuration.
+vamos init notes --port 8080       # Write a small vamos.yaml; do not infer a framework.
+vamos deploy                     # Use the project's bound server; no registry configuration.
 # https://notes.apps.example.com
 
-soar apps
-soar status
-soar logs --service web --follow
-soar rollback
+vamos apps
+vamos status
+vamos logs --service web --follow
+vamos rollback
 ```
 
-The first added server becomes the default. `init` writes `soar.yaml` and binds the project to that server in local, gitignored `.soar/` metadata. For a hand-written configuration, the first server-contacting command creates that binding. `--server home` explicitly selects another target for that invocation; it never silently changes the binding. Resource names and configuration stay portable between machines.
+The first added server becomes the default. `init` writes `vamos.yaml` and binds the project to that server in local, gitignored `.vamos/` metadata. For a hand-written configuration, the first server-contacting command creates that binding. `--server home` explicitly selects another target for that invocation; it never silently changes the binding. Resource names and configuration stay portable between machines.
 
-Commands infer the app from `soar.yaml`. Outside a project, use `--app notes --server home`; operations requiring local source/configuration still require a project. Every mutation prints its resolved `server / app / service` target before acting. Secret staging may register an app's identity before its first deploy, without creating containers or routes.
+Commands infer the app from `vamos.yaml`. Outside a project, use `--app notes --server home`; operations requiring local source/configuration still require a project. Every mutation prints its resolved `server / app / service` target before acting. Secret staging may register an app's identity before its first deploy, without creating containers or routes.
 
 For an app that needs a session secret, add `SESSION_SECRET: session-secret` under its service's `secrets` map, then:
 
 ```sh
-soar secrets stage session-secret   # Prompt without echo; never put values in argv.
-soar deploy                        # Apply staged values to changed services.
+vamos secrets stage session-secret   # Prompt without echo; never put values in argv.
+vamos deploy                        # Apply staged values to changed services.
 ```
 
 Before installing packages or changing host state, `server add` reads `/etc/os-release` to verify `ID=ubuntu` and a numeric `VERSION_ID` of at least 24.04, then checks that systemd is the running host service manager and the architecture is amd64 or arm64. Missing/unrecognized OS metadata or an unsupported host fails with the detected OS and the Ubuntu 24.04+ requirement. Installation uses APT and systemd directly; do not add distro-specific backends. These read-only compatibility checks exist in `server inspect` and are reused by root-only provisioning. Initial fresh-host setup and conservative teardown are implemented; see [the lifecycle boundary](docs/host-lifecycle.md) for ownership, authorization, and recovery constraints. Inspection reports root/non-root UID without invoking sudo, and does not claim that non-root privileged setup is authorized.
 
-Setup tells the owner to point `*.apps.example.com` at the server and open TCP 80/443. Caddy obtains certificates for individual hostnames; Soar does not require wildcard certificates or a DNS-provider integration. Incorrect DNS produces an actionable diagnostic, not an indefinite wait.
+Setup tells the owner to point `*.apps.example.com` at the server and open TCP 80/443. Caddy obtains certificates for individual hostnames; Vamos does not require wildcard certificates or a DNS-provider integration. Incorrect DNS produces an actionable diagnostic, not an indefinite wait.
 
-SSH remains the management boundary. There is no public Soar administration API. Setup may require root; subsequent operations use a dedicated account. Docker control is effectively root access, so this is not a restricted multi-user hosting service.
+SSH remains the management boundary. There is no public Vamos administration API. Setup may require root; subsequent operations use a dedicated account. Docker control is effectively root access, so this is not a restricted multi-user hosting service.
 
 ### Domains are normal app configuration
 
 Custom domains are implemented as `services.<name>.http.domains` aliases applied
-by normal deployment, not route-only commands. Edit YAML, run `soar deploy`
-(or `soar deploy --service web`), then `soar status`. There is no `soar domains`
+by normal deployment, not route-only commands. Edit YAML, run `vamos deploy`
+(or `vamos deploy --service web`), then `vamos status`. There is no `vamos domains`
 CLI command. See [custom domains](docs/domains.md) for validation, ownership,
 DNS/TLS checks and rollback recovery. Generated URLs are always retained;
 aliases are additional routes, not redirects. Operators configure DNS; Caddy
@@ -113,7 +113,7 @@ obtains public certificates automatically.
 
 ## 3. The small configuration model
 
-One `soar.yaml`, one app, one private network, several optional services. An app groups collaborating services, potentially from different images, into one deployment configuration. Unlike Fly's default organization-wide private networking, unrelated Soar apps cannot connect privately.
+One `vamos.yaml`, one app, one private network, several optional services. An app groups collaborating services, potentially from different images, into one deployment configuration. Unlike Fly's default organization-wide private networking, unrelated Vamos apps cannot connect privately.
 
 | Field | Meaning |
 | --- | --- |
@@ -138,18 +138,18 @@ App names and server defaults keep infrastructure out of the file. Secret values
 - No service publishes a host port by default. `http` exposes only HTTP through Caddy, not arbitrary TCP ports.
 - For a public service, publish a randomly allocated **loopback-only** host port. Run Caddy on the host and route to that port. Caddy does not need to join every private network.
 - Workers, databases, and Redis have no host port mappings. Containers still have outbound internet access; “private” means no public ingress, not an air gap.
-- Soar configures and verifies isolation between its app networks. This is useful separation for trusted apps, not a defense against host administrators or a compromised Docker daemon.
+- Vamos configures and verifies isolation between its app networks. This is useful separation for trusted apps, not a defense against host administrators or a compromised Docker daemon.
 - Do not support cross-app networks in v1. Put collaborating services in one app, or use an explicitly external service.
-- For occasional administration, `soar exec --service db -- ...` runs a client inside a service. Do not expose a database publicly just to inspect it.
+- For occasional administration, `vamos exec --service db -- ...` runs a client inside a service. Do not expose a database publicly just to inspect it.
 
 ### Storage and update policy are separate
 
-**`update: auto` (default):** normal `soar deploy` updates changed application services. Public services without volumes start as candidates, pass HTTP readiness, then receive traffic. Services with volumes use stop-old/start-new, including SQLite-backed websites: same deploy command, explicit downtime in the deployment summary. Private services, including workers, also use stop/start.
+**`update: auto` (default):** normal `vamos deploy` updates changed application services. Public services without volumes start as candidates, pass HTTP readiness, then receive traffic. Services with volumes use stop-old/start-new, including SQLite-backed websites: same deploy command, explicit downtime in the deployment summary. Private services, including workers, also use stop/start.
 
 **`update: manual`:** normal deploy creates a missing service but never updates an existing one. Use this for databases and durable Redis queues. Changes to a protected service's image, command, environment, secrets, or mounts fail app-deploy preflight with the exact next command. Do not silently ignore requested changes or refresh a mutable image tag on an ordinary deploy.
 
 ```sh
-soar deploy --service db --yes  # Approve an existing manual db update; omit --yes to preview.
+vamos deploy --service db --yes  # Approve an existing manual db update; omit --yes to preview.
 ```
 
 `deploy --service` is also the simple bootstrap primitive: start just the database before initializing a schema. It validates the whole file's structure but requires secrets/builds only for the selected service, never starts dependencies implicitly, and never applies other services' pending changes. It records the resulting effective app state as a release; unchanged services retain their actual versions. Existing selected manual-service updates require `--yes`; without it the command previews. Newly selected database creation needs no `--yes`. Ordinary deploy may still archive a manually built protected service’s context; it does not refresh or restart that service. Protected policy changes also fail preflight with the exact scoped approval command.
@@ -158,7 +158,7 @@ soar deploy --service db --yes  # Approve an existing manual db update; omit --y
 
 For shutdown, honor the image's stop signal (SIGTERM by default), allow 30 seconds, then force termination. Disable the superseded container's restart policy before stopping it, and verify it has stopped before starting its replacement. Retired workers must not reappear after a reboot. This prevents deliberate old/new overlap, not duplicate queue processing.
 
-Database version upgrades and on-disk migrations remain operator responsibilities. Removing a service uses preview-first `soar service remove db --app APP --server SERVER`, then `--yes` to apply, plus `--allow-protected` for manual services. Volumes/secrets are retained; the last service requires app destroy instead. Remove its declaration too if it should stay absent; intentional re-add requires `deploy --re-add --service db --yes` and `--reuse-data` for retained volume data. A missing declaration alone must not destroy it.
+Database version upgrades and on-disk migrations remain operator responsibilities. Removing a service uses preview-first `vamos service remove db --app APP --server SERVER`, then `--yes` to apply, plus `--allow-protected` for manual services. Volumes/secrets are retained; the last service requires app destroy instead. Remove its declaration too if it should stay absent; intentional re-add requires `deploy --re-add --service db --yes` and `--reuse-data` for retained volume data. A missing declaration alone must not destroy it.
 
 ### Secrets and retained data
 
@@ -166,15 +166,15 @@ Database version upgrades and on-disk migrations remain operator responsibilitie
 
 Secret values live in a permission-restricted server-side store, outside release history. Releases record immutable secret-version references so rollback can recreate the previous configuration without writing plaintext into release metadata. Updating a secret does not silently mutate running containers. Retain referenced versions; warn that rollback may restore revoked credentials. Host administrators and Docker access can inspect runtime secrets. Build-time secrets are outside v1, and build contexts must not contain them.
 
-Named volumes survive deploys, rollbacks, and app deletion. `soar destroy` removes containers and routes but retains data and secrets; deleting those requires a separate explicit, confirmed action. Renaming an app or volume is not a data migration. Reject unexplained storage identity changes and point the operator to manual migration.
+Named volumes survive deploys, rollbacks, and app deletion. `vamos destroy` removes containers and routes but retains data and secrets; deleting those requires a separate explicit, confirmed action. Renaming an app or volume is not a data migration. Reject unexplained storage identity changes and point the operator to manual migration.
 
 ## 4. What needs to exist
 
 ### A thin CLI and host-side executor
 
-Use the same small Go executable locally and remotely. Use the system SSH client for existing agent/key/config support. The first slice uses bounded Docker CLI subprocesses with argument arrays and structured JSON inspection, sharing the host-lifecycle process boundary; add an SDK only when a concrete need warrants it. Do not generate Compose files as a second deployment state model. The local CLI sends authenticated commands over SSH; the host-side executor owns mutations and reports results. Fresh-host inspection is a bootstrap exception: before Soar is installed, SSH runs a fixed read-only shell collector. The installed executor runs the identical collector locally and shares the same Go parser/policy. Its versioned JSON protocols support host lifecycle and the narrow app-deployment slice; bootstrap inspection alone does not upload or invoke a remote Go binary. No always-running custom control-plane daemon is needed initially. Docker restarts containers and Caddy restarts through the host's service manager after reboot.
+Use the same small Go executable locally and remotely. Use the system SSH client for existing agent/key/config support. The first slice uses bounded Docker CLI subprocesses with argument arrays and structured JSON inspection, sharing the host-lifecycle process boundary; add an SDK only when a concrete need warrants it. Do not generate Compose files as a second deployment state model. The local CLI sends authenticated commands over SSH; the host-side executor owns mutations and reports results. Fresh-host inspection is a bootstrap exception: before Vamos is installed, SSH runs a fixed read-only shell collector. The installed executor runs the identical collector locally and shares the same Go parser/policy. Its versioned JSON protocols support host lifecycle and the narrow app-deployment slice; bootstrap inspection alone does not upload or invoke a remote Go binary. No always-running custom control-plane daemon is needed initially. Docker restarts containers and Caddy restarts through the host's service manager after reboot.
 
-Store root/private state under a directory such as `/var/lib/soar/`:
+Store root/private state under a directory such as `/var/lib/vamos/`:
 
 - App configuration and active release pointer.
 - Release records: image IDs/digests, effective configuration, secret-version references.
@@ -185,7 +185,7 @@ Use atomic file replacement, per-app operation locks, and a separate short-lived
 
 ### Build and transfer
 
-Send the build context over SSH and build on the server with BuildKit. Respect Docker's `.dockerignore` semantics, including Dockerfile-specific ignore files. Exclude `.git` as an additional Soar safety rule; warn that other sensitive files must be explicitly ignored. Do not invent a slightly different ignore parser. No registry is required for locally built images. Private prebuilt images can use registry credentials configured once on the host.
+Send the build context over SSH and build on the server with BuildKit. Respect Docker's `.dockerignore` semantics, including Dockerfile-specific ignore files. Exclude `.git` as an additional Vamos safety rule; warn that other sensitive files must be explicitly ignored. Do not invent a slightly different ignore parser. No registry is required for locally built images. Private prebuilt images can use registry credentials configured once on the host.
 
 Build once per distinct build specification in a deploy; web and worker services can reuse the result. Capture immutable image IDs/digests in release records rather than relying on mutable tags. Place limits on build concurrency and configure container log rotation so routine activity cannot trivially exhaust disk. Clean old build cache and unreferenced images, never retained release images or volumes.
 
@@ -203,14 +203,14 @@ While a public candidate initially starts, the stable private service name conti
 
 An app deploy is **not an atomic transaction across containers or data**. If a later worker fails after web promotion, report a partial deployment and show each service's actual version. Retain the previous completed release and operation journal so a retry or rollback can reconcile safely. Web and worker versions must tolerate overlap.
 
-`soar rollback` previews automatic, volume-free services; `--yes` applies. A ready app targets `PreviousCompleted`; a partial deployment targets the last `Completed` release, preserving actual excluded/unselected services. Captured immutable local images, config and secret versions are required; there is no build, pull or staged-secret fallback. See [rollback](docs/rollback.md) for recovery prerequisites and journal compatibility. Volume-backed application code can be restored only with explicit `soar rollback --service web --allow-downtime --yes` confirmation and an operator decision that the old code is data-compatible. Manual services are excluded from rollback; select a vetted image/config and use scoped deploy for an intentional change. No rollback reverts volumes, external side effects, or database schemas.
+`vamos rollback` previews automatic, volume-free services; `--yes` applies. A ready app targets `PreviousCompleted`; a partial deployment targets the last `Completed` release, preserving actual excluded/unselected services. Captured immutable local images, config and secret versions are required; there is no build, pull or staged-secret fallback. See [rollback](docs/rollback.md) for recovery prerequisites and journal compatibility. Volume-backed application code can be restored only with explicit `vamos rollback --service web --allow-downtime --yes` confirmation and an operator decision that the old code is data-compatible. Manual services are excluded from rollback; select a vetted image/config and use scoped deploy for an intentional change. No rollback reverts volumes, external side effects, or database schemas.
 
 ### One-off commands, not migration magic
 
 ```sh
-soar deploy --service db
-soar run --service web -- ./bin/migrate
-soar deploy
+vamos deploy --service db
+vamos run --service web -- ./bin/migrate
+vamos deploy
 ```
 
 `run` builds/pulls the selected service image from the current project, attaches a temporary container to the existing app network, and injects that service's configured environment and latest staged secrets. It replaces CMD, retains ENTRYPOINT, publishes no port, mounts no volumes, and starts no dependencies. It requires only that service's referenced secrets; it does not require a running or healthy instance of that service. This handles PostgreSQL migrations and administrative clients that live in the app image. The image must support the supplied command.
@@ -227,13 +227,13 @@ web: release 12, serving
 worker: replacement failed; stopped
  db: unchanged
 Previous completed release: 11
-Resume captured deployment: soar resume op-42
-Restore eligible services:  soar rollback
+Resume captured deployment: vamos resume op-42
+Restore eligible services:  vamos rollback
 ```
 
 An SSH disconnect does not imply cancellation or successful completion. `status` reconciles the operation journal with live containers and routes and reports what is running, whether an executor is still active, and the next supported action. `resume <id>` waits for/acquires the operation lock, reconciles first, and continues the captured images, config, and secret versions—not the caller's current working tree. It never launches a second executor for an active operation.
 
-A fresh `deploy` refuses to start while an incomplete deployment exists and points to resume or rollback. If the captured configuration itself needs correction, `soar deploy --supersede op-42` reconciles and closes that stopped operation, then plans from the current project and actual running state; it cannot supersede an active executor or automatically undo data changes. Failed volume-backed updates remain unavailable until explicitly resumed with the same image or superseded with a corrected build. Domain edits use normal deployment recovery; one-off commands are never silently resumed.
+A fresh `deploy` refuses to start while an incomplete deployment exists and points to resume or rollback. If the captured configuration itself needs correction, `vamos deploy --supersede op-42` reconciles and closes that stopped operation, then plans from the current project and actual running state; it cannot supersede an active executor or automatically undo data changes. Failed volume-backed updates remain unavailable until explicitly resumed with the same image or superseded with a corrected build. Domain edits use normal deployment recovery; one-off commands are never silently resumed.
 
 ### Operations that cannot be hand-waved away
 
@@ -247,7 +247,7 @@ A fresh `deploy` refuses to start while an incomplete deployment exists and poin
 
 ## 5. Five configurations to test the model
 
-These are design scenarios; journal and Ledger are runnable, with custom aliases applied through normal deployment; rollback is implemented as documented in [rollback](docs/rollback.md). Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `soar.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Soar.
+These are design scenarios; journal and Ledger are runnable, with custom aliases applied through normal deployment; rollback is implemented as documented in [rollback](docs/rollback.md). Dockerfiles and application code must listen on `0.0.0.0` at the declared port and implement the declared readiness endpoint. Example image tags select a major release for readability; production should pin a vetted patch tag or digest. A first install resolves tags; existing `update: manual` services are not automatically refreshed. Run each walkthrough from its project directory after saving the shown `vamos.yaml`. `./bin/migrate`, servers, and health endpoints are application-owned example interfaces, not generated by Vamos.
 
 ### 1. A stateless website with two custom domains
 
@@ -267,13 +267,13 @@ services:
 ```
 
 ```sh
-soar deploy
-# Add preview.studio.example.com to web.http.domains in soar.yaml
-soar deploy --service web
-soar status
+vamos deploy
+# Add preview.studio.example.com to web.http.domains in vamos.yaml
+vamos deploy --service web
+vamos status
 # Edit code, then:
-soar deploy
-soar rollback
+vamos deploy
+vamos rollback
 ```
 
 **Tests:** the smallest useful app; multiple hostnames; generated `studio.apps.example.com` still works even when custom DNS is pending. Adding a domain follows the normal deployment/build and readiness path. Domain aliases do not imply redirects or solve application-level host validation. A bad build/readiness check leaves the previous route live; `status` explains whether to resume or supersede the failed deployment.
@@ -298,7 +298,7 @@ services:
       health: /readyz
 ```
 
-Ordinary `soar deploy` performs stop/start replacement. The root entrypoint only
+Ordinary `vamos deploy` performs stop/start replacement. The root entrypoint only
 initializes permissions on a new empty root-owned mount, then drops to numeric
 UID/GID 10001 before restart-safe SQLite table creation and HTTP serving. Existing
 incompatible data permissions fail; no recursive chown, migration or copying.
@@ -349,19 +349,19 @@ services:
 ```
 
 ```sh
-soar secrets stage database-password
-soar secrets stage database-url
-soar deploy --service db
-soar run --service web -- ./bin/migrate
-soar deploy
+vamos secrets stage database-password
+vamos secrets stage database-url
+vamos deploy --service db
+vamos run --service web -- ./bin/migrate
+vamos deploy
 # Later code/schema update (migration must remain compatible with the running API):
-soar run --service web -- ./bin/migrate
-soar deploy
+vamos run --service web -- ./bin/migrate
+vamos deploy
 ```
 
-**Tests:** web and database share a private network; `db` has no public port or URL. Enter a `database-url` of the form `postgresql://ledger:<URL-encoded-password>@db:5432/ledger`, matching `database-password`. Soar does not generate or interpolate it. The migration command retries until Postgres accepts connections and exits nonzero on failure; only proceed to deploy after success. The API readiness endpoint checks connectivity and required schema. This works on an empty server without first deploying an unhealthy API.
+**Tests:** web and database share a private network; `db` has no public port or URL. Enter a `database-url` of the form `postgresql://ledger:<URL-encoded-password>@db:5432/ledger`, matching `database-password`. Vamos does not generate or interpolate it. The migration command retries until Postgres accepts connections and exits nonzero on failure; only proceed to deploy after success. The API readiness endpoint checks connectivity and required schema. This works on an empty server without first deploying an unhealthy API.
 
-The standard PostgreSQL image uses these initialization variables only for an empty data directory. Changing `database-password` does not change an existing role password. For rotation with an accepted interruption, use an operator-controlled SQL client outside Soar (`exec` and interactive runs are not implemented), change the role password securely, stage matching credentials, explicitly `soar deploy --service db --yes` to align initialization configuration, then deploy the API. Do not put credentials in SQL arguments or shell history. Production role privileges and zero-interruption rotation remain operator concerns.
+The standard PostgreSQL image uses these initialization variables only for an empty data directory. Changing `database-password` does not change an existing role password. For rotation with an accepted interruption, use an operator-controlled SQL client outside Vamos (`exec` and interactive runs are not implemented), change the role password securely, stage matching credentials, explicitly `vamos deploy --service db --yes` to align initialization configuration, then deploy the API. Do not put credentials in SQL arguments or shell history. Production role privileges and zero-interruption rotation remain operator concerns.
 
 ### 4. Web, background worker, PostgreSQL, and Redis
 
@@ -413,15 +413,15 @@ services:
 ```
 
 ```sh
-soar secrets stage database-password
-soar secrets stage database-url
-soar secrets stage session-secret
-soar deploy --service db
-soar deploy --service redis
-soar run --service web -- ./bin/migrate
-soar deploy
+vamos secrets stage database-password
+vamos secrets stage database-url
+vamos secrets stage session-secret
+vamos deploy --service db
+vamos deploy --service redis
+vamos run --service web -- ./bin/migrate
+vamos deploy
 # Code changes rebuild once and update web + worker, not db + redis:
-soar deploy
+vamos deploy
 ```
 
 **Tests:** one image built for two processes; three private services; shared Postgres and Redis within the app; durable queue storage. The database URL uses `dispatch` as database/user and `db` as host with the matching password. The migration command follows example 3's retry/exit contract. Redis is deliberately unauthenticated inside this trusted app network and has no published port. This is not appropriate for untrusted services sharing the network.
@@ -463,18 +463,18 @@ services:
 ```
 
 ```sh
-soar deploy
-# Add preview.workspace.example.com to web.http.domains in soar.yaml
-soar deploy --service web
-soar status
-soar logs --service renderer --follow
+vamos deploy
+# Add preview.workspace.example.com to web.http.domains in vamos.yaml
+vamos deploy --service web
+vamos status
+vamos logs --service renderer --follow
 # Update any of the Dockerfiles, then:
-soar deploy
+vamos deploy
 ```
 
 **Tests:** multiple Dockerfiles and public services, several domains, and a private stateless HTTP service. The application-owned renderer listens on port 8080 and receives no public route, even though it serves HTTP. `api` receives `workspace-api.apps.example.com`. On first deployment the renderer starts before the API readiness check, which retries and verifies renderer availability. No config surgery or third-party credential bootstrap is needed.
 
-On later deployments, API and renderer versions must tolerate overlap. If a renderer change must precede an API change, explicitly `soar deploy --service renderer` first; there is no dependency scheduler. This frontend is a server that reads `API_ORIGIN` at runtime. Static browser bundles cannot magically read container environment variables. Browsers use the public API hostname, not private `api` or `renderer` DNS; CORS, cookies, and application authentication remain application responsibilities.
+On later deployments, API and renderer versions must tolerate overlap. If a renderer change must precede an API change, explicitly `vamos deploy --service renderer` first; there is no dependency scheduler. This frontend is a server that reads `API_ORIGIN` at runtime. Static browser bundles cannot magically read container environment variables. Browsers use the public API hostname, not private `api` or `renderer` DNS; CORS, cookies, and application authentication remain application responsibilities.
 
 ## 6. What the examples force us to decide
 
@@ -523,12 +523,12 @@ The sequence below retains design/acceptance targets, including deferred feature
 
 Cross-checked against official Fly documentation during design review:
 
-- **Keep one deployment entry point.** Fly's [normal deploy supports volume-backed Machines](https://fly.io/docs/launch/deploy/#volume-mounts-and-fly-deploy); local volumes do not imply a separate app-update workflow. Soar likewise uses normal deploy with stop/start for volume-backed apps, while explicitly protecting database updates.
-- **Name deferred secrets honestly.** Fly's [`secrets set` applies changes and `--stage` defers them](https://fly.io/docs/apps/secrets/). Soar intentionally exposes staging only, applies values through deployment, and pins versions across restart/reboot. It is not a drop-in copy of Fly's secret semantics.
-- **Group collaborating services.** Fly's [standard process groups](https://fly.io/docs/launch/processes/) use one app image; Soar allows multiple images in one app so Postgres/Redis need no separate deployment projects. Shared web/worker builds retain the convenient same-image case.
-- **Choose a tighter private boundary.** Fly's [default private network](https://fly.io/docs/networking/private-networking/) spans an organization. Soar isolates each app and offers simple service DNS within it.
-- **Make domain state visible.** Fly's [domain setup](https://fly.io/docs/networking/custom-domain/) distinguishes DNS/certificate provisioning. Soar does too, but maps each hostname to an explicit service rather than implying hostnames select Fly process groups.
-- **Support explicit schema setup without a framework.** Fly offers a [`release_command`](https://fly.io/docs/reference/configuration/) in a temporary Machine without attached volumes. Soar supports both a manual, volume-free `run` command and an explicit operation-scoped release gate. Neither implies dependency startup, automatic retry after start intent, or data rollback.
+- **Keep one deployment entry point.** Fly's [normal deploy supports volume-backed Machines](https://fly.io/docs/launch/deploy/#volume-mounts-and-fly-deploy); local volumes do not imply a separate app-update workflow. Vamos likewise uses normal deploy with stop/start for volume-backed apps, while explicitly protecting database updates.
+- **Name deferred secrets honestly.** Fly's [`secrets set` applies changes and `--stage` defers them](https://fly.io/docs/apps/secrets/). Vamos intentionally exposes staging only, applies values through deployment, and pins versions across restart/reboot. It is not a drop-in copy of Fly's secret semantics.
+- **Group collaborating services.** Fly's [standard process groups](https://fly.io/docs/launch/processes/) use one app image; Vamos allows multiple images in one app so Postgres/Redis need no separate deployment projects. Shared web/worker builds retain the convenient same-image case.
+- **Choose a tighter private boundary.** Fly's [default private network](https://fly.io/docs/networking/private-networking/) spans an organization. Vamos isolates each app and offers simple service DNS within it.
+- **Make domain state visible.** Fly's [domain setup](https://fly.io/docs/networking/custom-domain/) distinguishes DNS/certificate provisioning. Vamos does too, but maps each hostname to an explicit service rather than implying hostnames select Fly process groups.
+- **Support explicit schema setup without a framework.** Fly offers a [`release_command`](https://fly.io/docs/reference/configuration/) in a temporary Machine without attached volumes. Vamos supports both a manual, volume-free `run` command and an explicit operation-scoped release gate. Neither implies dependency startup, automatic retry after start intent, or data rollback.
 
 The SME feedback led to separating storage from update protection, naming secret staging explicitly, defining target/recovery contracts, and replacing the credential-bootstrap-heavy search example with a private renderer. Keep single-writer safety and recovery internals; reject dependency graphs, database operators, automatic credential provisioning, and multi-host features for this scope.
 

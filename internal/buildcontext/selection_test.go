@@ -1,7 +1,7 @@
 package buildcontext
 
 import (
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 	"testing"
 )
 
@@ -32,7 +32,7 @@ func TestSelectedBundleIgnoresUnusedContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	_, err = Bundle("soar.yaml", selected, func(_ string, b config.Build) ([]byte, error) {
+	_, err = Bundle("vamos.yaml", selected, func(_ string, b config.Build) ([]byte, error) {
 		calls++
 		if b.Context != "web" {
 			t.Fatalf("archived unused build: %+v", b)

@@ -13,10 +13,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 type RunResult struct {
@@ -48,7 +48,7 @@ func runPath(m *Manager, j *journal, op string) string {
 	return filepath.Join(m.dir(j.App), op+".run.json")
 }
 func validateRun(j *journal, r *runRecord) error {
-	if r == nil || !validRunVersion(r) || r.App != j.App || r.HostID != j.HostID || !operation.MatchString(r.Operation) || !label.MatchString(r.Service) || len(r.Service) > 63 || r.Container != "soar-run-"+r.Operation || len(r.Config.Command) == 0 || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || len(r.Output) > runOutputLimit || r.Config.HTTP != nil || r.Config.Volume != nil {
+	if r == nil || !validRunVersion(r) || r.App != j.App || r.HostID != j.HostID || !operation.MatchString(r.Operation) || !label.MatchString(r.Service) || len(r.Service) > 63 || r.Container != "vamos-run-"+r.Operation || len(r.Config.Command) == 0 || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || len(r.Output) > runOutputLimit || r.Config.HTTP != nil || r.Config.Volume != nil {
 		return errors.New("invalid run record")
 	}
 	if err := ValidateApp(&config.App{Name: r.App, Services: map[string]config.Service{r.Service: r.Config}}); err != nil {
@@ -167,7 +167,7 @@ func (m *Manager) saveRun(j *journal, r *runRecord) error {
 // verifyRunEndpoint never admits an endpoint by labels alone, including during
 // the create/ID-save crash window. That window requires manual reconciliation.
 func (m *Manager) verifyRunEndpoint(ctx context.Context, j *journal, v *inspection) error {
-	r, err := m.loadRun(j, v.Config.Labels["soar.run"])
+	r, err := m.loadRun(j, v.Config.Labels["vamos.run"])
 	if err != nil {
 		return errors.New("unrecorded run endpoint")
 	}
@@ -203,13 +203,13 @@ func (m *Manager) verifyRun(ctx context.Context, j *journal, r *runRecord, v *in
 	for k, val := range im.Config.Labels {
 		labels[k] = val
 	}
-	labels["soar.host"] = j.HostID
-	labels["soar.app"] = j.App
-	labels["soar.operation"] = r.Operation
-	labels["soar.service"] = r.Service
-	labels["soar.run"] = r.Operation
+	labels["vamos.host"] = j.HostID
+	labels["vamos.app"] = j.App
+	labels["vamos.operation"] = r.Operation
+	labels["vamos.service"] = r.Service
+	labels["vamos.run"] = r.Operation
 	if r.Purpose == "release" {
-		labels["soar.release"] = r.ParentOperation
+		labels["vamos.release"] = r.ParentOperation
 	}
 	env := map[string]string{}
 	for _, x := range im.Config.Env {
@@ -479,7 +479,7 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 	cfg.Command = append([]string(nil), r.Command...)
 	cfg.HTTP = nil
 	cfg.Volume = nil
-	rec := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: r.Operation, Service: r.Service, Phase: "building", Container: "soar-run-" + r.Operation}, Config: cfg, SecretRefs: refs}
+	rec := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: r.Operation, Service: r.Service, Phase: "building", Container: "vamos-run-" + r.Operation}, Config: cfg, SecretRefs: refs}
 	if err = m.saveRun(j, rec); err != nil {
 		return resp, err
 	}

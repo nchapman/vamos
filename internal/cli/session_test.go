@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func TestExecPreservesArgumentsAndUsesStreamingOnly(t *testing.T) {

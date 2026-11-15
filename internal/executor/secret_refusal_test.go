@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/secrets"
 	"testing"
 )
 

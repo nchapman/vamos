@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/appstate"
+	"github.com/nchapman/vamos/internal/appstate"
 )
 
 func writeAppTombstone(t *testing.T, m *Manager, hostID string) string {
 	t.Helper()
-	p := m.path("/var/lib/soar/apps/retired/state.json")
+	p := m.path("/var/lib/vamos/apps/retired/state.json")
 	b, err := json.Marshal(appstate.Tombstone{Version: 1, App: "retired", Operation: strings.Repeat("b", 32), Phase: "destroyed", HostID: hostID})
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestTeardownAcceptsOnlyCompletedAppReceipts(t *testing.T) {
 	if _, err := m.Teardown(context.Background(), testConfig.Name, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(m.path("/var/lib/soar/apps")); !os.IsNotExist(err) {
+	if _, err := os.Stat(m.path("/var/lib/vamos/apps")); !os.IsNotExist(err) {
 		t.Fatalf("receipt directory remains: %v", err)
 	}
 }
@@ -96,7 +96,7 @@ func TestTeardownRefusesMountedAppReceipt(t *testing.T) {
 	}
 	writeAppTombstone(t, m, state.ID)
 	m.MountInfo = func() ([]byte, error) {
-		return []byte("36 25 0:32 / /var/lib/soar/apps/retired rw - ext4 /dev/vdb rw\n"), nil
+		return []byte("36 25 0:32 / /var/lib/vamos/apps/retired rw - ext4 /dev/vdb rw\n"), nil
 	}
 	f.calls = nil
 	if _, err := m.Teardown(context.Background(), testConfig.Name, true); err == nil {
@@ -112,7 +112,7 @@ func TestBootstrapRefusesPendingAppStateBeforeHostCommands(t *testing.T) {
 	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
 		t.Fatal(err)
 	}
-	f.write("/var/lib/soar/apps/pending/state.json", `{"phase":"destroying"}`)
+	f.write("/var/lib/vamos/apps/pending/state.json", `{"phase":"destroying"}`)
 	f.calls = nil
 	if _, err := m.Bootstrap(context.Background(), testConfig); err == nil {
 		t.Fatal("bootstrap accepted pending app state")

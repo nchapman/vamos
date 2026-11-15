@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 func TestApprovalPreservesManifestTargetAndOptions(t *testing.T) {
@@ -49,7 +49,7 @@ func TestApprovalPreservesManifestTargetAndOptions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		quoted = "'" + strings.ReplaceAll(renamed, "'", "''") + "'"
 	}
-	for _, want := range []string{"soar deploy --service web --yes", "-f " + quoted, "--server staging", "--timeout 3m0s", "--executor 'custom executor'", "--reuse-data"} {
+	for _, want := range []string{"vamos deploy --service web --yes", "-f " + quoted, "--server staging", "--timeout 3m0s", "--executor 'custom executor'", "--reuse-data"} {
 		if !strings.Contains(command, want) {
 			t.Errorf("suggestion missing %q: %s", want, command)
 		}
@@ -83,7 +83,7 @@ func TestBindingAdviceUsesManifestDirectoryAndSelectedServer(t *testing.T) {
 	if code := appCommand(context.Background(), "deploy", []string{"-f", path, "--server", "staging", "--service", "web"}, &out, &diagnostic, deps); code != 1 {
 		t.Fatal(code)
 	}
-	want := suggestedCommand("soar", "service", "bind", "web", "-f", path, "--server", "staging")
+	want := suggestedCommand("vamos", "service", "bind", "web", "-f", path, "--server", "staging")
 	if !strings.Contains(diagnostic.String(), want) || strings.Contains(diagnostic.String(), "bind web --app") {
 		t.Fatal(&diagnostic)
 	}
@@ -107,7 +107,7 @@ func TestConfigFailureExplainsExplicitTargetRecovery(t *testing.T) {
 				if code := appCommand(context.Background(), action, args, &out, &diagnostic, appDeps{}); code != 1 {
 					t.Fatal(code)
 				}
-				if !strings.Contains(diagnostic.String(), "soar "+action+" --server SERVER --app APP") {
+				if !strings.Contains(diagnostic.String(), "vamos "+action+" --server SERVER --app APP") {
 					t.Fatal(&diagnostic)
 				}
 			})
@@ -147,16 +147,16 @@ func TestSnapshotLogsKeepMetadataOffStdout(t *testing.T) {
 
 func TestAppHelpIsCommandSpecificAndComplete(t *testing.T) {
 	for _, tc := range []struct{ action, usage, flag, absent string }{
-		{"deploy", "soar deploy", "-timeout", "soar destroy"},
-		{"logs", "soar logs", "-follow", "-re-add"},
-		{"resume", "soar resume", "-timeout", "-supersede"},
-		{"service-remove", "soar service remove", "-json", "-reuse-data"},
-		{"service-bind", "soar service bind", "-timeout", "-yes"},
-		{"run", "soar run", "-service", "-follow"},
-		{"rollback", "soar rollback", "-allow-downtime", "-re-add"},
-		{"status", "soar status", "-json", "-yes"},
-		{"cleanup", "soar cleanup", "-json", "-service"},
-		{"destroy", "soar destroy", "-yes", "-candidate"},
+		{"deploy", "vamos deploy", "-timeout", "vamos destroy"},
+		{"logs", "vamos logs", "-follow", "-re-add"},
+		{"resume", "vamos resume", "-timeout", "-supersede"},
+		{"service-remove", "vamos service remove", "-json", "-reuse-data"},
+		{"service-bind", "vamos service bind", "-timeout", "-yes"},
+		{"run", "vamos run", "-service", "-follow"},
+		{"rollback", "vamos rollback", "-allow-downtime", "-re-add"},
+		{"status", "vamos status", "-json", "-yes"},
+		{"cleanup", "vamos cleanup", "-json", "-service"},
+		{"destroy", "vamos destroy", "-yes", "-candidate"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			var out, diagnostic bytes.Buffer

@@ -27,7 +27,7 @@ class ClientRecoveryTests(unittest.TestCase):
                 self.assertNotEqual(h.env['XDG_CONFIG_HOME'], original['XDG_CONFIG_HOME'])
                 self.assertEqual(h.env['HOME'], original['HOME'])
             self.assertIs(h.env, original)
-            self.assertEqual(h.calls[0][0], ('server', 'connect', '--domain', 'soar.localhost',
+            self.assertEqual(h.calls[0][0], ('server', 'connect', '--domain', 'vamos.localhost',
                                            'local', 'root@127.0.0.1'))
             self.assertEqual(len(h.calls), 1)
 

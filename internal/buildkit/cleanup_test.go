@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestCanceledEntryStillStopsCapturedDaemon(t *testing.T) {

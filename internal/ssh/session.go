@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/session"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/session"
 )
 
 //go:embed session-prepare.sh
@@ -85,7 +85,7 @@ func streamApp(ctx context.Context, target string, request deploy.SessionRequest
 	if !request.Stdin {
 		stdin = nil
 	}
-	command = "/run/soar-sessions/" + token + "/executor internal-session-attach " + token
+	command = "/run/vamos-sessions/" + token + "/executor internal-session-attach " + token
 	code, err := stream(ctx, "ssh", sessionArguments(target, command, request.TTY), stdin, stdout, stderr)
 	if err != nil || code == 255 {
 		if request.Action == "exec" {
@@ -109,7 +109,7 @@ func sessionArguments(target, command string, tty bool) []string {
 func sessionCleanupCommand(token string) string {
 	// The token has already passed a fixed lowercase-hex grammar. Neither
 	// application names nor command arguments ever enter shell source.
-	path := "/run/soar-sessions/" + token
+	path := "/run/vamos-sessions/" + token
 	return "/bin/sh -c 'if [ -e " + path + " ] || [ -L " + path + " ]; then " +
 		"[ -d " + path + " ] && [ ! -L " + path + " ] && [ \"$(stat -c %u " + path + ")\" = 0 ] && [ \"$(stat -c %a " + path + ")\" = 700 ] || exit 1; " +
 		path + "/executor internal-session-cleanup " + token + "; fi'"

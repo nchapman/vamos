@@ -5,15 +5,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestRunPreflightResumesProvenPrestartRemoval(t *testing.T) {
 	m, _ := setup(t)
 	j := &journal{Version: 4, HostID: strings.Repeat("a", 32), Status: Status{App: "notes"}}
 	op := strings.Repeat("b", 32)
-	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "create-intent", Container: "soar-run-" + op, Image: "sha256:" + strings.Repeat("c", 64)}, DockerID: strings.Repeat("d", 64), Config: config.Service{Image: "alpine:3", Update: config.UpdateAuto, Command: []string{"true"}}}
+	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "create-intent", Container: "vamos-run-" + op, Image: "sha256:" + strings.Repeat("c", 64)}, DockerID: strings.Repeat("d", 64), Config: config.Service{Image: "alpine:3", Update: config.UpdateAuto, Command: []string{"true"}}}
 	if err := m.saveRun(j, r); err != nil {
 		t.Fatal(err)
 	}

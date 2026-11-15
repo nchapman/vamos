@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 func TestSecretBatchSetReplacesEachConsumerOnce(t *testing.T) {
@@ -78,7 +78,7 @@ func TestSecretSetRefusalsDoNotStageOrReplace(t *testing.T) {
 			case "missing-image":
 				delete(f.docker.images, j.ServiceStates["backend"].Current.Image)
 			case "drift":
-				f.docker.containers[j.ServiceStates["backend"].Current.Container].Config.Labels["soar.host"] = "foreign"
+				f.docker.containers[j.ServiceStates["backend"].Current.Container].Config.Labels["vamos.host"] = "foreign"
 			case "incomplete":
 				f.failHealth["web"] = true
 				if _, err := f.deploy(changedMultiApp("pending"), strings.Repeat("3", 32)); err == nil {

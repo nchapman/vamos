@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // This inventory deliberately does not reconstruct runtime env/config: old
@@ -42,7 +42,7 @@ func newMultiMaintenanceInventory(t *testing.T) *multiMaintenanceInventory {
 	f.net = &resourceInspection{Name: network(j)}
 	f.net.ID = strings.Repeat("f", 64)
 	f.net.Driver = "bridge"
-	f.net.Labels = map[string]string{"soar.host": j.HostID, "soar.app": j.App}
+	f.net.Labels = map[string]string{"vamos.host": j.HostID, "vamos.app": j.App}
 	f.net.Containers = map[string]json.RawMessage{}
 	m.Run = func(_ context.Context, name string, args []string, _ []byte) (process.Result, error) {
 		if name != "docker" || len(args) < 2 {
@@ -137,9 +137,9 @@ func (f *multiMaintenanceInventory) add(r *release) *resourceInspection {
 	v := &resourceInspection{Name: "/" + r.Container, Image: r.Image}
 	v.ID = fmt.Sprintf("%064x", len(f.containers)+1)
 	v.Config.Image = r.Image
-	v.Config.Labels = map[string]string{"soar.host": f.j.HostID, "soar.app": f.j.App, "soar.operation": r.Operation}
+	v.Config.Labels = map[string]string{"vamos.host": f.j.HostID, "vamos.app": f.j.App, "vamos.operation": r.Operation}
 	if r.Service != "" {
-		v.Config.Labels["soar.service"] = r.Service
+		v.Config.Labels["vamos.service"] = r.Service
 	}
 	v.HostConfig.NetworkMode = network(f.j)
 	v.NetworkSettings.Networks = map[string]json.RawMessage{network(f.j): json.RawMessage(`{"NetworkID":"` + f.net.ID + `"}`)}
@@ -264,17 +264,17 @@ func TestMultiMaintenanceContainerIdentityAndReplay(t *testing.T) {
 			p := plannedContainer{Name: r.Container, Service: service, Operation: r.Operation, ID: v.ID, Image: r.Image, NetworkID: f.net.ID}
 			switch mode {
 			case "wrong-service":
-				v.Config.Labels["soar.service"] = "other"
+				v.Config.Labels["vamos.service"] = "other"
 			case "missing-service":
-				delete(v.Config.Labels, "soar.service")
+				delete(v.Config.Labels, "vamos.service")
 			case "empty-service":
-				v.Config.Labels["soar.service"] = ""
+				v.Config.Labels["vamos.service"] = ""
 			case "legacy-service-label":
-				v.Config.Labels["soar.service"] = "worker"
+				v.Config.Labels["vamos.service"] = "worker"
 			case "foreign-host":
-				v.Config.Labels["soar.host"] = strings.Repeat("d", 32)
+				v.Config.Labels["vamos.host"] = strings.Repeat("d", 32)
 			case "foreign-app":
-				v.Config.Labels["soar.app"] = "notes-worker"
+				v.Config.Labels["vamos.app"] = "notes-worker"
 			case "prefix":
 				p.Name += "-extra"
 				v.Name = "/" + p.Name

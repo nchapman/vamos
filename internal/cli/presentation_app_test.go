@@ -12,18 +12,18 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/registry"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/registry"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 const visualOperation = "5ec713c03bfd4d64867f6edcb7da0970"
 
 func presentationStatusFixture() *deploy.Status {
 	return &deploy.Status{App: "ledger", Phase: "updating", Operation: visualOperation, Services: map[string]deploy.ServiceStatus{
-		"web":      {Kind: "public", Phase: "ready", Running: true, Available: true, URL: "https://ledger.example.net", Operation: visualOperation, Container: "soar-ledger-web-current", Image: "registry.example.net/ledger:v7", Domains: []deploy.DomainStatus{{Hostname: "www.ledger.example.net", Route: "configured", DNS: "pending", Certificate: "pending", HTTPS: "pending"}}},
-		"database": {Kind: "private", Phase: "starting", Unavailable: true, DataMayHaveChanged: true, Operation: visualOperation, Container: "soar-ledger-database-retired", Candidate: "soar-ledger-database-candidate", Image: "postgres:17"},
+		"web":      {Kind: "public", Phase: "ready", Running: true, Available: true, URL: "https://ledger.example.net", Operation: visualOperation, Container: "vamos-ledger-web-current", Image: "registry.example.net/ledger:v7", Domains: []deploy.DomainStatus{{Hostname: "www.ledger.example.net", Route: "configured", DNS: "pending", Certificate: "pending", HTTPS: "pending"}}},
+		"database": {Kind: "private", Phase: "starting", Unavailable: true, DataMayHaveChanged: true, Operation: visualOperation, Container: "vamos-ledger-database-retired", Candidate: "vamos-ledger-database-candidate", Image: "postgres:17"},
 	}, Volumes: []deploy.VolumeStatus{{Service: "database", Name: "ledger-data", Mount: "/var/lib/postgresql/data", ID: "volume-identity-0123456789", State: "attached", DataMayHaveChanged: true}}, Secrets: []deploy.SecretStatus{{Name: "database-password", StagedVersion: "secret-version-new", AppliedVersion: "secret-version-old", Pending: true, Services: []string{"web", "database"}, AppliedVersions: map[string]string{"web": "secret-version-old", "database": "secret-version-new"}}}}
 }
 func presentationReportFixture() appReport {
@@ -37,13 +37,13 @@ func TestStatusPresentationPreservesFactsAndRecoveryOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := ansi.Strip(out.String())
-		for _, want := range []string{"STATUS", "ledger", "home", "root@home.example.net", "Needs attention", "updating", visualOperation, "Host operation active", "Running", "Available", "Unavailable", "Data may have changed", "soar-ledger-web-current", "registry.example.net/ledger:v7", "soar-ledger-database-candidate", "ledger-data", "/var/lib/postgresql/data", "volume-identity-0123456789", "attached", "database-password", "secret-version-new", "secret-version-old", "Pending", "www.ledger.example.net", "DNS", "Certificate", "HTTPS"} {
+		for _, want := range []string{"STATUS", "ledger", "home", "root@home.example.net", "Needs attention", "updating", visualOperation, "Host operation active", "Running", "Available", "Unavailable", "Data may have changed", "vamos-ledger-web-current", "registry.example.net/ledger:v7", "vamos-ledger-database-candidate", "ledger-data", "/var/lib/postgresql/data", "volume-identity-0123456789", "attached", "database-password", "secret-version-new", "secret-version-old", "Pending", "www.ledger.example.net", "DNS", "Certificate", "HTTPS"} {
 			// Wide tables use uppercase headings; values must remain exact.
 			if !strings.Contains(strings.ToLower(text), strings.ToLower(want)) {
 				t.Errorf("width %d missing %q in %s", width, want, text)
 			}
 		}
-		command := "soar logs --server home --app ledger --service database --candidate"
+		command := "vamos logs --server home --app ledger --service database --candidate"
 		if !strings.Contains(text, command) || strings.Index(text, command) > strings.Index(text, "Services\n") {
 			t.Fatalf("recovery buried or changed: %s", text)
 		}
@@ -66,7 +66,7 @@ func TestStatusPresentationDoesNotInvertAvailabilityOrLeakOtherServices(t *testi
 	if !strings.Contains(text, "Available no / Unavailable no") {
 		t.Fatal(text)
 	}
-	for _, unexpected := range []string{"Needs attention", "soar-ledger-database-candidate", "ledger-data", "rollback does not restore data"} {
+	for _, unexpected := range []string{"Needs attention", "vamos-ledger-database-candidate", "ledger-data", "rollback does not restore data"} {
 		if strings.Contains(text, unexpected) {
 			t.Fatalf("unselected service output %q", unexpected)
 		}
@@ -137,7 +137,7 @@ func TestStyledFailureDistinguishesRefusalAndUnknown(t *testing.T) {
 	r.mutation = true
 	request := deploy.Request{Operation: visualOperation}
 	unknown := p.appFailure(r, request, deploy.Response{}, errors.New("connection ended"), "")
-	if !strings.Contains(unknown, "Outcome unknown") || !strings.Contains(unknown, "soar status --server home --app ledger") || strings.Contains(unknown, "service bind") {
+	if !strings.Contains(unknown, "Outcome unknown") || !strings.Contains(unknown, "vamos status --server home --app ledger") || strings.Contains(unknown, "service bind") {
 		t.Fatal(unknown)
 	}
 	known := p.appFailure(r, request, deploy.Response{Version: 1, Error: "refused"}, errors.New("request refused"), "")
@@ -192,7 +192,7 @@ func TestCapturedApprovalPinsTargetAndPreservesScopeAndAuthorization(t *testing.
 		if action == "rollback" && (!strings.Contains(command, "--service database") || !strings.Contains(command, "--allow-downtime=false")) {
 			t.Fatal(command)
 		}
-		if action == "service-remove" && (!strings.HasPrefix(command, "soar service remove database ") || !strings.Contains(command, "--allow-protected=false")) {
+		if action == "service-remove" && (!strings.HasPrefix(command, "vamos service remove database ") || !strings.Contains(command, "--allow-protected=false")) {
 			t.Fatal(command)
 		}
 	}
@@ -214,9 +214,9 @@ func TestChangedDataAloneIsNotReportedAsAFailedService(t *testing.T) {
 }
 
 func TestPresentationVisualFixtures(t *testing.T) {
-	dir := os.Getenv("SOAR_VISUAL_DIR")
+	dir := os.Getenv("VAMOS_VISUAL_DIR")
 	if dir == "" {
-		t.Skip("set SOAR_VISUAL_DIR to capture production presentation fixtures")
+		t.Skip("set VAMOS_VISUAL_DIR to capture production presentation fixtures")
 	}
 	type fixture struct {
 		Case  string `json:"case"`
@@ -236,7 +236,7 @@ func TestPresentationVisualFixtures(t *testing.T) {
 			previewReport.mutation = true
 			previewReport.approval = capturedApproval(flag.NewFlagSet("destroy", flag.ContinueOnError), "destroy", r.server.Name, r.app)
 			prefix := p.header("destroy", r.app, r.server.Name, r.server.Target) + p.field("Requested operation", visualOperation) + "\n"
-			plan := &deploy.Plan{Action: "destroy", App: r.app, Containers: []string{"soar-ledger-web-" + visualOperation, "soar-ledger-database-" + visualOperation}, Images: []string{"sha256:" + strings.Repeat("a", 64)}, Archives: []string{"/var/lib/soar/apps/ledger/context-" + visualOperation + ".tar"}, Network: "soar-ledger", Retained: []string{"volume ledger-data", "all secret versions"}}
+			plan := &deploy.Plan{Action: "destroy", App: r.app, Containers: []string{"vamos-ledger-web-" + visualOperation, "vamos-ledger-database-" + visualOperation}, Images: []string{"sha256:" + strings.Repeat("a", 64)}, Archives: []string{"/var/lib/vamos/apps/ledger/context-" + visualOperation + ".tar"}, Network: "vamos-ledger", Retained: []string{"volume ledger-data", "all secret versions"}}
 			failureReport := r
 			failureReport.action = "deploy"
 			failureReport.mutation = true
@@ -261,8 +261,8 @@ func TestPresentationVisualFixtures(t *testing.T) {
 			group.Container = ""
 			group.DesiredInstances, group.CurrentInstances, group.RunningInstances, group.AvailableInstances = 2, 2, 2, 2
 			group.Instances = []deploy.InstanceStatus{
-				{Ordinal: 1, Container: "soar-ledger-web-" + visualOperation + "-1", Port: "24001", Running: true, Available: true},
-				{Ordinal: 2, Container: "soar-ledger-web-" + visualOperation + "-2", Port: "24002", Running: true, Available: true},
+				{Ordinal: 1, Container: "vamos-ledger-web-" + visualOperation + "-1", Port: "24001", Running: true, Available: true},
+				{Ordinal: 2, Container: "vamos-ledger-web-" + visualOperation + "-2", Port: "24002", Running: true, Available: true},
 			}
 			replicated.Services["web"] = group
 			zero := 0

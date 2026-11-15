@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestMaintenanceAllowsOtherAppWithSharedNamePrefix(t *testing.T) {
@@ -18,7 +18,7 @@ func TestMaintenanceAllowsOtherAppWithSharedNamePrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := strings.Repeat("c", 64)
-	name := "soar-notes-worker-" + strings.Repeat("d", 32)
+	name := "vamos-notes-worker-" + strings.Repeat("d", 32)
 	m.Run = func(_ context.Context, _ string, args []string, _ []byte) (process.Result, error) {
 		var value any
 		switch {
@@ -27,7 +27,7 @@ func TestMaintenanceAllowsOtherAppWithSharedNamePrefix(t *testing.T) {
 		case args[0] == "container" && args[1] == "inspect":
 			v := resourceInspection{Name: "/" + name, Image: "sha256:" + strings.Repeat("e", 64)}
 			v.ID = id
-			v.Config.Labels = map[string]string{"soar.host": j.HostID, "soar.app": "notes-worker"}
+			v.Config.Labels = map[string]string{"vamos.host": j.HostID, "vamos.app": "notes-worker"}
 			value = []resourceInspection{v}
 		case args[1] == "ls":
 			return process.Result{}, nil

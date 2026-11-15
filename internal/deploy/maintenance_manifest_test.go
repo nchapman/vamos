@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func preparedDestroyFixture(t *testing.T, count int) (*flowEngine, Request, *journal, *maintenance) {
@@ -162,7 +162,7 @@ func TestMaintenancePublicationResumeNeverExpands(t *testing.T) {
 	if err != nil || resp.Status.Phase != "destroyed" {
 		t.Fatal("exact resume failed", err)
 	}
-	if _, err = os.Stat(f.m.path("/var/lib/soar/maintenance")); !errors.Is(err, os.ErrNotExist) {
+	if _, err = os.Stat(f.m.path("/var/lib/vamos/maintenance")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("maintenance namespace prevents host teardown", err)
 	}
 }

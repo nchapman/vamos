@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestMaintenanceDistinctRetainedPreview(t *testing.T) {
@@ -61,7 +61,7 @@ func TestMaintenanceRunRemovalProofAcrossPagesAndInline(t *testing.T) {
 			}
 			image := "sha256:" + strings.Repeat("9", 64)
 			op := strings.Repeat("d", 32)
-			r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "create-intent", Container: "soar-run-" + op, Image: image}, DockerID: strings.Repeat("8", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+			r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "create-intent", Container: "vamos-run-" + op, Image: image}, DockerID: strings.Repeat("8", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 			if err := f.m.saveRun(j, r); err != nil {
 				t.Fatal(err)
 			}
@@ -144,7 +144,7 @@ func TestMaintenanceCleanupPreservesPrunedOperationReplayFence(t *testing.T) {
 	code := 0
 	for i := 0; i < 33; i++ {
 		op := fmt.Sprintf("%032x", i+100)
-		r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "worker", Phase: "complete", Container: "soar-run-" + op, Image: "sha256:" + strings.Repeat("9", 64), ExitCode: &code}, DockerID: strings.Repeat("8", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+		r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "worker", Phase: "complete", Container: "vamos-run-" + op, Image: "sha256:" + strings.Repeat("9", 64), ExitCode: &code}, DockerID: strings.Repeat("8", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 		if err := f.m.saveRun(j, r); err != nil {
 			t.Fatal(err)
 		}

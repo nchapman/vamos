@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/agentclient"
-	"github.com/nchapman/soar/internal/agentproto"
-	"github.com/nchapman/soar/internal/buildmeta"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/session"
+	"github.com/nchapman/vamos/internal/agentclient"
+	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/session"
 )
 
 // stampAgentBuild gives the test binary a valid embedded bundle identity so
@@ -31,7 +31,7 @@ func stampAgentBuild(t *testing.T) {
 	oldPeer := peerAccountName
 	if current, err := user.Current(); err == nil {
 		// On Linux the daemon enforces SO_PEERCRED against the restricted
-		// account; the harness user is not "soar", so enforce against the real
+		// account; the harness user is not "vamos", so enforce against the real
 		// connecting account instead of skipping the check.
 		peerAccountName = current.Username
 	}
@@ -53,7 +53,7 @@ func testDaemon(t *testing.T, execute func(context.Context, deploy.Request, []by
 	t.Helper()
 	queueRoot := filepath.Join(t.TempDir(), "queue")
 	// macOS temp directories exceed the 104-byte unix socket path limit.
-	socketDir, err := os.MkdirTemp("/tmp", "soar-agent-test-")
+	socketDir, err := os.MkdirTemp("/tmp", "vamos-agent-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func testDaemon(t *testing.T, execute func(context.Context, deploy.Request, []by
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(t.TempDir(), "host.json")
-	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:soar": "x", "group:soar": "x"}, Packages: []lifecycle.Package{{Name: "docker.io", Version: "1.0"}}}
+	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:vamos": "x", "group:vamos": "x"}, Packages: []lifecycle.Package{{Name: "docker.io", Version: "1.0"}}}
 	data, _ := json.Marshal(state)
 	if err := os.WriteFile(statePath, data, 0600); err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func testDaemon(t *testing.T, execute func(context.Context, deploy.Request, []by
 		t.Fatal(err)
 	}
 	// The daemon expects the bridge's fixed principal announcement line.
-	if _, err := conn.Write([]byte("SOAR-BRIDGE ci:billing\n")); err != nil {
+	if _, err := conn.Write([]byte("VAMOS-BRIDGE ci:billing\n")); err != nil {
 		cancel()
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestDaemonSessionReportsAttachFailureAsError(t *testing.T) {
 func TestDaemonPreservesQueuedWorkAcrossRestartBeforeAdmission(t *testing.T) {
 	stampAgentBuild(t)
 	queueRoot := filepath.Join(t.TempDir(), "queue")
-	socketDir, err := os.MkdirTemp("/tmp", "soar-agent-test-")
+	socketDir, err := os.MkdirTemp("/tmp", "vamos-agent-test-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestDaemonPreservesQueuedWorkAcrossRestartBeforeAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(t.TempDir(), "host.json")
-	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:soar": "x", "group:soar": "x"}, Packages: []lifecycle.Package{{Name: "docker.io", Version: "1.0"}}}
+	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:vamos": "x", "group:vamos": "x"}, Packages: []lifecycle.Package{{Name: "docker.io", Version: "1.0"}}}
 	data, _ := json.Marshal(state)
 	if err := os.WriteFile(statePath, data, 0600); err != nil {
 		t.Fatal(err)
@@ -409,7 +409,7 @@ func TestDaemonPreservesQueuedWorkAcrossRestartBeforeAdmission(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := conn.Write([]byte("SOAR-BRIDGE ci:all\n")); err != nil {
+		if _, err := conn.Write([]byte("VAMOS-BRIDGE ci:all\n")); err != nil {
 			t.Fatal(err)
 		}
 		cl, err := agentclient.Handshake(context.Background(), conn, nil)

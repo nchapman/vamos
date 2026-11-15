@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/registry"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/registry"
+	"github.com/nchapman/vamos/internal/ssh"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -59,7 +59,7 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 	health := flags.String("health", "/", "HTTP health path")
 	private := flags.Bool("private", false, "private service without HTTP")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: soar init APP --port PORT [-f soar.yaml] [--server NAME] [--service NAME] [--health PATH]\n       soar init APP --private [-f soar.yaml] [--server NAME] [--service NAME]")
+		fmt.Fprintln(flags.Output(), "Usage: vamos init APP --port PORT [-f vamos.yaml] [--server NAME] [--service NAME] [--health PATH]\n       vamos init APP --private [-f vamos.yaml] [--server NAME] [--service NAME]")
 	}
 	normalized, err := initArguments(args)
 	if err != nil {
@@ -100,12 +100,12 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 		return lifecycleError(stderr, err)
 	}
 	dir := filepath.Dir(path)
-	if filepath.Base(path) == ".soar" {
-		return lifecycleError(stderr, errors.New("output conflicts with .soar metadata"))
+	if filepath.Base(path) == ".vamos" {
+		return lifecycleError(stderr, errors.New("output conflicts with .vamos metadata"))
 	}
 	for p := dir; filepath.Dir(p) != p; p = filepath.Dir(p) {
-		if filepath.Base(p) == ".soar" {
-			return lifecycleError(stderr, errors.New("output must not be inside .soar metadata"))
+		if filepath.Base(p) == ".vamos" {
+			return lifecycleError(stderr, errors.New("output must not be inside .vamos metadata"))
 		}
 	}
 	// Never create output parents or follow a symlink in the selected path.
@@ -155,7 +155,7 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 		return lifecycleError(stderr, err)
 	}
 	partial := func(err error) int {
-		return lifecycleError(stderr, fmt.Errorf("init partially wrote %s; configuration or .soar metadata may remain; inspect before retrying (nothing removed): %w", path, err))
+		return lifecycleError(stderr, fmt.Errorf("init partially wrote %s; configuration or .vamos metadata may remain; inspect before retrying (nothing removed): %w", path, err))
 	}
 	_, writeErr := f.Write(data)
 	syncErr := f.Sync()
@@ -166,7 +166,7 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 	if server.Name != "" {
 		// bindProject does not re-check ignore metadata for an already equal binding.
 		// Protect it here too, without replacing any existing file.
-		root := filepath.Join(dir, ".soar")
+		root := filepath.Join(dir, ".vamos")
 		if err := os.MkdirAll(root, 0700); err != nil {
 			return partial(err)
 		}
@@ -203,9 +203,9 @@ func initMetadataPreflight(dir, app string, server registry.Server) error {
 		return err
 	}
 	if current != nil && *current != (binding{Version: 1, App: app, Server: server.Name, Target: server.Target}) {
-		return errors.New("existing .soar binding differs from requested app/server")
+		return errors.New("existing .vamos binding differs from requested app/server")
 	}
-	root := filepath.Join(dir, ".soar")
+	root := filepath.Join(dir, ".vamos")
 	for _, name := range []string{"binding.lock", ".gitignore"} {
 		if err := safeMetadata(filepath.Join(root, name)); err != nil {
 			return err
@@ -219,7 +219,7 @@ func initMetadataPreflight(dir, app string, server registry.Server) error {
 		return err
 	}
 	if string(bytes.TrimSpace(data)) != "*" {
-		return errors.New("existing .soar/.gitignore must contain '*' to protect project metadata")
+		return errors.New("existing .vamos/.gitignore must contain '*' to protect project metadata")
 	}
 	return nil
 }

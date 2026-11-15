@@ -83,7 +83,7 @@ func TestPlanStoreFailsClosed(t *testing.T) {
 				r.Bindings.Stops["web"] = strings.Repeat("9", 32)
 				b, e = json.Marshal(r)
 			case "parent-writable":
-				if e = os.Chmod(filepath.Join(m.Root, "var/lib/soar"), 0777); e != nil {
+				if e = os.Chmod(filepath.Join(m.Root, "var/lib/vamos"), 0777); e != nil {
 					t.Fatal(e)
 				}
 			}

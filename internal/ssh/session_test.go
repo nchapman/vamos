@@ -11,15 +11,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/session"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/session"
 )
 
 func sessionFixture() (deploy.SessionRequest, session.Preparation) {
 	r := deploy.SessionRequest{Version: 1, Action: "exec", Host: lifecycle.Config{Name: "home", Domain: "example.com"}, App: "hello", Service: "web", Command: []string{"printf", "", "$(touch /tmp/not-run)", "two words", "\"; café"}}
-	p := session.Preparation{Version: 1, Token: strings.Repeat("a", 32), Target: deploy.SessionTarget{HostIdentity: strings.Repeat("b", 32), App: "hello", Service: "web", Incarnation: strings.Repeat("c", 32), Operation: strings.Repeat("d", 32), ContainerID: strings.Repeat("e", 64), Container: "soar-hello-web"}}
+	p := session.Preparation{Version: 1, Token: strings.Repeat("a", 32), Target: deploy.SessionTarget{HostIdentity: strings.Repeat("b", 32), App: "hello", Service: "web", Incarnation: strings.Repeat("c", 32), Operation: strings.Repeat("d", 32), ContainerID: strings.Repeat("e", 64), Container: "vamos-hello-web"}}
 	return r, p
 }
 

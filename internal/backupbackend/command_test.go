@@ -40,9 +40,9 @@ func TestOfficialCommandSignatures(t *testing.T) {
 // share the tool-store filesystem.
 // This does NOT test S3 or initialize a repository.
 func TestActualPinnedTool(t *testing.T) {
-	root := os.Getenv("SOAR_TEST_RESTIC_ROOT")
+	root := os.Getenv("VAMOS_TEST_RESTIC_ROOT")
 	if root == "" {
-		t.Skip("set SOAR_TEST_RESTIC_ROOT on disposable Linux root host")
+		t.Skip("set VAMOS_TEST_RESTIC_ROOT on disposable Linux root host")
 	}
 	if runtime.GOOS != "linux" {
 		t.Fatal("Linux required")

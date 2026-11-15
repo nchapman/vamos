@@ -136,7 +136,7 @@ func ValidatePlanRecord(r PlanRecord) error {
 }
 
 func (m *Manager) planDirectory() store {
-	return store{dir: filepath.Join(m.Root, "var/lib/soar/backups/plans")}
+	return store{dir: filepath.Join(m.Root, "var/lib/vamos/backups/plans")}
 }
 func (m *Manager) loadPlan(app, hostID string) (*PlanRecord, error) {
 	if !ValidName(app) || !ValidOperation(hostID) {

@@ -3,7 +3,7 @@ package executor
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 	"strings"
 	"testing"
 )

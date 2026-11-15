@@ -13,22 +13,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/backupbackend"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/ssh"
 	"golang.org/x/term"
 )
 
 const backupHelp = `Usage:
-  soar backup configure --app APP [-f backup.yaml] [--server NAME] [--yes]
-  soar backup plan --app APP [--server NAME] [--json]
-  soar backup repository add [flags] NAME
-  soar backup repository list [--server NAME] [--json]
-  soar backup repository show [flags] NAME
-  soar backup repository verify [flags] NAME
-  soar backup repository resume [flags] NAME OPERATION
+  vamos backup configure --app APP [-f backup.yaml] [--server NAME] [--yes]
+  vamos backup plan --app APP [--server NAME] [--json]
+  vamos backup repository add [flags] NAME
+  vamos backup repository list [--server NAME] [--json]
+  vamos backup repository show [flags] NAME
+  vamos backup repository verify [flags] NAME
+  vamos backup repository resume [flags] NAME OPERATION
 Flags precede positional arguments. All commands accept --server, --executor,
 --timeout and --json. Add requires --recovery-file FILE and confirmation (--yes).
 Add options: --mode new|connect --endpoint URL --bucket NAME --prefix PREFIX
@@ -36,7 +36,7 @@ Add options: --mode new|connect --endpoint URL --bucket NAME --prefix PREFIX
 --credentials-stdin.
 Credentials stdin is one bounded JSON object: access_key_id, secret_access_key,
 session_token, password (connect only), ca_certificate. No secret value flags.
-New repositories use an operation-scoped prefix (base default: soar).
+New repositories use an operation-scoped prefix (base default: vamos).
 Connect uses the exact prefix and requires the full repository ID noninteractively.
 List/show report recorded metadata; verify is read-only remote verification.
 Resume uses the ORIGINAL operation ID, stored credentials and configuration.
@@ -192,7 +192,7 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 			for _, p := range []struct {
 				label string
 				value *string
-			}{{"Mode (new/connect)", &mode}, {"Endpoint", &endpoint}, {"Bucket", &bucket}, {"Prefix (new default soar)", &prefix}, {"Region (default us-east-1)", &region}, {"Recovery file", &path}} {
+			}{{"Mode (new/connect)", &mode}, {"Endpoint", &endpoint}, {"Bucket", &bucket}, {"Prefix (new default vamos)", &prefix}, {"Region (default us-east-1)", &region}, {"Recovery file", &path}} {
 				if e = ask(p.label, p.value); e != nil {
 					return lifecycleError(stderr, e)
 				}
@@ -220,7 +220,7 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 				return usageError(stderr, "new repositories do not accept --repository-id")
 			}
 			if prefix == "" {
-				prefix = "soar"
+				prefix = "vamos"
 			}
 			prefix = strings.TrimRight(prefix, "/") + "/" + operation
 		} else {
@@ -338,15 +338,15 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 	}
 	result, e := run(req, private)
 	if e != nil {
-		fmt.Fprintf(stderr, "Repository outcome unknown: target %s (%s), name %s, operation %s. Keep the recovery kit. Inspect: soar backup repository show --server %s %s\n", server.Name, server.Target, name, req.Operation, server.Name, name)
+		fmt.Fprintf(stderr, "Repository outcome unknown: target %s (%s), name %s, operation %s. Keep the recovery kit. Inspect: vamos backup repository show --server %s %s\n", server.Name, server.Target, name, req.Operation, server.Name, name)
 		if req.Operation != "" {
-			fmt.Fprintf(stderr, "Resume: soar backup repository resume --server %s %s %s\n", server.Name, name, req.Operation)
+			fmt.Fprintf(stderr, "Resume: vamos backup repository resume --server %s %s %s\n", server.Name, name, req.Operation)
 		}
 		return 1
 	}
 	if staged != nil {
 		if result.Repository == nil || !backupFullID(result.Repository.RepositoryID) || result.Repository.Name != name || result.Repository.Operation != req.Operation || (req.ExpectedID != "" && result.Repository.RepositoryID != req.ExpectedID) {
-			fmt.Fprintf(stderr, "Registration may have completed; keep pending kit. Target %s, name %s, operation %s. Inspect with soar backup repository show --server %s %s; resume with soar backup repository resume --server %s %s %s\n", server.Target, name, req.Operation, server.Name, name, server.Name, name, req.Operation)
+			fmt.Fprintf(stderr, "Registration may have completed; keep pending kit. Target %s, name %s, operation %s. Inspect with vamos backup repository show --server %s %s; resume with vamos backup repository resume --server %s %s %s\n", server.Target, name, req.Operation, server.Name, name, server.Name, name, req.Operation)
 			return 1
 		}
 		kit.RepositoryID = result.Repository.RepositoryID

@@ -22,8 +22,8 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 		}
 	}
 	if !receipt {
-		if _, err := os.Lstat(m.path("/var/lib/soar")); !errors.Is(err, os.ErrNotExist) {
-			return errors.New("/var/lib/soar already exists without a valid receipt; refusing adoption")
+		if _, err := os.Lstat(m.path("/var/lib/vamos")); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("/var/lib/vamos already exists without a valid receipt; refusing adoption")
 		}
 	}
 	for _, unit := range units {
@@ -41,12 +41,12 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 			return fmt.Errorf("pre-existing unit %s (load state: %q)", unit, strings.TrimSpace(string(out.Stdout)))
 		}
 	}
-	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/bin/caddy", "/usr/local/bin/caddy", "/usr/local/bin/soar", "/etc/soar", "/etc/ssh/sshd_config.d/soar.conf", "/etc/systemd/system/" + agentUnit} {
+	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/bin/caddy", "/usr/local/bin/caddy", "/usr/local/bin/vamos", "/etc/vamos", "/etc/ssh/sshd_config.d/vamos.conf", "/etc/systemd/system/" + agentUnit} {
 		if _, err := os.Lstat(m.path(path)); !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("pre-existing executable %s", path)
 		}
 	}
-	for _, account := range [][2]string{{"passwd", "caddy"}, {"group", "caddy"}, {"group", "docker"}, {"passwd", "soar"}, {"group", "soar"}} {
+	for _, account := range [][2]string{{"passwd", "caddy"}, {"group", "caddy"}, {"group", "docker"}, {"passwd", "vamos"}, {"group", "vamos"}} {
 		value, err := m.account(ctx, account[0], account[1])
 		if err != nil {
 			return err
@@ -183,7 +183,7 @@ func (m *Manager) checkStateDirectory(ctx context.Context) error {
 			if s.PurgeApproved {
 				// The final receipt unlink may have completed before its empty
 				// directory was removed. Only authorized purge may reconcile it.
-				files, err := os.ReadDir(m.path("/var/lib/soar/buildkit"))
+				files, err := os.ReadDir(m.path("/var/lib/vamos/buildkit"))
 				if err == nil && len(files) == 0 {
 					continue
 				}
@@ -192,14 +192,14 @@ func (m *Manager) checkStateDirectory(ctx context.Context) error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unexpected Soar state %s; refusing removal", entry.Name())
+			return fmt.Errorf("unexpected Vamos state %s; refusing removal", entry.Name())
 		}
 	}
 	return nil
 }
 
 func (m *Manager) verifyQueueIdle() error {
-	queueRoot := m.path("/var/lib/soar/queue")
+	queueRoot := m.path("/var/lib/vamos/queue")
 	if err := rejectSymlink(queueRoot); err != nil {
 		return err
 	}

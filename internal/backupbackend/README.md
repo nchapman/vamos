@@ -102,7 +102,7 @@ Command signatures and initialization JSON fields were checked against upstream
 v0.19.1 source. Unit tests exercise SDK requests against a synthetic-credential
 httptest TLS endpoint, strict JSON, command signatures, environment isolation,
 output limits, cancellation and error suppression. `TestActualPinnedTool` is
-opt-in on a disposable Linux root host via `SOAR_TEST_RESTIC_ROOT`; it downloads
+opt-in on a disposable Linux root host via `VAMOS_TEST_RESTIC_ROOT`; it downloads
 and executes the pinned binary's version/help commands and tests drift refusal.
 It deliberately corrupts that disposable root's installed binary. It is not a
 real S3 initialization test. No live restic/S3, provider IAM, cross-architecture

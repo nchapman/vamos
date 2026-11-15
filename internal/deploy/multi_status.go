@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 func multiSecretStatuses(state *secrets.State, j *journal) []SecretStatus {

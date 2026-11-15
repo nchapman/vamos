@@ -14,12 +14,12 @@ from checkpoints import Barrier, Client, install
 from client_recovery import fresh_client
 from scenarios import identities, require
 
-UNIT = 'soar-host-operation.service'
+UNIT = 'vamos-host-operation.service'
 
 
 def active_worker_unit(h):
     out = h.command(['systemctl', 'list-units', '--type=service', '--state=active,activating',
-                     '--plain', '--no-legend', '--no-pager', 'soar-op-*.service', UNIT],
+                     '--plain', '--no-legend', '--no-pager', 'vamos-op-*.service', UNIT],
                     user='root').stdout.decode()
     units = [line.split()[0] for line in out.splitlines() if line.strip()]
     require(len(units) == 1, f'expected exactly one active worker unit, found {units!r}')
@@ -101,8 +101,8 @@ def save(h, directory, manifest, build):
     text = (h.root / 'examples/ledger/ledger.py').read_text()
     text = text.replace("return {'status': 'ok'}", "return {'status': 'ok', 'build': BUILD, 'release': os.environ['RELEASE']}")
     (directory / 'ledger.py').write_text('BUILD = ' + repr(build) + '\n' + text)
-    (directory / 'soar.yaml').write_text(json.dumps(manifest, indent=2) + '\n')
-    h.command(['chown', '-R', 'soartest:soartest', str(directory)], user='root')
+    (directory / 'vamos.yaml').write_text(json.dumps(manifest, indent=2) + '\n')
+    h.command(['chown', '-R', 'vamostest:vamostest', str(directory)], user='root')
 
 
 def version(h, host, build, release):
@@ -124,7 +124,7 @@ def build_diagnostics(h, app, base, api, manifest, host):
     value = secrets.token_urlsafe(32)
     h.cli('secrets', 'stage', '--server', 'local', '--app', app, '--stdin', 'diagnostic-only', input=value.encode())
     (bad / 'Dockerfile').write_text('FROM python:3.13-slim\nRUN printf "' + marker + ' ' + value + '\\n" >&2; exit 17\n')
-    h.command(['chown', '-R', 'soartest:soartest', str(bad)], user='root')
+    h.command(['chown', '-R', 'vamostest:vamostest', str(bad)], user='root')
     before = identities(h.status(app))
     result = h.cli('run', '--server', 'local', '--service', 'api', '--', 'python', '-c', 'print("never run")',
                    cwd=bad, expect_error='build failed')
@@ -136,14 +136,14 @@ def build_diagnostics(h, app, base, api, manifest, host):
             'failed build fabricated command execution')
     observed = h.cli('status', '--server', 'local', '--app', app, '--run', operation, '--json').stdout
     logs = h.cli('logs', '--server', 'local', '--app', app, '--run', operation).stdout
-    record = Path('/var/lib/soar/apps') / app / (operation + '.run.json')
+    record = Path('/var/lib/vamos/apps') / app / (operation + '.run.json')
     for output in (observed, logs, record.read_bytes()):
         require(marker.encode() in output and value.encode() not in output, 'persisted run diagnostic missing or unsafe')
     h.cli('service', 'bind', 'api', '--server', 'local', '--app', app, cwd=bad)
     h.cli('deploy', '--server', 'local', cwd=bad, expect_error='build failed')
     failed = stable(h, app, before, before)
     require(marker in failed['last_error'] and value not in json.dumps(failed), 'deploy diagnostic missing or unsafe')
-    require(value.encode() not in (Path('/var/lib/soar/apps') / app / 'state.json').read_bytes(),
+    require(value.encode() not in (Path('/var/lib/vamos/apps') / app / 'state.json').read_bytes(),
             'deploy journal contains a staged secret')
     version(h, host, 'initial', 'initial')
     h.cli('deploy', '--server', 'local', '--supersede', failed['operation'], cwd=api)
@@ -176,7 +176,7 @@ def prepare(h, owner):
     h.cli('run', '--server', 'local', '--service', 'api', '--', './bin/migrate', cwd=api)
     h.cli('deploy', '--server', 'local', cwd=api)
     h.cli('deploy', '--server', 'local', cwd=worker)
-    host = app + '-api.soar.localhost'
+    host = app + '-api.vamos.localhost'
     h.hosts([host])
     row = json.loads(h.https(host, '/entries', {'amount_cents': 812, 'description': app}))
     version(h, host, 'initial', 'initial')
@@ -225,7 +225,7 @@ def prepare(h, owner):
     # Lose only the client registry, retaining independently trusted SSH material.
     # Re-registration must not bootstrap, rewrite the pending journal or restart apps.
     observed = h.status(app)
-    journal_path = '/var/lib/soar/apps/' + app + '/state.json'
+    journal_path = '/var/lib/vamos/apps/' + app + '/state.json'
     journal_before = h.command(['sha256sum', journal_path], user='root').stdout
     with fresh_client(h):
         require(h.status(app) == observed, 'connect changed pending app state')
@@ -246,7 +246,7 @@ def prepare(h, owner):
 
     retire = fixture(h, base, 'retire', {'app': app, 'services': {'retire': copy.deepcopy(web)}}, 'retire')
     h.cli('deploy', '--server', 'local', cwd=retire)
-    retire_host = app + '-retire.soar.localhost'
+    retire_host = app + '-retire.vamos.localhost'
     h.hosts([retire_host])
     before = identities(h.status(app))
     target = before['retire'][0]
@@ -332,7 +332,7 @@ def verify_restart(h, owner):
     require(checkpoint['init'] != init_identity(), 'machine init was not restarted')
     boot = h.command(['systemctl', 'is-system-running', '--wait'], user='root', check=False, timeout=180)
     require(boot.stdout.strip() in (b'running', b'degraded'), 'machine did not finish boot')
-    h.command(['systemctl', 'is-active', '--quiet', 'ssh', 'docker', 'caddy', 'soar-agent'], user='root')
+    h.command(['systemctl', 'is-active', '--quiet', 'ssh', 'docker', 'caddy', 'vamos-agent'], user='root')
     app, host = checkpoint['app'], checkpoint['host']
     no_restart(h, checkpoint['old_worker'])
     wait_database(h, checkpoint['before']['database'][0])

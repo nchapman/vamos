@@ -35,7 +35,7 @@ func TestBootstrapProvisionsRestrictedBridgeKey(t *testing.T) {
 	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(m.path("/etc/soar/authorized_keys"))
+	data, err := os.ReadFile(m.path("/etc/vamos/authorized_keys"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +44,11 @@ func TestBootstrapProvisionsRestrictedBridgeKey(t *testing.T) {
 	if line != want || strings.Count(string(data), "\n") != 1 {
 		t.Fatalf("bridge key line mismatch:\n got %q\nwant %q", line, want)
 	}
-	info, err := os.Lstat(m.path("/etc/soar/authorized_keys"))
+	info, err := os.Lstat(m.path("/etc/vamos/authorized_keys"))
 	if err != nil || info.Mode().Perm() != 0644 {
 		t.Fatalf("bridge key permissions: %v %v", info, err)
 	}
-	principals, err := os.ReadFile(m.path("/etc/soar/principals.json"))
+	principals, err := os.ReadFile(m.path("/etc/vamos/principals.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,14 +62,14 @@ func TestBootstrapWithoutDeployKeyLeavesBridgeClosed(t *testing.T) {
 	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(m.path("/etc/soar/authorized_keys"))
+	data, err := os.ReadFile(m.path("/etc/vamos/authorized_keys"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(data) != 0 {
 		t.Fatalf("bootstrap without a deploy key installed bridge access: %q", data)
 	}
-	if _, err := os.Stat(filepath.Join(m.path("/etc/soar"), "agent.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(m.path("/etc/vamos"), "agent.json")); err != nil {
 		t.Fatal(err)
 	}
 }

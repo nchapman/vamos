@@ -18,7 +18,7 @@ await mkdir(output, {recursive: true});
 await rm(join(output, 'evaluation.json'), {force: true});
 await rm(join(output, 'fixtures.json'), {force: true});
 const generated = spawnSync('go', ['test', './internal/cli', '-run', '^TestPresentationVisualFixtures$', '-count=1', '-timeout=2m'], {
-  cwd: repo, env: {...process.env, SOAR_VISUAL_DIR: output}, stdio: 'inherit', timeout: 300_000,
+  cwd: repo, env: {...process.env, VAMOS_VISUAL_DIR: output}, stdio: 'inherit', timeout: 300_000,
 });
 if (generated.error) throw generated.error;
 if (generated.status !== 0) throw new Error(`Production fixture test failed (${generated.status ?? generated.signal})`);
@@ -51,8 +51,8 @@ const errors = [];
 let failure;
 let browserVersion;
 try {
-  browser = await chromium.launch(process.env.SOAR_VISUAL_CHROME ?
-    {executablePath: process.env.SOAR_VISUAL_CHROME, headless: true, timeout: browserDeadline} : {channel: 'chrome', headless: true, timeout: browserDeadline});
+  browser = await chromium.launch(process.env.VAMOS_VISUAL_CHROME ?
+    {executablePath: process.env.VAMOS_VISUAL_CHROME, headless: true, timeout: browserDeadline} : {channel: 'chrome', headless: true, timeout: browserDeadline});
   browserVersion = browser.version();
   const page = await withDeadline(browser.newPage({viewport: {width: 1600, height: 1200}, deviceScaleFactor: 1}), browserDeadline, 'Browser page startup');
   page.setDefaultTimeout(browserDeadline);
@@ -105,7 +105,7 @@ try {
     fontFamily: 'Menlo, Consolas, "Liberation Mono", monospace', fontSize: 14, lineHeight: 1.25,
     sourceFixtures: fixtures.length, screenshots: results.length,
     normalization: 'SGR removed; soft wraps joined; 8-column ASCII tab expansion; right ASCII space padding ignored. Tabs are not byte-matched.',
-    selection: 'Standalone unindented soar lines only; xterm selection to a nonexecuting textarea, never system clipboard or shell.',
+    selection: 'Standalone unindented vamos lines only; xterm selection to a nonexecuting textarea, never system clipboard or shell.',
     contrastScope: 'Visible terminal cell colors on controlled backgrounds, not arbitrary native terminal palettes.',
     browserErrors: errors, failure: failure?.message ?? null,
     minContrast: results.length ? Math.min(...results.map(r => r.contrast)) : null, results,

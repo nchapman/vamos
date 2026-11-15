@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 // SessionBinding optionally pins a project-local service to its remote identity.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 func TestDecodeApp(t *testing.T) {
@@ -172,7 +172,7 @@ func TestValidationErrorsAreStable(t *testing.T) {
 }
 
 func TestLoadExamples(t *testing.T) {
-	files, err := filepath.Glob("../../examples/*/soar.yaml")
+	files, err := filepath.Glob("../../examples/*/vamos.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

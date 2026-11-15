@@ -6,13 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nchapman/soar/internal/appstate"
+	"github.com/nchapman/vamos/internal/appstate"
 )
 
 // App receipts are the only app state host teardown may discard. Active or
 // interrupted operations remain an independent fence, even without a worker.
 func (m *Manager) appReceipts(s *State) ([]string, error) {
-	root := m.path("/var/lib/soar/apps")
+	root := m.path("/var/lib/vamos/apps")
 	if err := rejectSymlink(root); err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (m *Manager) removeAppReceipts(s *State) error {
 			return err
 		}
 	}
-	root := m.path("/var/lib/soar/apps")
+	root := m.path("/var/lib/vamos/apps")
 	if err := os.Remove(root); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

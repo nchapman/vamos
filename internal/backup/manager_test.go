@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/backupbackend"
 )
 
 type fakeBackend struct {
@@ -42,13 +42,13 @@ func setupRepository(t *testing.T) (*Manager, *fakeBackend, Request, []byte, str
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.MkdirAll(filepath.Join(root, "var/lib/soar"), 0755); err != nil {
+	if err = os.MkdirAll(filepath.Join(root, "var/lib/vamos"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	f := &fakeBackend{identity: backupbackend.Identity{ID: strings.Repeat("a", 64), Version: 2}}
 	m := &Manager{Root: root, Backend: f, Now: func() time.Time { return time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC) }}
 	op := strings.Repeat("b", 32)
-	r := Request{Action: "create", Name: "offsite", Operation: op, Confirm: true, Config: &backupbackend.Config{Endpoint: "https://storage.example.com", Bucket: "soar-backups", Prefix: "soar/" + op, Region: "us-east-1", Lookup: "path"}}
+	r := Request{Action: "create", Name: "offsite", Operation: op, Confirm: true, Config: &backupbackend.Config{Endpoint: "https://storage.example.com", Bucket: "vamos-backups", Prefix: "vamos/" + op, Region: "us-east-1", Lookup: "path"}}
 	data, err := json.Marshal(backupbackend.Credentials{AccessKeyID: "EXAMPLEACCESSKEY", SecretAccessKey: "private-storage-key", Password: strings.Repeat("c", 64)})
 	if err != nil {
 		t.Fatal(err)
@@ -210,7 +210,7 @@ func TestConflictForeignHostAndInputFailBeforeBackend(t *testing.T) {
 	changed := r
 	changed.Operation = strings.Repeat("e", 32)
 	copyConfig := *r.Config
-	copyConfig.Prefix = "soar/" + changed.Operation
+	copyConfig.Prefix = "vamos/" + changed.Operation
 	changed.Config = &copyConfig
 	if _, err := m.Execute(context.Background(), host, changed, data); !errors.Is(err, errConflict) {
 		t.Fatal(err)

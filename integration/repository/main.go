@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/nchapman/soar/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/backupbackend"
 )
 
 func main() {
@@ -34,7 +34,7 @@ func run() error {
 			return err
 		}
 		defer os.RemoveAll(dir)
-		id, err := backupbackend.New("/", dir).Probe(context.Background(), backupbackend.Config{Endpoint: "https://127.0.0.1:19001", Bucket: "soar-acceptance", Prefix: os.Args[2], Region: "us-east-1", Lookup: "path"}, secret)
+		id, err := backupbackend.New("/", dir).Probe(context.Background(), backupbackend.Config{Endpoint: "https://127.0.0.1:19001", Bucket: "vamos-acceptance", Prefix: os.Args[2], Region: "us-east-1", Lookup: "path"}, secret)
 		if err != nil {
 			return fmt.Errorf("read-only probe failed")
 		}
@@ -43,7 +43,7 @@ func run() error {
 	client := s3.New(s3.Options{Region: "us-east-1", BaseEndpoint: aws.String("http://127.0.0.1:19000"), UsePathStyle: true, Credentials: credentials.NewStaticCredentialsProvider(secret.AccessKeyID, secret.SecretAccessKey, "")})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	bucket := aws.String("soar-acceptance")
+	bucket := aws.String("vamos-acceptance")
 	switch os.Args[1] {
 	case "create":
 		_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: bucket})

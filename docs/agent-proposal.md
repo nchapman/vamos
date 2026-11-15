@@ -2,10 +2,10 @@
 
 **Status: implemented (Phases 1–3); local dev stack (Phase 4) deferred.**
 Root host lifecycle (`server add`, `server upgrade`, `server teardown`) uses
-`soar-host-operation.service` over `root` SSH, while ordinary app operations
-route through the installed `soar-agent` coordinator over the restricted
-non-root `soar` SSH bridge with supervised `soar-op-<id>.service` workers. Local
-development (`soar dev` / `soar.dev.yaml`) is intentionally deferred; it is
+`vamos-host-operation.service` over `root` SSH, while ordinary app operations
+route through the installed `vamos-agent` coordinator over the restricted
+non-root `vamos` SSH bridge with supervised `vamos-op-<id>.service` workers. Local
+development (`vamos dev` / `vamos.dev.yaml`) is intentionally deferred; it is
 included here only so component boundaries do not couple the core app engine to
 Ubuntu, systemd, Caddy, or root.
 
@@ -27,10 +27,10 @@ exposes four structural limits once CI pipelines and multiple apps share a host:
 3. **Client/server versioning:** Without a server-side version contract, raw local
    builds default to `dev` and client/executor skew is caught only indirectly when
    wire JSON or journal schemas diverge. With installed server binaries, version
-   safety becomes a fast capability handshake plus a deliberate `soar server upgrade`
+   safety becomes a fast capability handshake plus a deliberate `vamos server upgrade`
    workflow.
 4. **Future local dev parity (deferred):** Users will eventually want to run a
-   local dev stack from the same configuration style (for example `soar.dev.yaml`)
+   local dev stack from the same configuration style (for example `vamos.dev.yaml`)
    on macOS, Linux, or Windows. Splitting the container engine cleanly from the
    Ubuntu/systemd/Caddy control plane now avoids duplicating app networking,
    secret injection, and service semantics later.
@@ -40,14 +40,14 @@ exposes four structural limits once CI pipelines and multiple apps share a host:
 ```text
                   ┌──────────────────────────────────────┐
                   │         1. Config & App Spec         │
-                  │  soar.yaml (+ future soar.dev.yaml)  │
+                  │  vamos.yaml (+ future vamos.dev.yaml)  │
                   └──────────────────┬───────────────────┘
                                      │
             ┌────────────────────────┴────────────────────────┐
             ▼                                                 ▼
 ┌───────────────────────────┐                     ┌───────────────────────────┐
 │   Remote Control Plane    │                     │  Future Local Dev Runner  │
-│  soar-agent (root daemon) │                     │   in-process in soar CLI  │
+│  vamos-agent (root daemon) │                     │   in-process in vamos CLI  │
 │  • Auth & app ACLs        │                     │  • Deferred milestone     │
 │  • Durable job queue      │                     │  • No daemon, no root     │
 │  • Host concurrency caps  │                     │  • macOS / Linux / Win    │
@@ -64,7 +64,7 @@ exposes four structural limits once CI pipelines and multiple apps share a host:
                   └───────────┬──────────────┬───────────┘
                               ▼              ▼
                      Server Backends     Dev Backends (deferred)
-                     Caddy + /var/lib    127.0.0.1 ports + .soar/dev
+                     Caddy + /var/lib    127.0.0.1 ports + .vamos/dev
 ```
 
 ### Layer 1: Config and app spec
@@ -87,21 +87,21 @@ state into an engine boundary:
   log streaming.
 
 Ingress and state persistence sit behind explicit interfaces so production uses
-Caddy loopback routes and `/var/lib/soar` journals while a future `soar dev` can
-publish `127.0.0.1` ports and write under `.soar/dev`. Remote CLI commands (`deploy`,
+Caddy loopback routes and `/var/lib/vamos` journals while a future `vamos dev` can
+publish `127.0.0.1` ports and write under `.vamos/dev`. Remote CLI commands (`deploy`,
 `status`, `logs`, `secrets`, `rollback`) continue to require **zero local Docker**.
 
-### Layer 3: `soar-agent` coordinator and supervised workers
+### Layer 3: `vamos-agent` coordinator and supervised workers
 
-On the server, `soar server add` installs both `soar-agent` and `executor`
-under `/usr/local/lib/soar/` (root-owned, recorded in `/var/lib/soar/host.json`)
-and enables `soar-agent.service`:
+On the server, `vamos server add` installs both `vamos-agent` and `executor`
+under `/usr/local/lib/vamos/` (root-owned, recorded in `/var/lib/vamos/host.json`)
+and enables `vamos-agent.service`:
 
-- `soar-agent` is a small root-owned systemd daemon listening on a local Unix
-  socket (`/run/soar/agent.sock`). It owns authentication, capability handshakes,
+- `vamos-agent` is a small root-owned systemd daemon listening on a local Unix
+  socket (`/run/vamos/agent.sock`). It owns authentication, capability handshakes,
   admission control, durable queueing, concurrency semaphores, and observation.
 - Actual deployments and maintenance jobs run in bounded transient systemd
-  worker units (`soar-op-<id>.service`) invoking `/usr/local/lib/soar/executor internal-agent worker`.
+  worker units (`vamos-op-<id>.service`) invoking `/usr/local/lib/vamos/executor internal-agent worker`.
   A hung build, OOM, or worker crash cannot corrupt or wedge the coordinator.
 
 ## 3. Privilege separation and authentication
@@ -109,7 +109,7 @@ and enables `soar-agent.service`:
 | Role | Transport & Identity | Allowed Operations |
 | --- | --- | --- |
 | **Host administrator** | `root` SSH | `server add`, `server upgrade`, `server configure`, `server teardown`, principal/ACL management |
-| **Operator / CI deploy** | Non-root access to `soar-agent` | Authorized app operations (`deploy`, `status`, `logs`, `secrets`, `run`, `rollback`, `resume`, etc.) |
+| **Operator / CI deploy** | Non-root access to `vamos-agent` | Authorized app operations (`deploy`, `status`, `logs`, `secrets`, `run`, `rollback`, `resume`, etc.) |
 
 Key invariants:
 
@@ -117,20 +117,20 @@ Key invariants:
   only structured request metadata, bounded build contexts, or private secret/backup
   inputs.
 - **SSH-first non-root transport (no new public listener required):** Bootstrap
-  provisions a dedicated unprivileged account (for example `soar`) that is **not**
+  provisions a dedicated unprivileged account (for example `vamos`) that is **not**
   in the `docker` group. Its SSH `Match User` policy has a fixed `ForceCommand`,
   disables TTY and port/X11/agent forwarding, and uses the shell only to launch
   that fixed bridge—there is no interactive SSH command path. The bridge speaks
-  only to `/run/soar/agent.sock`.
+  only to `/run/vamos/agent.sock`.
 - **Scoped CI credentials:** SSH `authorized_keys` entries (or agent tokens) bind
-  each credential to a named principal ID; `soar-agent` enforces server-side ACLs
+  each credential to a named principal ID; `vamos-agent` enforces server-side ACLs
   (for example allowing a GitHub repository credential to deploy and inspect only
   `app: billing`, not stage host changes or touch `app: studio`). A later opt-in
   HTTPS endpoint behind Caddy can verify short-lived GitHub Actions OIDC JWTs
   against the same principal/ACL table without static keys.
 - **Explicit trust boundary:** Removing `root` SSH from GitHub eliminates arbitrary
   host command execution, binary replacement, and cross-app control. It does **not**
-  make Soar a hostile multi-tenant sandbox: permission to deploy code to an app
+  make Vamos a hostile multi-tenant sandbox: permission to deploy code to an app
   inherently grants runtime access to that app's volumes and bound secrets, and
   Dockerfile builds still assume trusted application source.
 
@@ -138,16 +138,16 @@ Key invariants:
 
 ### Durable admission and idempotency
 
-1. Client connects to `soar-agent`, completes the version/capability check, and
+1. Client connects to `vamos-agent`, completes the version/capability check, and
    submits an operation with a client-generated idempotency key and required inputs.
-2. `soar-agent` validates authorization, app/service bindings, and staging quotas,
-   persists the job under `/var/lib/soar/queue/<op-id>/`, and returns `accepted`
+2. `vamos-agent` validates authorization, app/service bindings, and staging quotas,
+   persists the job under `/var/lib/vamos/queue/<op-id>/`, and returns `accepted`
    with queue position and `operation_id`.
 3. If the network drops during submission or waiting, retrying with the same
-   idempotency key (or `soar status` / `soar logs` / `soar wait <op-id>`) reattaches
+   idempotency key (or `vamos status` / `vamos logs` / `vamos wait <op-id>`) reattaches
    to the recorded operation rather than enqueueing a duplicate deploy.
 4. Clients may stay connected to stream live phase/build/readiness progress or
-   disconnect safely at any point after admission; `soar-agent` owns execution to
+   disconnect safely at any point after admission; `vamos-agent` owns execution to
    completion.
 
 ### Host-configured concurrency and granular locks
@@ -180,15 +180,15 @@ the server enforces a layered concurrency policy stored in host configuration:
 
 ### Supervision and restart recovery
 
-On `soar-agent` restart or host reboot, the coordinator reconciles `/var/lib/soar/queue/`
-against live `soar-op-<id>.service` units and per-app state journals before
+On `vamos-agent` restart or host reboot, the coordinator reconciles `/var/lib/vamos/queue/`
+against live `vamos-op-<id>.service` units and per-app state journals before
 accepting new work:
 
 - Live worker units are re-adopted and observed until exit.
 - Unstarted `queued` operations remain queued in order and schedule once capacity
   is free.
 - Workers that vanished mid-flight transition according to existing journal rules:
-  `soar-agent` **never blindly restarts non-idempotent phases** (such as a release
+  `vamos-agent` **never blindly restarts non-idempotent phases** (such as a release
   command whose start intent was recorded, or an uncertain volume/route step).
   Uncertain operations remain fenced for explicit `resume` / `supersede` diagnosis
   on that app without wedging unrelated apps' queues.
@@ -199,67 +199,67 @@ With installed server binaries, synchronization uses three explicit layers rathe
 than per-command binary uploads:
 
 1. **Build identity (provenance & diagnostics):** Release and local build tasks
-   stamp `soar` and the Linux `executor` / `soar-agent` bundle with a
+   stamp `vamos` and the Linux `executor` / `vamos-agent` bundle with a
    deterministic version label and source/recipe build digest reported by
-   `soar version`.
+   `vamos version`.
 2. **Agent API handshake (wire compatibility):** Every client session begins with
    a lightweight `hello` RPC returning `agent_build_id`, `api_min`, `api_max`,
    and supported capability flags.
    - If the client is older than `api_min`, it fails before sending payloads:
-     `local soar CLI ... is too old for server agent ...; upgrade local soar CLI`.
+     `local vamos CLI ... is too old for server agent ...; upgrade local vamos CLI`.
    - If the server is older than what the requested feature/API requires, it fails
-     before mutation: `server agent ...; run 'soar server upgrade'`.
+     before mutation: `server agent ...; run 'vamos server upgrade'`.
 3. **State schema versions (disk compatibility):** Journals, secret stores, volume
    registries, and queue records keep strict versioned schemas. Upgrades are
-   forward-compatible (new `soar-agent` reads prior schema versions); downgrading
+   forward-compatible (new `vamos-agent` reads prior schema versions); downgrading
    server binaries below persisted schema versions continues to fail closed.
 
-### `soar server upgrade`
+### `vamos server upgrade`
 
 Host upgrades are an explicit root administrative command:
 
 1. Inspect the target architecture and verify the local matching Linux bundle
-   (`executor` + `soar-agent` checksums and ELF architecture).
-2. Acquire the host lifecycle barrier (`/run/lock/soar-host.lock`), verify an
-   idle coordinator queue (`verifyQueueIdle`), stop `soar-agent.service`, and
+   (`executor` + `vamos-agent` checksums and ELF architecture).
+2. Acquire the host lifecycle barrier (`/run/lock/vamos-host.lock`), verify an
+   idle coordinator queue (`verifyQueueIdle`), stop `vamos-agent.service`, and
    re-verify the queue is idle.
-3. Atomically replace `/usr/local/lib/soar/executor` and
-   `/usr/local/lib/soar/soar-agent` while preserving live Caddy routes and
-   operator-managed `/etc/soar/principals.json`, update recorded digests in
-   `/var/lib/soar/host.json`, reload systemd, restart `soar-agent.service`
+3. Atomically replace `/usr/local/lib/vamos/executor` and
+   `/usr/local/lib/vamos/vamos-agent` while preserving live Caddy routes and
+   operator-managed `/etc/vamos/principals.json`, update recorded digests in
+   `/var/lib/vamos/host.json`, reload systemd, restart `vamos-agent.service`
    (restoring the prior service on mid-upgrade failure), and verify post-upgrade
    health checks.
 
-Distro APT / Docker / Caddy package upgrades remain a separate concern from Soar
+Distro APT / Docker / Caddy package upgrades remain a separate concern from Vamos
 binary upgrades and can later build on the same drain-and-barrier primitive.
 
 ## 6. Seam preserved for future local dev (deferred)
 
-`soar dev` is **out of scope** for the initial agent milestones, but this split
+`vamos dev` is **out of scope** for the initial agent milestones, but this split
 ensures nothing blocks it later:
 
-- `soar.dev.yaml` (or `-f`) will parse through Layer 1 and run Layer 2 **in-process**
-  inside the `soar` CLI against a local Docker socket—no `soar-agent`, no `root`,
+- `vamos.dev.yaml` (or `-f`) will parse through Layer 1 and run Layer 2 **in-process**
+  inside the `vamos` CLI against a local Docker socket—no `vamos-agent`, no `root`,
   no Ubuntu/systemd requirement, and no Caddy on ports 80/443.
 - Dev-only conveniences (such as live source bind mounts or local port overrides,
-  if added later) will be gated to `soar dev` validation and rejected by `soar deploy`
+  if added later) will be gated to `vamos dev` validation and rejected by `vamos deploy`
   so production immutability stays intact.
 - Open local-dev UX choices—source bind mounts vs fast rebuilds, local secret
   file/store ergonomics, localhost port mapping, and multiplexed service logs—are
-  deferred until we start the `soar dev` milestone.
+  deferred until we start the `vamos dev` milestone.
 
 ## 7. Phased implementation sequence
 
-1. **Phase 1 — Shared engine boundary & protocol spec (implemented):** Separate the container/app execution primitives (`internal/engine`) and transport interface (`internal/transport`) from SSH uploads, add `MutationLock`/`IngressLock` seams on `deploy.Manager`, define the `soar-agent` socket RPC and version handshake (`internal/agentproto`, `docs/agent-protocol.md`), and add deterministic build stamping (`internal/buildmeta`, `internal/buildbundle`, `cmd/build`, `docs/versioning.md`).
-2. **Phase 2 — Installed `soar-agent`, durable serial queue, non-root SSH deploy,
-   and `soar server upgrade`:** Provision `soar-agent` + restricted `soar` SSH
+1. **Phase 1 — Shared engine boundary & protocol spec (implemented):** Separate the container/app execution primitives (`internal/engine`) and transport interface (`internal/transport`) from SSH uploads, add `MutationLock`/`IngressLock` seams on `deploy.Manager`, define the `vamos-agent` socket RPC and version handshake (`internal/agentproto`, `docs/agent-protocol.md`), and add deterministic build stamping (`internal/buildmeta`, `internal/buildbundle`, `cmd/build`, `docs/versioning.md`).
+2. **Phase 2 — Installed `vamos-agent`, durable serial queue, non-root SSH deploy,
+   and `vamos server upgrade`:** Provision `vamos-agent` + restricted `vamos` SSH
    bridge during `server add`, persist and queue concurrent submissions (`max_concurrent_deploys=1`
-   default), stream/reattach operation status, and ship `soar server upgrade`.
+   default), stream/reattach operation status, and ship `vamos server upgrade`.
    This resolves GitHub root SSH exposure, multi-app busy failures, and client/server
    versioning together.
 3. **Phase 3 — Configurable multi-app concurrency & scoped CI auth:** Introduce
    per-app locks, short Caddy route locks, tunable `max_concurrent_builds` /
    `max_concurrent_deploys`, and per-principal/per-app ACLs for CI credentials
    (plus optional GitHub OIDC verification).
-4. **Phase 4 — Local dev stack (deferred):** Build `soar dev` atop the shared
+4. **Phase 4 — Local dev stack (deferred):** Build `vamos dev` atop the shared
    Layer 1 + Layer 2 engine for macOS, Linux, and Windows.

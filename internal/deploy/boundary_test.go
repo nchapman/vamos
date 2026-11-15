@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestVerboseBuildDiagnosticBoundary(t *testing.T) {

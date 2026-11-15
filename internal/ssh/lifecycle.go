@@ -15,17 +15,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nchapman/soar/internal/buildmeta"
-	"github.com/nchapman/soar/internal/executor"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/executor"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 //go:embed bootstrap.sh
 var bootstrapScript string
 
 const statusScript = `set -eu
-for p in /var/lib/soar /var/lib/soar/host.json /var/lib/soar/queue /var/lib/soar/queue/operations; do
+for p in /var/lib/vamos /var/lib/vamos/host.json /var/lib/vamos/queue /var/lib/vamos/queue/operations; do
   if [ -L "$p" ]; then printf '%s\n' 'refusing symlinked host state' >&2; exit 1; fi
 done
 # A failed query is not evidence that the operation is at rest. Capture both
@@ -45,10 +45,10 @@ check_unit() {
   esac
 }
 active=false
-if check_unit soar-host-operation.service; then
+if check_unit vamos-host-operation.service; then
   active=true
-elif [ -d /var/lib/soar/queue/operations ]; then
-  for rec in /var/lib/soar/queue/operations/*.json; do
+elif [ -d /var/lib/vamos/queue/operations ]; then
+  for rec in /var/lib/vamos/queue/operations/*.json; do
     [ -e "$rec" ] || break
     if [ -L "$rec" ] || [ ! -f "$rec" ]; then
       printf '%s\n' 'refusing invalid queue record' >&2
@@ -56,7 +56,7 @@ elif [ -d /var/lib/soar/queue/operations ]; then
     fi
     op_id=${rec##*/}
     op_id=${op_id%.json}
-    if check_unit "soar-op-${op_id}.service"; then
+    if check_unit "vamos-op-${op_id}.service"; then
       active=true
       break
     fi
@@ -67,8 +67,8 @@ elif [ -d /var/lib/soar/queue/operations ]; then
   done
 fi
 printf '{"active":%s,"state":' "$active"
-if [ -f /var/lib/soar/host.json ]; then
-  head -c 1048577 /var/lib/soar/host.json
+if [ -f /var/lib/vamos/host.json ]; then
+  head -c 1048577 /var/lib/vamos/host.json
 else
   printf 'null'
 fi
@@ -111,7 +111,7 @@ func artifactForBuild(override, arch, stamp string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		filename = filepath.Join(filepath.Dir(self), "soar-linux-"+arch)
+		filename = filepath.Join(filepath.Dir(self), "vamos-linux-"+arch)
 	}
 	input, err := os.Open(filename)
 	if err != nil {

@@ -54,8 +54,8 @@ var (
 // recognizable fragment within login banners or arbitrary remote output.
 func Parse(output []byte) (*Report, error) {
 	fields := strings.SplitN(string(output), "\n", 8)
-	if len(fields) != 8 || fields[0] != "soar-inspect-v1" {
-		return nil, errors.New("invalid host probe response (expected soar-inspect-v1 framing; check shell startup output)")
+	if len(fields) != 8 || fields[0] != "vamos-inspect-v1" {
+		return nil, errors.New("invalid host probe response (expected vamos-inspect-v1 framing; check shell startup output)")
 	}
 	for _, field := range fields[1:4] {
 		if !scalarPattern.MatchString(field) {

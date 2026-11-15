@@ -2,7 +2,7 @@
 # never interpolated shell source. The worker owns inputs once launched.
 set -eu
 [ "$(id -u)" = 0 ] || { printf '%s\n' 'deployment requires root' >&2; exit 1; }
-stage=$(mktemp -d /run/soar-stage.XXXXXXXX)
+stage=$(mktemp -d /run/vamos-stage.XXXXXXXX)
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 tar -xf - -C "$stage"
 [ "$(stat -c %a "$stage")" = 700 ] || exit 1
@@ -19,7 +19,7 @@ done
 chmod 700 "$stage/executor"
 trap - EXIT HUP INT TERM
 set +e
-systemd-run --quiet --collect --wait --pipe --unit=soar-host-operation \
+systemd-run --quiet --collect --wait --pipe --unit=vamos-host-operation \
   --property=RuntimeMaxSec=21min --property=KillMode=control-group \
   /bin/sh -c 'stage=$1; trap '\''rm -rf "$stage"'\'' EXIT; cd "$stage"; ./executor internal-app-executor < request.json' sh "$stage"
 status=$?

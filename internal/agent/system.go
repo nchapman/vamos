@@ -13,18 +13,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nchapman/soar/internal/agentproto"
+	"github.com/nchapman/vamos/internal/agentproto"
 )
 
 const (
-	DefaultSocket         = "/run/soar/agent.sock"
-	DefaultQueueRoot      = "/var/lib/soar/queue"
-	DefaultPrincipals     = "/etc/soar/principals.json"
-	DefaultConfig         = "/etc/soar/agent.json"
-	DefaultAuthorizedKeys = "/etc/soar/authorized_keys"
+	DefaultSocket         = "/run/vamos/agent.sock"
+	DefaultQueueRoot      = "/var/lib/vamos/queue"
+	DefaultPrincipals     = "/etc/vamos/principals.json"
+	DefaultConfig         = "/etc/vamos/agent.json"
+	DefaultAuthorizedKeys = "/etc/vamos/authorized_keys"
 )
 
-var forcedKeyRE = regexp.MustCompile(`^restrict,command="(?:/usr/local/lib/soar/soar-agent|/usr/local/lib/soar/executor) internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" ssh-(?:ed25519|rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
+var forcedKeyRE = regexp.MustCompile(`^restrict,command="(?:/usr/local/lib/vamos/vamos-agent|/usr/local/lib/vamos/executor) internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" ssh-(?:ed25519|rsa|ecdsa-sha2-nistp(?:256|384|521)) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
 
 type Config struct {
 	Concurrency agentproto.ConcurrencyPolicy `json:"concurrency"`
@@ -49,7 +49,7 @@ func ServeSystem(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	group, err := user.LookupGroup("soar")
+	group, err := user.LookupGroup("vamos")
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func ValidateAuthorizedKeys(path string, principals map[string]agentproto.Princi
 		}
 		match := forcedKeyRE.FindStringSubmatch(line)
 		if match == nil {
-			return fmt.Errorf("authorized key line %d is not a restricted Soar bridge key", lineNo+1)
+			return fmt.Errorf("authorized key line %d is not a restricted Vamos bridge key", lineNo+1)
 		}
 		if _, ok := principals[match[1]]; !ok {
 			return fmt.Errorf("authorized key line %d names unknown principal %q", lineNo+1, match[1])

@@ -5,7 +5,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func printRollbackPreview(w io.Writer, p *deploy.RollbackPreview) error {

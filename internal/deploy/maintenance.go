@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nchapman/soar/internal/appstate"
+	"github.com/nchapman/vamos/internal/appstate"
 )
 
 func maintenanceStatus(j *journal, domain string) Status {
@@ -73,7 +73,7 @@ func (m *Manager) maintenanceFence(r Request) error {
 	if err := m.checkMaintenanceNamespace(); err != nil {
 		return err
 	}
-	entries, e := os.ReadDir(m.path("/var/lib/soar/apps"))
+	entries, e := os.ReadDir(m.path("/var/lib/vamos/apps"))
 	if errors.Is(e, os.ErrNotExist) {
 		return nil
 	}
@@ -114,7 +114,7 @@ func maintenanceContainerIdentity(j *journal, name, service, op string, replica 
 		return j.Version == 8 && ordinal > 0 && ordinal <= 8 && service != "" && appstate.ValidName(service) && operation.MatchString(op) && name == instanceName(j.App, service, op, ordinal)
 	}
 	return operation.MatchString(op) && (service == "" || appstate.ValidName(service)) &&
-		(name == containerName(j.App, service, op) || (service != "" && name == "soar-run-"+op))
+		(name == containerName(j.App, service, op) || (service != "" && name == "vamos-run-"+op))
 }
 
 // Snapshot operation identities also retain their archives, even when a mixed
@@ -219,7 +219,7 @@ func validateMaintenance(j *journal) error {
 	if (w.Network == nil && w.Plan.Network != "") || (w.Network != nil && w.Plan.Network != w.Network.Name) {
 		return bad
 	}
-	if w.Network != nil && (w.Network.Name != "soar-"+j.App || !fullResourceID.MatchString(w.Network.ID)) {
+	if w.Network != nil && (w.Network.Name != "vamos-"+j.App || !fullResourceID.MatchString(w.Network.ID)) {
 		return bad
 	}
 	return nil
@@ -287,7 +287,7 @@ func (m *Manager) maintenanceRoutes(c context.Context, j *journal, apply bool) e
 	if !apply {
 		return nil
 	}
-	temp := filepath.Join(filepath.Dir(p), ".soar-next.Caddyfile")
+	temp := filepath.Join(filepath.Dir(p), ".vamos-next.Caddyfile")
 	defer os.Remove(temp)
 	if e = atomic(temp, []byte(next), 0644); e != nil {
 		return e

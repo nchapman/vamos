@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 // A scoped operation captures actual unselected configurations, never local
@@ -62,7 +62,7 @@ func supportsVolumes(j *journal) bool {
 }
 
 func protectedChange(name string) error {
-	return fmt.Errorf("service %s is protected and its configuration or staged secrets changed; explicitly deploy it with soar deploy --service %s --yes", name, name)
+	return fmt.Errorf("service %s is protected and its configuration or staged secrets changed; explicitly deploy it with vamos deploy --service %s --yes", name, name)
 }
 
 func keepService(r Request, name string, cfg config.Service, current *release, state *secrets.State) (bool, error) {

@@ -3,8 +3,8 @@ package deploy
 import (
 	"context"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/engine"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/engine"
 )
 
 func resourceArgs(r *config.Resources) []string {

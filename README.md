@@ -1,4 +1,4 @@
-# Soar
+# Vamos
 
 A small, Dockerfile-first app platform for one server. The intended stack is a Go CLI/executor, SSH, Docker Engine with BuildKit, and host-managed Caddy—not a new runtime or scheduler.
 
@@ -13,11 +13,11 @@ not implemented.
 ## Everyday commands
 
 ```sh
-soar init notes --port 8080       # Minimal Dockerfile configuration; never overwrites
-soar apps --server home           # Recorded app and retained-resource inventory
-soar logs --service web --follow  # Follow one verified container, not future replacements
-soar exec --service web -- python --version
-soar console --service web       # Interactive /bin/sh in the existing service
+vamos init notes --port 8080       # Minimal Dockerfile configuration; never overwrites
+vamos apps --server home           # Recorded app and retained-resource inventory
+vamos logs --service web --follow  # Follow one verified container, not future replacements
+vamos exec --service web -- python --version
+vamos console --service web       # Interactive /bin/sh in the existing service
 ```
 
 See [CLI commands](docs/cli.md) for target selection, stdin/TTY options, exit codes,
@@ -57,12 +57,12 @@ mise trust       # Trust this project's configuration after reviewing it
 mise install     # Install the pinned development tools
 mise run deps    # Download Go modules (build/test also fetch missing modules)
 mise run build
-./bin/soar help
-./bin/soar version
-./bin/soar validate -f examples/dispatch/soar.yaml
+./bin/vamos help
+./bin/vamos version
+./bin/vamos validate -f examples/dispatch/vamos.yaml
 ```
 
-From an app directory, `soar validate` defaults to `soar.yaml`. Validation checks the YAML schema and local constraints, including:
+From an app directory, `vamos validate` defaults to `vamos.yaml`. Validation checks the YAML schema and local constraints, including:
 
 - Unknown/duplicate fields, multiple documents, and missing required values.
 - Exactly one build specification or image per service.
@@ -112,13 +112,13 @@ interfaces in the design remain proposals.
 ```sh
 # Establish and verify the host key separately using your normal SSH workflow.
 # An SSH alias can configure the user, port, identity file, and jump host.
-./bin/soar server inspect home
-./bin/soar server inspect --json --timeout 20s root@server.example.com
+./bin/vamos server inspect home
+./bin/vamos server inspect --json --timeout 20s root@server.example.com
 ```
 
-On Windows, use `bin/soar.exe`. Flags precede the target. Targets accept SSH aliases or `[user@]host`, including unbracketed IPv6. Use SSH configuration for nonstandard ports and keys, not an arbitrary argument tail.
+On Windows, use `bin/vamos.exe`. Flags precede the target. Targets accept SSH aliases or `[user@]host`, including unbracketed IPv6. Use SSH configuration for nonstandard ports and keys, not an arbitrary argument tail.
 
-Inspection works on a fresh host without Soar, Docker, or Caddy installed. It runs a fixed shell collector over SSH; it does not upload files, install software, change host configuration, or invoke sudo. Ordinary SSH access can still produce authentication/audit logs and other system-managed side effects.
+Inspection works on a fresh host without Vamos, Docker, or Caddy installed. It runs a fixed shell collector over SSH; it does not upload files, install software, change host configuration, or invoke sudo. Ordinary SSH access can still produce authentication/audit logs and other system-managed side effects.
 
 Host keys must already be trusted; authentication must work noninteractively with keys or an agent. Unknown/changed keys and password prompts fail rather than weakening SSH verification. Forwarding and connection reuse are disabled for the probe. Existing SSH configuration, including proxy/Match rules, remains trusted client configuration.
 
@@ -130,9 +130,9 @@ See [the host inspection boundary](docs/host-inspection.md) for protocol details
 
 ```sh
 mise run build  # Builds the client plus Linux amd64/arm64 executors in bin/
-./bin/soar server add --yes --domain apps.example.com test root@server.example.com
-./bin/soar server status test
-./bin/soar server teardown --yes --purge test
+./bin/vamos server add --yes --domain apps.example.com test root@server.example.com
+./bin/vamos server status test
+./bin/vamos server teardown --yes --purge test
 ```
 
 Use a **fresh, dedicated, disposable host** for initial testing. Keep the Linux executor binaries beside the client, or supply `--executor FILE`. Setup does not change DNS, issue certificates, open firewall ports, or deploy apps. It registers the server locally only after remote setup succeeds; the first registration becomes the default.
@@ -148,12 +148,12 @@ SSH access and independently verify the host key. Use the **installed** name and
 base domain, not a new identity:
 
 ```sh
-soar server status --json test root@server.example.com
-soar server connect --domain apps.example.com test root@server.example.com
-soar apps --server test
-soar status --server test --app workspace
+vamos server status --json test root@server.example.com
+vamos server connect --domain apps.example.com test root@server.example.com
+vamos apps --server test
+vamos status --server test --app workspace
 # After inspecting the existing service, bind each intended source directory:
-soar service bind api -f api/soar.yaml --server test
+vamos service bind api -f api/vamos.yaml --server test
 ```
 
 Connect verifies supported Ubuntu/root access, valid ready host ownership, exact
@@ -177,14 +177,14 @@ host-loss recovery nor upgrade/drift repair. See the full
 With a bootstrapped server, wildcard DNS pointing at it, and TCP 80/443 allowed:
 
 ```sh
-./bin/soar deploy -f examples/hello/soar.yaml
-./bin/soar status -f examples/hello/soar.yaml
-./bin/soar logs -f examples/hello/soar.yaml --tail 100
+./bin/vamos deploy -f examples/hello/vamos.yaml
+./bin/vamos status -f examples/hello/vamos.yaml
+./bin/vamos logs -f examples/hello/vamos.yaml --tail 100
 ```
 
 `examples/hello` is a runnable nginx-based Dockerfile app. With base domain `pastime.gg`, its generated URL is `https://hello.pastime.gg`. No local Docker or image registry is required. Caddy route activation is verified; public DNS and certificate readiness must be checked separately.
 
-The first default-target contact creates a gitignored project binding under `.soar/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules and always omit `.git`/`.soar`. The aggregate multibuild bundle is limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
+The first default-target contact creates a gitignored project binding under `.vamos/`; `--server` overrides only one invocation. Contexts honor Docker ignore rules and always omit `.git`/`.vamos`. The aggregate multibuild bundle is limited to 32 MiB. Exclude secrets explicitly. See [deployment and recovery](docs/deployment.md) for supported configuration, `resume`, `deploy --supersede`, retention limits, and verification results.
 
 ## Try SQLite and uploads
 
@@ -192,8 +192,8 @@ The first default-target contact creates a gitignored project binding under `.so
 app; it has no authentication**. SQLite and uploads share one `/data` mount.
 
 ```sh
-./bin/soar deploy -f examples/journal/soar.yaml
-./bin/soar status -f examples/journal/soar.yaml
+./bin/vamos deploy -f examples/journal/vamos.yaml
+./bin/vamos status -f examples/journal/vamos.yaml
 ```
 
 See its [write/read API and persistence exercise](examples/journal/README.md).
@@ -210,9 +210,9 @@ legacy journal recovery and the limits of missing-storage checks.
 `examples/private-backend` is a runnable web/private-backend example. Both services share one build; only `web` gets a public route. The web process connects to `http://backend:9000` through its app network.
 
 ```sh
-./bin/soar deploy -f examples/private-backend/soar.yaml
-./bin/soar status -f examples/private-backend/soar.yaml --service backend
-./bin/soar logs -f examples/private-backend/soar.yaml --service backend
+./bin/vamos deploy -f examples/private-backend/vamos.yaml
+./bin/vamos status -f examples/private-backend/vamos.yaml --service backend
+./bin/vamos logs -f examples/private-backend/vamos.yaml --service backend
 ```
 
 Deployments may select `--service NAME` and are **not atomic across services**. Private replacements have downtime; completed service changes survive later failure. See [multi-service deployment](docs/multi-service.md).
@@ -224,19 +224,19 @@ protected PostgreSQL service before building and initializing its API:
 
 ```sh
 cd examples/ledger
-soar secrets stage database-password
-soar deploy --service db
-soar run --service web -- ./bin/migrate
+vamos secrets stage database-password
+vamos deploy --service db
+vamos run --service web -- ./bin/migrate
 # Continue only after a successful migration:
-soar deploy
+vamos deploy
 ```
 
 Initial database creation needs no `--yes`. Ordinary deploy never refreshes or
 restarts an existing manual database; protected changes require the exact scoped
-command, `soar deploy --service db --yes`. Without approval, selecting an existing
+command, `vamos deploy --service db --yes`. Without approval, selecting an existing
 manual service previews the plan. Runs are **noninteractive: no stdin or TTY**.
 Inspect interrupted runs with `status --run OP` and `logs --run OP`; disconnects
-do not cancel them, and Soar never automatically retries them. See the
+do not cancel them, and Vamos never automatically retries them. See the
 [PostgreSQL contract](docs/postgres.md) and [run limits/recovery](docs/deployment.md#one-off-commands).
 Ledger is unauthenticated and intended for disposable demo data, not production.
 
@@ -245,10 +245,10 @@ Ledger is unauthenticated and intended for disposable demo data, not production.
 Map environment variables to app-scoped names under `services.<name>.secrets`. From that app directory, with the built CLI on your PATH:
 
 ```sh
-soar secrets stage session-secret  # No-echo prompt; flags precede the name
-soar secrets list
-soar status                       # Pending versions, never values
-soar deploy                       # Apply captured staged versions
+vamos secrets stage session-secret  # No-echo prompt; flags precede the name
+vamos secrets list
+vamos status                       # Pending versions, never values
+vamos deploy                       # Apply captured staged versions
 ```
 
 Use `--stdin` for automation, supplying values from a trusted secret producer—not literal shell arguments. Staging never restarts an app; resume and reboot keep pinned versions. Cleanup/destruction retain secrets, and host teardown refuses retained secret state. See [staged secrets](docs/secrets.md) for input, storage, recovery, and exposure limits.
@@ -256,26 +256,26 @@ Use `--stdin` for automation, supplying values from a trusted secret producer—
 ## Clean up or remove an app
 
 ```sh
-./bin/soar cleanup -f examples/hello/soar.yaml        # Preview; deletes nothing
-./bin/soar cleanup -f examples/hello/soar.yaml --yes  # Apply a freshly computed plan
-./bin/soar destroy --server droplet --app temporary-app
-./bin/soar destroy --server droplet --app temporary-app --yes
+./bin/vamos cleanup -f examples/hello/vamos.yaml        # Preview; deletes nothing
+./bin/vamos cleanup -f examples/hello/vamos.yaml --yes  # Apply a freshly computed plan
+./bin/vamos destroy --server droplet --app temporary-app
+./bin/vamos destroy --server droplet --app temporary-app --yes
 ```
 
 Cleanup keeps effective versions, per-service predecessors and the current/previous completed app snapshots and never prunes shared Docker resources or volumes. Destruction proves the app route is gone before removing verified owned containers/network and known captured inputs. Both have durable recovery and explicit confirmation. See [the app lifecycle contract](docs/app-lifecycle.md) for retention limits, reboot verification, and upgrade notes. **Legacy deployments need a replacement deploy to gain pinned ports.**
 
-Ordinary app commands (`deploy`, `status`, `logs`, `exec`, `console`, `secrets`, `backup`, `apps`, etc.) connect over the restricted non-root `soar` SSH bridge to the installed `soar-agent` coordinator; `root` SSH is reserved for host lifecycle (`server add`, `server upgrade`, `server teardown`) and explicit `--executor` overrides.
+Ordinary app commands (`deploy`, `status`, `logs`, `exec`, `console`, `secrets`, `backup`, `apps`, etc.) connect over the restricted non-root `vamos` SSH bridge to the installed `vamos-agent` coordinator; `root` SSH is reserved for host lifecycle (`server add`, `server upgrade`, `server teardown`) and explicit `--executor` overrides.
 
 ## Layout
 
 ```text
-cmd/soar/           Process entry point, build version, and internal-agent bridge/worker dispatch
+cmd/vamos/           Process entry point, build version, and internal-agent bridge/worker dispatch
 cmd/build/          Deterministic bundle builder for client and Linux executors
 internal/cli/       Commands, output, and exit codes
 internal/transport/ Client-to-host transport interface seam
 internal/agent/     Coordinator daemon, durable operation queue, ACLs, and systemd worker supervision
 internal/agentclient/ Framed client RPC and session stream relay
-internal/agentproto/ Versioned soar-agent RPC, handshake, stream framing, queue, and ACL contracts
+internal/agentproto/ Versioned vamos-agent RPC, handshake, stream framing, queue, and ACL contracts
 internal/buildmeta/ Deterministic bundle build identity and pairing checks
 internal/buildbundle/ Snapshot-based cross-target bundle builder
 internal/engine/    Shared Docker container, network, resource, env-file, and probe primitives
@@ -297,19 +297,19 @@ mise.toml          Pinned development tools and project tasks
 PLAN.md            Product behavior, workflows, and implementation sequence
 ```
 
-The Go module is `github.com/nchapman/soar`. `soar-agent.service` runs on managed Ubuntu hosts as the root-owned local socket coordinator, supervising app mutations in transient `soar-op-<id>.service` units while host lifecycle operations use `soar-host-operation.service`.
+The Go module is `github.com/nchapman/vamos`. `vamos-agent.service` runs on managed Ubuntu hosts as the root-owned local socket coordinator, supervising app mutations in transient `vamos-op-<id>.service` units while host lifecycle operations use `vamos-host-operation.service`.
 
 ## Examples
 
 | Config | Scenario |
 | --- | --- |
-| [hello](examples/hello/soar.yaml) | Runnable single-service Dockerfile app supported today |
-| [private-backend](examples/private-backend/soar.yaml) | Runnable public web/private backend sharing one Dockerfile build |
-| [studio](examples/studio/soar.yaml) | Stateless website and multiple domains |
-| [journal](examples/journal/soar.yaml) | SQLite and uploads; automatic updates with stop/start |
-| [ledger](examples/ledger/soar.yaml) | API and private, manually updated PostgreSQL |
-| [dispatch](examples/dispatch/soar.yaml) | Web, worker, PostgreSQL, and Redis |
-| [workspace](examples/workspace/soar.yaml) | Separate frontend/API builds and a private renderer |
+| [hello](examples/hello/vamos.yaml) | Runnable single-service Dockerfile app supported today |
+| [private-backend](examples/private-backend/vamos.yaml) | Runnable public web/private backend sharing one Dockerfile build |
+| [studio](examples/studio/vamos.yaml) | Stateless website and multiple domains |
+| [journal](examples/journal/vamos.yaml) | SQLite and uploads; automatic updates with stop/start |
+| [ledger](examples/ledger/vamos.yaml) | API and private, manually updated PostgreSQL |
+| [dispatch](examples/dispatch/vamos.yaml) | Web, worker, PostgreSQL, and Redis |
+| [workspace](examples/workspace/vamos.yaml) | Separate frontend/API builds and a private renderer |
 
 `hello`, `private-backend`, `journal`, and `ledger` are runnable applications supported by the current deployment implementation. The other three are design/configuration fixtures: Dockerfiles and application code are intentionally absent, and their broader workflows remain proposed in [PLAN.md](PLAN.md). Tests load all seven configurations.
 
@@ -345,15 +345,15 @@ mise run build
 mise exec -- go run ./cmd/build -version 0.1.0-dev
 ```
 
-See [versioning](docs/versioning.md) for bundle pairing rules and [the agent protocol](docs/agent-protocol.md) / [architecture proposal](docs/agent-proposal.md) for the multi-phase `soar-agent` roadmap.
+See [versioning](docs/versioning.md) for bundle pairing rules and [the agent protocol](docs/agent-protocol.md) / [architecture proposal](docs/agent-proposal.md) for the multi-phase `vamos-agent` roadmap.
 
 Staged secrets, multi-service apps and [persistent local volumes](docs/volumes.md) are implemented. The original volume proposal is superseded; application capture/restore/preparation remain deferred (repository setup is available), and new storage full-suite/live acceptance results are not claimed here; broader workflows remain proposed in [PLAN.md](PLAN.md). Verification evidence and outstanding platform cases are tracked in [inspection](docs/host-inspection.md#observed-real-host-results), [host lifecycle](docs/host-lifecycle.md#verification), [deployment](docs/deployment.md#verification), and [app lifecycle](docs/app-lifecycle.md#verification).
 
 ## Custom domains
 
 Public services support [custom-domain aliases](docs/domains.md) through
-`http.domains`: up to 8 per service and 32 per app. Edit YAML, `soar deploy`,
-then `soar status`; there is no separate `soar domains` command. Generated URLs
+`http.domains`: up to 8 per service and 32 per app. Edit YAML, `vamos deploy`,
+then `vamos status`; there is no separate `vamos domains` command. Generated URLs
 are always retained, and aliases do not redirect. Operators configure DNS and
 open ports 80/443; Caddy manages public certificates automatically. Status
 separates route state, DNS matching and locally verified TLS; it does not prove

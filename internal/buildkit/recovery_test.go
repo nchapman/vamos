@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func failBuild(t *testing.T, m Manager, f *fakeEngine) {
@@ -34,7 +34,7 @@ func TestCrashAfterCreationResumesOnlyMatchingIntent(t *testing.T) {
 			f.hook = func(ctx context.Context, a []string) (process.Result, error, bool) {
 				if a[0] == kind && a[1] == "create" {
 					f.hook = nil
-					env := []string{"-u", "DOCKER_CONTEXT", "-u", "DOCKER_TLS", "-u", "DOCKER_TLS_VERIFY", "-u", "DOCKER_CERT_PATH", "-u", "BUILDKIT_HOST", "-u", "BUILDX_BUILDER", "DOCKER_HOST=unix:///var/run/docker.sock", "BUILDX_CONFIG=" + filepath.Join(f.root, "var/lib/soar/buildkit/buildx"), "docker", "--host", "unix:///var/run/docker.sock"}
+					env := []string{"-u", "DOCKER_CONTEXT", "-u", "DOCKER_TLS", "-u", "DOCKER_TLS_VERIFY", "-u", "DOCKER_CERT_PATH", "-u", "BUILDKIT_HOST", "-u", "BUILDX_BUILDER", "DOCKER_HOST=unix:///var/run/docker.sock", "BUILDX_CONFIG=" + filepath.Join(f.root, "var/lib/vamos/buildkit/buildx"), "docker", "--host", "unix:///var/run/docker.sock"}
 					_, err := f.run(ctx, "/usr/bin/env", append(env, a...), nil)
 					if err != nil {
 						t.Fatal(err)
@@ -184,7 +184,7 @@ func TestBuildxMetadataCannotRedirect(t *testing.T) {
 			m, f := newEngine(t)
 			runBuild(t, m)
 			s := f.state()
-			path := filepath.Join(f.root, "var/lib/soar/buildkit/buildx/instances", s.Builder)
+			path := filepath.Join(f.root, "var/lib/vamos/buildkit/buildx/instances", s.Builder)
 			raw, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
@@ -230,7 +230,7 @@ func TestReceiptNamespaceAndCorruptionRefused(t *testing.T) {
 	for _, kind := range []string{"empty namespace", "unknown JSON", "corrupt JSON", "wrong host", "symlink receipt", "symlink namespace", "public receipt"} {
 		t.Run(kind, func(t *testing.T) {
 			m, f := newEngine(t)
-			dir := filepath.Join(f.root, "var/lib/soar/buildkit")
+			dir := filepath.Join(f.root, "var/lib/vamos/buildkit")
 			path := filepath.Join(dir, "state.json")
 			if kind == "empty namespace" {
 				if os.MkdirAll(dir, 0700) != nil {
@@ -278,7 +278,7 @@ func TestReceiptNamespaceAndCorruptionRefused(t *testing.T) {
 }
 func TestUnknownResourcesNeverAdopted(t *testing.T) {
 	m, f := newEngine(t)
-	f.network = map[string]any{"Id": networkID, "Name": "soar-buildkit-" + testHost + "-net", "Driver": "bridge", "Scope": "local", "Labels": map[string]string{}}
+	f.network = map[string]any{"Id": networkID, "Name": "vamos-buildkit-" + testHost + "-net", "Driver": "bridge", "Scope": "local", "Labels": map[string]string{}}
 	failBuild(t, m, f)
 	for _, call := range f.calls {
 		if strings.Contains(call, "network create") || strings.Contains(call, "network rm") {

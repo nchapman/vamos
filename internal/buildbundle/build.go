@@ -18,24 +18,24 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nchapman/soar/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/buildmeta"
 )
 
 // Change this domain when changing the compiler recipe below. Target-specific
 // GOOS/GOARCH differ by design; all targets otherwise use the same recipe.
-const profile = "soar-bundle-inputs-v1;trimpath;buildvcs=false;mod=readonly;cgo=0;fips=off;amd64=v1;arm64=v8.0"
+const profile = "vamos-bundle-inputs-v1;trimpath;buildvcs=false;mod=readonly;cgo=0;fips=off;amd64=v1;arm64=v8.0"
 
 type target struct{ name, os, arch string }
 
 func targets() []target {
-	name := "soar"
+	name := "vamos"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
 	return []target{
 		{name, runtime.GOOS, runtime.GOARCH},
-		{"soar-linux-amd64", "linux", "amd64"},
-		{"soar-linux-arm64", "linux", "arm64"},
+		{"vamos-linux-amd64", "linux", "amd64"},
+		{"vamos-linux-arm64", "linux", "arm64"},
 	}
 }
 
@@ -46,7 +46,7 @@ func Build(ctx context.Context, root, output, label string, log io.Writer) error
 	if !buildmeta.ValidLabel(label) {
 		return fmt.Errorf("version must be 1–64 ASCII letters, digits, '.', '+', '_', or '-', starting with a letter or digit")
 	}
-	scratch, err := os.MkdirTemp("", "soar-build-*")
+	scratch, err := os.MkdirTemp("", "vamos-build-*")
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func Build(ctx context.Context, root, output, label string, log io.Writer) error
 	outputs := targets()
 	for _, target := range outputs {
 		path := filepath.Join(scratch, target.name)
-		cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-buildvcs=false", "-mod=readonly", "-ldflags=-X=github.com/nchapman/soar/internal/buildmeta.Stamp="+stamp, "-o", path, "./cmd/soar")
+		cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-buildvcs=false", "-mod=readonly", "-ldflags=-X=github.com/nchapman/vamos/internal/buildmeta.Stamp="+stamp, "-o", path, "./cmd/vamos")
 		cmd.Dir = source
 		cmd.Env = append(append([]string{}, env...), "GOOS="+target.os, "GOARCH="+target.arch)
 		cmd.Stdout = log
@@ -241,7 +241,7 @@ func publish(source, dest string) error {
 	if err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(filepath.Dir(dest), ".soar-build-*")
+	temp, err := os.CreateTemp(filepath.Dir(dest), ".vamos-build-*")
 	if err != nil {
 		return err
 	}

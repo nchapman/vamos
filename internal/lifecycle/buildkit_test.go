@@ -14,7 +14,7 @@ func TestTeardownRefusesUnownedBuildServiceState(t *testing.T) {
 			if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
 				t.Fatal(err)
 			}
-			dir := m.path("/var/lib/soar/buildkit")
+			dir := m.path("/var/lib/vamos/buildkit")
 			if kind == "symlink" {
 				if err := os.Symlink(t.TempDir(), dir); err != nil {
 					t.Fatal(err)
@@ -55,7 +55,7 @@ func TestAuthorizedTeardownResumesFinalBuildReceiptDirectoryRemoval(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := m.path("/var/lib/soar/buildkit")
+	dir := m.path("/var/lib/vamos/buildkit")
 	if err := os.Mkdir(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

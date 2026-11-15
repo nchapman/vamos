@@ -52,13 +52,13 @@ type Store struct {
 // New selects a registry directory without creating or reading it.
 func New(dir string) *Store { return &Store{dir: dir} }
 
-// Default selects the soar directory under the user's configuration directory.
+// Default selects the vamos directory under the user's configuration directory.
 func Default() (*Store, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("find user config directory: %w", err)
 	}
-	return New(filepath.Join(dir, "soar")), nil
+	return New(filepath.Join(dir, "vamos")), nil
 }
 
 // Read returns a validated snapshot. An absent registry is an empty version 1

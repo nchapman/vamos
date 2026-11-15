@@ -3,7 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,7 +45,7 @@ func TestServiceBindingsTargetIsolation(t *testing.T) {
 }
 func TestServiceBindingsRejectSymlinks(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Symlink(t.TempDir(), filepath.Join(dir, ".soar")); err != nil {
+	if err := os.Symlink(t.TempDir(), filepath.Join(dir, ".vamos")); err != nil {
 		if runtime.GOOS == "windows" {
 			t.Skipf("symlinks unavailable: %v", err)
 		}

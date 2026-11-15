@@ -1,8 +1,8 @@
 package executor
 
 import (
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/secrets"
 	"os"
 	"path/filepath"
 	"testing"

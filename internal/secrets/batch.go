@@ -14,7 +14,7 @@ const MaxBatchBytes = MaxNames*MaxValueBytes*6 + 8192
 // VersionFor derives a domain-separated immutable version for a batch member.
 // Singleton operations use the operation identity directly instead.
 func VersionFor(operation, name string) string {
-	sum := sha256.Sum256([]byte("soar/secrets/batch/v1\x00" + operation + "\x00" + name))
+	sum := sha256.Sum256([]byte("vamos/secrets/batch/v1\x00" + operation + "\x00" + name))
 	return hex.EncodeToString(sum[:16])
 }
 

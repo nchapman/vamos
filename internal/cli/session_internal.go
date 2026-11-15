@@ -11,9 +11,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/session"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/session"
 )
 
 func internalSession(ctx context.Context, action string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {

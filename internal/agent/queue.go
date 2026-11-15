@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nchapman/soar/internal/agentproto"
-	"github.com/nchapman/soar/internal/buildmeta"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/executor"
+	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/executor"
 )
 
 const recordsDirectory = "operations"

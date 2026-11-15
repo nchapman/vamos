@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // fakeDocker implements the external CLI boundary, not internal helpers. In
@@ -52,7 +52,7 @@ type fakeDocker struct {
 
 func newFakeDocker(t *testing.T, m *Manager, j *journal) *fakeDocker {
 	f := &fakeDocker{volumes: map[string]*fakeVolume{}, t: t, m: m, j: j, images: map[string]*inspection{}, containers: map[string]*inspection{}, lose: map[string]int{}, ignore: map[string]bool{}}
-	f.net = &inspection{Driver: "bridge", Labels: map[string]string{"soar.host": j.HostID, "soar.app": j.App}}
+	f.net = &inspection{Driver: "bridge", Labels: map[string]string{"vamos.host": j.HostID, "vamos.app": j.App}}
 	m.Run = f.run
 	return f
 }
@@ -748,10 +748,10 @@ func TestMultiDockerDiscardProof(t *testing.T) {
 
 func TestMultiDockerInspectionDrift(t *testing.T) {
 	changes := map[string]func(*inspection){
-		"service":       func(v *inspection) { delete(v.Config.Labels, "soar.service") },
+		"service":       func(v *inspection) { delete(v.Config.Labels, "vamos.service") },
 		"name":          func(v *inspection) { v.Name += "-foreign" },
 		"extra-label":   func(v *inspection) { v.Config.Labels["unexpected"] = "sensitive-value" },
-		"operation":     func(v *inspection) { v.Config.Labels["soar.operation"] = strings.Repeat("f", 32) },
+		"operation":     func(v *inspection) { v.Config.Labels["vamos.operation"] = strings.Repeat("f", 32) },
 		"image":         func(v *inspection) { v.Config.Image = "mutable:tag" },
 		"environment":   func(v *inspection) { v.Config.Env = append(v.Config.Env, "EXTRA=sensitive-value") },
 		"command":       func(v *inspection) { v.Config.Cmd = []string{"unexpected"} },
@@ -798,7 +798,7 @@ func TestMultiDockerNetworkIsolationAndAliasOwnership(t *testing.T) {
 			case "unknown-option":
 				f.net.Options = map[string]string{"unrecognized": "enabled"}
 			case "foreign-label":
-				v.Config.Labels["soar.app"] = "foreign"
+				v.Config.Labels["vamos.app"] = "foreign"
 			case "prefix-name":
 				v.Name += "-not-owned"
 			case "unrecorded":
@@ -873,7 +873,7 @@ func TestMultiDockerLegacyIdentityAndDynamicPort(t *testing.T) {
 	r.Container = containerName(j.App, "", r.Operation)
 	v.Name = "/" + r.Container
 	f.endpoint(v, "")
-	delete(v.Config.Labels, "soar.service")
+	delete(v.Config.Labels, "vamos.service")
 	f.containers[r.Container] = v
 	j.ServiceStates[oldService].Candidate = nil
 	j.ServiceStates[oldService].Current = r
@@ -884,7 +884,7 @@ func TestMultiDockerLegacyIdentityAndDynamicPort(t *testing.T) {
 	if _, err := m.multiInspect(context.Background(), j, r, false, true); err != nil {
 		t.Fatal(err)
 	}
-	v.Config.Labels["soar.service"] = ""
+	v.Config.Labels["vamos.service"] = ""
 	if _, err := m.multiInspect(context.Background(), j, r, false, false); err == nil {
 		t.Fatal("new service label accepted as legacy")
 	}
@@ -1051,7 +1051,7 @@ func TestMultiDockerAllowedPublicAliasOverlap(t *testing.T) {
 	}
 	v.ID = strings.Repeat("f", 64)
 	v.Name = "/" + old.Container
-	v.Config.Labels["soar.operation"] = old.Operation
+	v.Config.Labels["vamos.operation"] = old.Operation
 	v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: "34567"}}}
 	f.endpoint(&v, r.Service)
 	f.containers[old.Container] = &v
@@ -1080,7 +1080,7 @@ func TestMultiDockerPostAdmissionDriftWithdrawal(t *testing.T) {
 				v := f.containers[r.Container]
 				if hasAlias(v, network(j), r.Service) {
 					if foreign {
-						v.Config.Labels["soar.app"] = "foreign"
+						v.Config.Labels["vamos.app"] = "foreign"
 					} else {
 						v.NetworkSettings.Ports = map[string][]struct{ HostIP, HostPort string }{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: "34567"}}}
 					}

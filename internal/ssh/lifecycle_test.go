@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/executor"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/executor"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestLifecycleArchiveAndFixedCommand(t *testing.T) {

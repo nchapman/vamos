@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 const testHost = "0123456789abcdef0123456789abcdef"
@@ -51,7 +51,7 @@ func newEngine(t *testing.T) (Manager, *fakeEngine) {
 }
 func jsonResult(v any) process.Result { raw, _ := json.Marshal(v); return process.Result{Stdout: raw} }
 func (f *fakeEngine) state() receipt {
-	raw, err := os.ReadFile(filepath.Join(f.root, "var/lib/soar/buildkit/state.json"))
+	raw, err := os.ReadFile(filepath.Join(f.root, "var/lib/vamos/buildkit/state.json"))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func (f *fakeEngine) run(ctx context.Context, exe string, args []string, stdin [
 			f.t.Fatalf("inherited endpoint selector %s", key)
 		}
 	}
-	for _, expected := range []string{"DOCKER_HOST=unix:///var/run/docker.sock", "BUILDX_CONFIG=" + filepath.Join(f.root, "var/lib/soar/buildkit/buildx")} {
+	for _, expected := range []string{"DOCKER_HOST=unix:///var/run/docker.sock", "BUILDX_CONFIG=" + filepath.Join(f.root, "var/lib/vamos/buildkit/buildx")} {
 		if !contains(args, expected) {
 			f.t.Fatalf("missing environment %s", expected)
 		}
@@ -167,7 +167,7 @@ func (f *fakeEngine) run(ctx context.Context, exe string, args []string, stdin [
 		}
 		// External Buildx store shape, intentionally not marshaled from our parser type.
 		group := map[string]any{"Name": s.Builder, "Driver": "remote", "Dynamic": false, "DockerContext": false, "Nodes": []any{map[string]any{"Name": s.Builder + "0", "Endpoint": "docker-container://" + s.Container, "Platforms": nil, "DriverOpts": nil, "Flags": nil, "Files": nil}}}
-		p := filepath.Join(f.root, "var/lib/soar/buildkit/buildx/instances")
+		p := filepath.Join(f.root, "var/lib/vamos/buildkit/buildx/instances")
 		if os.MkdirAll(p, 0700) != nil {
 			f.t.Fatal("mkdir")
 		}
@@ -299,7 +299,7 @@ func TestBuildNormalShapeAndCache(t *testing.T) {
 	if running(f) {
 		t.Fatal("daemon left running")
 	}
-	expected := "buildx build --builder soar-" + testHost + " --load --network default --iidfile /tmp/image.iid --file Dockerfile -"
+	expected := "buildx build --builder vamos-" + testHost + " --load --network default --iidfile /tmp/image.iid --file Dockerfile -"
 	if !contains(f.calls, expected) {
 		t.Fatalf("missing build command: %v", f.calls)
 	}

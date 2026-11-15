@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func planBoundaryRequest(action string) deploy.Request {

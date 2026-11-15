@@ -17,7 +17,7 @@ services:
     secrets: {DB_PASSWORD: database-password}
 ```
 
-The runner service must be declared locally, selected by the deployment, and not skipped by `update: manual`. An excluded or skipped runner is rejected before building or changing services. The command is an argument array: Soar does not implicitly invoke a shell.
+The runner service must be declared locally, selected by the deployment, and not skipped by `update: manual`. An excluded or skipped runner is rejected before building or changing services. The command is an argument array: Vamos does not implicitly invoke a shell.
 
 ## Execution order and inputs
 
@@ -46,10 +46,10 @@ The directive belongs only to that captured deployment. A later deployment whose
 ## Observe failures and resume safely
 
 ```sh
-soar status --server local --app ledger
-soar status --server local --app ledger --json
-soar logs --server local --app ledger --run RELEASE_RUN_OPERATION
-soar resume --server local --app ledger DEPLOYMENT_OPERATION
+vamos status --server local --app ledger
+vamos status --server local --app ledger --json
+vamos logs --server local --app ledger --run RELEASE_RUN_OPERATION
+vamos resume --server local --app ledger DEPLOYMENT_OPERATION
 ```
 
 Status distinguishes the deployment operation from the release run operation. JSON includes `release` metadata with the service, execution identity, phase and, when known, exit code. Command output belongs to explicit run logs, not status metadata.

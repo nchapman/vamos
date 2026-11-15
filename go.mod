@@ -1,4 +1,4 @@
-module github.com/nchapman/soar
+module github.com/nchapman/vamos
 
 go 1.25.0
 

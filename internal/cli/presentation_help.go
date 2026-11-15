@@ -28,7 +28,7 @@ func (p *presentation) renderHelp(text string) string {
 		switch {
 		case strings.HasPrefix(trimmed, "Usage:"), strings.HasSuffix(trimmed, ":"):
 			bold = true
-		case strings.HasPrefix(trimmed, "soar "):
+		case strings.HasPrefix(trimmed, "vamos "):
 			role = "accent"
 		}
 		// Tabs belong to flag.PrintDefaults' layout, not to a structured value.
@@ -91,18 +91,18 @@ func (p *presentation) renderMainHelp() string {
 			{"help", "Show general or command-specific help"},
 		}},
 	}
-	text := p.header("soar", "", "", "")
+	text := p.header("vamos", "", "", "")
 	text += p.prose("A small app platform for one server")
-	text += p.section("Usage") + p.command("soar COMMAND [OPTIONS]")
+	text += p.section("Usage") + p.command("vamos COMMAND [OPTIONS]")
 	for _, group := range groups {
 		text += p.section(group.title)
 		commandWidth, descriptionWidth := 0, 0
 		for _, cmd := range group.commands {
-			commandWidth = max(commandWidth, ansi.StringWidth("soar "+cmd.name))
+			commandWidth = max(commandWidth, ansi.StringWidth("vamos "+cmd.name))
 			descriptionWidth = max(descriptionWidth, ansi.StringWidth(cmd.description))
 		}
 		for _, cmd := range group.commands {
-			name := "soar " + cmd.name
+			name := "vamos " + cmd.name
 			if commandWidth+2+descriptionWidth <= p.width {
 				text += p.ink("accent", name, false) + strings.Repeat(" ", commandWidth-ansi.StringWidth(name)+2)
 				text += p.ink("", cmd.description, false) + "\n"
@@ -112,9 +112,9 @@ func (p *presentation) renderMainHelp() string {
 		}
 	}
 	text += p.section("Examples")
-	text += p.command("soar apps --server home")
-	text += p.command("soar status --server home --app notes")
-	text += p.command("soar help deploy")
+	text += p.command("vamos apps --server home")
+	text += p.command("vamos status --server home --app notes")
+	text += p.command("vamos help deploy")
 	// Keep the existing safety and scope qualifications alongside the new
 	// navigation; this is still help, not a deployment success claim.
 	text += p.section("Before you begin")

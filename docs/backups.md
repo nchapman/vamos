@@ -5,7 +5,7 @@ configuration are implemented.** Use the [repository setup guide](backup-reposit
 and [shared plan guide](backup-plans.md) for supported commands. The source/set YAML,
 `backup configure` preview/apply and recorded `backup plan` are implemented only
 within that guide's explicit bounds. Capture/create, recovery-point
-list/status/resume, scheduling and `soar restore` below remain proposed interfaces,
+list/status/resume, scheduling and `vamos restore` below remain proposed interfaces,
 not implemented features. Their syntax is
 provisional; the implemented configure/plan syntax is not. All capture and
 recovery guarantees below are design requirements, not current capabilities.
@@ -151,14 +151,14 @@ revert scheduled backups.
 **This is app-wide full replacement, unlike scoped deploy.** Use explicit
 `--server` (project bindings are ignored); `repository` is a verified registered
 name on that server, not a URL or bucket. Set names are arbitrary labels, not
-schedules. Resolution uses the effective deployed app, not local `soar.yaml`.
+schedules. Resolution uses the effective deployed app, not local `vamos.yaml`.
 
 Implemented policy-only flow (no capture or downtime authorization):
 
 ```sh
-soar backup configure --server home --app journal -f backup.yaml
-soar backup configure --server home --app journal -f backup.yaml --yes
-soar backup plan --server home --app journal --json
+vamos backup configure --server home --app journal -f backup.yaml
+vamos backup configure --server home --app journal -f backup.yaml --yes
+vamos backup plan --server home --app journal --json
 ```
 
 Configure without `--yes` only previews. `--yes` obtains a fresh preview and
@@ -168,11 +168,11 @@ See the [plan guide](backup-plans.md) for complete field and validation rules.
 Proposed capture flow (not implemented):
 
 ```sh
-soar backup create --server home --app journal --set app-state
-soar backup create --server home --app journal --set app-state --allow-downtime --yes
-soar backup list --server home --app journal
-soar backup status --server home --app journal --operation OPERATION
-soar backup resume --server home --app journal --operation OPERATION
+vamos backup create --server home --app journal --set app-state
+vamos backup create --server home --app journal --set app-state --allow-downtime --yes
+vamos backup list --server home --app journal
+vamos backup status --server home --app journal --operation OPERATION
+vamos backup resume --server home --app journal --operation OPERATION
 ```
 
 `create` previews unless approved. Downtime requires explicit authorization even
@@ -196,7 +196,7 @@ file access and files need directory metadata, while PostgreSQL needs a network
 connection. Methods declare required capabilities; only the coordinator grants
 mounts, network access, credentials, writer suspension and target-write authority.
 This is a closed built-in interface, not a general privileged command runner.
-Existing `soar run` stays volume-free. Backup helpers require a separate, narrowly
+Existing `vamos run` stays volume-free. Backup helpers require a separate, narrowly
 owned execution boundary; do not weaken ordinary run/session ownership rules.
 
 ### PostgreSQL (`postgres`)
@@ -294,7 +294,7 @@ application snapshot. Files are not eligible for this policy initially.
 `quiesced` means all explicitly declared application writers remain stopped for
 all source captures. The volume owner is mandatory for SQLite/files sets using
 this policy. For network databases the user must enumerate every app writer,
-including worker replicas; Soar cannot infer SQL clients from environment values.
+including worker replicas; Vamos cannot infer SQL clients from environment values.
 An external writer, database-side job, or administrator can invalidate a claimed
 cross-source consistency guarantee. Preflight reports these assumptions, not
 fictional proof that no such writer exists. Stopping writers cannot repair a
@@ -453,10 +453,10 @@ as ransomware-proof.
 Proposed interaction, usable without the source server:
 
 ```sh
-soar backup inspect --repository offsite --point POINT
-soar restore --server recovery --app journal-recovered --repository offsite --point POINT
-soar restore --server recovery --app journal-recovered --repository offsite --point POINT --yes
-soar restore activate --server recovery --app journal-recovered --operation OPERATION --yes
+vamos backup inspect --repository offsite --point POINT
+vamos restore --server recovery --app journal-recovered --repository offsite --point POINT
+vamos restore --server recovery --app journal-recovered --repository offsite --point POINT --yes
+vamos restore activate --server recovery --app journal-recovered --operation OPERATION --yes
 ```
 
 1. Require an explicit initialized target and absent app identity, including no

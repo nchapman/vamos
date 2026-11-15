@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/buildmeta"
+	"github.com/nchapman/vamos/internal/buildmeta"
 )
 
 func linuxELF() []byte {

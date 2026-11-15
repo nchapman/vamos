@@ -13,5 +13,5 @@ func owned(info os.FileInfo) bool {
 	return ok && st.Uid == uint32(os.Geteuid())
 }
 func productionOwner(dir string) bool {
-	return filepath.Clean(dir) != "/var/lib/soar/secrets" || os.Geteuid() == 0
+	return filepath.Clean(dir) != "/var/lib/vamos/secrets" || os.Geteuid() == 0
 }

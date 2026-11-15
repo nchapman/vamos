@@ -11,7 +11,7 @@ import (
 	"runtime"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 type binding struct {
@@ -38,7 +38,7 @@ func readProjectMetadata(path string) ([]byte, error) {
 }
 
 func readBinding(dir string) (*binding, error) {
-	root := filepath.Join(dir, ".soar")
+	root := filepath.Join(dir, ".vamos")
 	info, err := os.Lstat(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -47,7 +47,7 @@ func readBinding(dir string) (*binding, error) {
 		return nil, err
 	}
 	if !info.IsDir() {
-		return nil, errors.New("project .soar must be a directory, not a symlink")
+		return nil, errors.New("project .vamos must be a directory, not a symlink")
 	}
 	path := filepath.Join(root, "server.json")
 	info, err = os.Lstat(path)
@@ -81,7 +81,7 @@ func readBinding(dir string) (*binding, error) {
 }
 
 func bindProject(dir, app string, server registry.Server) error {
-	root := filepath.Join(dir, ".soar")
+	root := filepath.Join(dir, ".vamos")
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func bindProject(dir, app string, server registry.Server) error {
 		return err
 	}
 	if !info.IsDir() {
-		return errors.New("project .soar must not be a symlink")
+		return errors.New("project .vamos must not be a symlink")
 	}
 	lockPath := filepath.Join(root, "binding.lock")
 	if info, err := os.Lstat(lockPath); err == nil && !info.Mode().IsRegular() {
@@ -115,7 +115,7 @@ func bindProject(dir, app string, server registry.Server) error {
 		return nil
 	}
 	// Keep local target metadata out of Git even in projects whose root ignore
-	// file knows nothing about Soar. Never overwrite an existing ignore file.
+	// file knows nothing about Vamos. Never overwrite an existing ignore file.
 	ignore := filepath.Join(root, ".gitignore")
 	f, err := os.OpenFile(ignore, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err == nil {
@@ -130,14 +130,14 @@ func bindProject(dir, app string, server registry.Server) error {
 	} else if errors.Is(err, os.ErrExist) {
 		info, err := os.Lstat(ignore)
 		if err != nil || !info.Mode().IsRegular() {
-			return errors.New("unsafe .soar/.gitignore")
+			return errors.New("unsafe .vamos/.gitignore")
 		}
 		data, err := readProjectMetadata(ignore)
 		if err != nil {
 			return err
 		}
 		if string(bytes.TrimSpace(data)) != "*" {
-			return errors.New("existing .soar/.gitignore must contain '*' to protect project metadata")
+			return errors.New("existing .vamos/.gitignore must contain '*' to protect project metadata")
 		}
 	} else {
 		return err
@@ -202,7 +202,7 @@ func selectAppServer(state registry.State, dir, app, override string) (registry.
 	}
 	server, ok := state.Servers[name]
 	if !ok {
-		return registry.Server{}, errors.New("no selected registered server; run soar server add first or select --server")
+		return registry.Server{}, errors.New("no selected registered server; run vamos server add first or select --server")
 	}
 	return server, nil
 }

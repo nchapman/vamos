@@ -2,8 +2,8 @@ package deploy
 
 import (
 	"errors"
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 var ErrBindingRequired = errors.New("service binding required")

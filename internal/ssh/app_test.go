@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func appRequest() deploy.Request {
@@ -75,7 +75,7 @@ func TestAppQueriesUploadMatchingExecutorToTemporaryStage(t *testing.T) {
 		r.Operation = ""
 		run := func(_ context.Context, _ string, args []string, input []byte) (process.Result, error) {
 			command := args[len(args)-1]
-			if strings.Contains(command, "systemd-run") || strings.Contains(command, "/usr/local/lib/soar") || !strings.Contains(command, "mktemp") || !strings.Contains(command, "sha256sum") || !strings.Contains(command, "trap") {
+			if strings.Contains(command, "systemd-run") || strings.Contains(command, "/usr/local/lib/vamos") || !strings.Contains(command, "mktemp") || !strings.Contains(command, "sha256sum") || !strings.Contains(command, "trap") {
 				t.Fatal("read query started worker")
 			}
 			files := map[string][]byte{}

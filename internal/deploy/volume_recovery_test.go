@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestVolumeWriterExecutionOrdering(t *testing.T) {
@@ -22,7 +22,7 @@ func TestVolumeWriterExecutionOrdering(t *testing.T) {
 		if n == "docker" && (a[0] == "start" || a[0] == "stop") {
 			name := a[len(a)-1]
 			v := f.docker.containers[name]
-			service := v.Config.Labels["soar.service"]
+			service := v.Config.Labels["vamos.service"]
 			j := f.load()
 			slot := j.ServiceStates[service]
 			if a[0] == "start" {
@@ -30,7 +30,7 @@ func TestVolumeWriterExecutionOrdering(t *testing.T) {
 					t.Fatal("execution not captured before start")
 				}
 				for otherName, other := range f.docker.containers {
-					if otherName != name && other.Config.Labels["soar.service"] == service && (other.State.Running || other.HostConfig.RestartPolicy.Name != "no") {
+					if otherName != name && other.Config.Labels["vamos.service"] == service && (other.State.Running || other.HostConfig.RestartPolicy.Name != "no") {
 						t.Fatal("second writer authorized")
 					}
 				}

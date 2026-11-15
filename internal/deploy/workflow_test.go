@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 // workflowFlow extends only the Docker CLI boundary: tags resolve to immutable
@@ -272,17 +272,17 @@ func TestWorkflowExecuteMigrationPreservesDeployment(t *testing.T) {
 	complete := false
 	f.m.Run = func(ctx context.Context, n string, a []string, b []byte) (process.Result, error) {
 		if n == "docker" {
-			if a[0] == "start" && f.docker.containers["soar-run-"+q.Operation] != nil {
-				f.docker.containers["soar-run-"+q.Operation].State.Running = true
+			if a[0] == "start" && f.docker.containers["vamos-run-"+q.Operation] != nil {
+				f.docker.containers["vamos-run-"+q.Operation].State.Running = true
 				return process.Result{}, nil
 			}
 			if a[0] == "wait" {
 				complete = true
-				f.docker.containers["soar-run-"+q.Operation].State.Running = false
+				f.docker.containers["vamos-run-"+q.Operation].State.Running = false
 				return process.Result{Stdout: []byte("0\n")}, nil
 			}
 			if complete && len(a) == 3 && a[0] == "container" && a[1] == "inspect" {
-				v := f.docker.containers["soar-run-"+q.Operation]
+				v := f.docker.containers["vamos-run-"+q.Operation]
 				if a[2] == v.ID || a[2] == strings.TrimPrefix(v.Name, "/") {
 					raw, _ := json.Marshal(v)
 					var obj map[string]any

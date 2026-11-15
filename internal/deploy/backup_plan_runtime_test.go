@@ -35,7 +35,7 @@ func TestBackupPlanRuntime(t *testing.T) {
 			case "missing":
 				delete(f.docker.containers, slot.Current.Container)
 			case "foreign":
-				f.docker.containers[slot.Current.Container].Config.Labels["soar.host"] = "foreign"
+				f.docker.containers[slot.Current.Container].Config.Labels["vamos.host"] = "foreign"
 			case "restarting":
 				f.docker.containers[slot.Current.Container].State.Restarting = true
 			}

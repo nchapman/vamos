@@ -1,5 +1,5 @@
 // Package executor provides the versioned stdin/stdout protocol for an installed
-// host-side Soar binary. Bootstrap SSH inspection does not require this binary.
+// host-side Vamos binary. Bootstrap SSH inspection does not require this binary.
 package executor
 
 import (
@@ -13,9 +13,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 const Version = 1

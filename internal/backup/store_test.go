@@ -38,7 +38,7 @@ func TestPrivateStoreRejectsUnsafeFilesAndDirectories(t *testing.T) {
 				if runtime.GOOS == "windows" {
 					t.Skip("POSIX modes")
 				}
-				if err := os.Chmod(filepath.Join(m.Root, "var/lib/soar"), 0777); err != nil {
+				if err := os.Chmod(filepath.Join(m.Root, "var/lib/vamos"), 0777); err != nil {
 					t.Fatal(err)
 				}
 			case "symlink":

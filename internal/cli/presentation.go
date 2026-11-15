@@ -46,7 +46,7 @@ func terminalPresentationOptions(width int, profile colorprofile.Profile, getenv
 	if width <= 0 {
 		width = 80
 	}
-	theme := getenv("SOAR_THEME")
+	theme := getenv("VAMOS_THEME")
 	if theme != "light" && theme != "dark" {
 		theme = "terminal"
 	}

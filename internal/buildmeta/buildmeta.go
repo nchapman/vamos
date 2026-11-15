@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	prefix = "soar-bundle-v1:"
-	suffix = ":end-soar-bundle"
+	prefix = "vamos-bundle-v1:"
+	suffix = ":end-vamos-bundle"
 )
 
 // Stamp is injected at link time by cmd/build. Referencing it through Version

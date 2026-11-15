@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 // Also run as a compiled test binary under a low descriptor limit: each add()
@@ -21,7 +21,7 @@ func TestArchiveManySmallFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := Archive(filepath.Join(dir, "soar.yaml"), config.Build{Context: ".", Dockerfile: "Dockerfile"}); err != nil {
+	if _, err := Archive(filepath.Join(dir, "vamos.yaml"), config.Build{Context: ".", Dockerfile: "Dockerfile"}); err != nil {
 		t.Fatal(err)
 	}
 }

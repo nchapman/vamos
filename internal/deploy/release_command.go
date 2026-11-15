@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 // A hook belongs to one captured deployment. It is not inherited by later
@@ -40,7 +40,7 @@ func captureRelease(j *journal, directive *config.Release) error {
 	if slot == nil || slot.Skipped || !slices.Contains(j.Selected, directive.Service) {
 		return errors.New("release runner must be a selected, non-skipped service")
 	}
-	digest := sha256.Sum256([]byte("soar-release/" + j.App + "/" + j.Operation))
+	digest := sha256.Sum256([]byte("vamos-release/" + j.App + "/" + j.Operation))
 	j.Hook = &releaseCapture{Operation: hex.EncodeToString(digest[:16]), Directive: config.Release{Service: directive.Service, Command: slices.Clone(directive.Command)}}
 	j.Version = 8
 	// Desired runtime state deliberately excludes deployment directives.
@@ -92,7 +92,7 @@ func (m *Manager) hookRecord(j *journal) *runRecord {
 	cfg.Command = slices.Clone(h.Directive.Command)
 	cfg.HTTP, cfg.Volume = nil, nil
 	return &runRecord{Version: 2, App: j.App, HostID: j.HostID,
-		RunResult: RunResult{Operation: h.Operation, Service: h.Directive.Service, Phase: "create-intent", Container: "soar-run-" + h.Operation, Image: selectedImage(j, h.Directive.Service), Purpose: "release", ParentOperation: j.Operation},
+		RunResult: RunResult{Operation: h.Operation, Service: h.Directive.Service, Phase: "create-intent", Container: "vamos-run-" + h.Operation, Image: selectedImage(j, h.Directive.Service), Purpose: "release", ParentOperation: j.Operation},
 		Config:    cfg, SecretRefs: j.ServiceStates[h.Directive.Service].SecretRefs}
 }
 
@@ -205,9 +205,9 @@ func (m *Manager) advanceRelease(ctx context.Context, j *journal) error {
 }
 
 func runCreateArgs(j *journal, rec *runRecord) []string {
-	args := []string{"create", "--name", rec.Container, "--restart", "no", "--network", network(j), "--label", "soar.host=" + j.HostID, "--label", "soar.app=" + j.App, "--label", "soar.operation=" + rec.Operation, "--label", "soar.service=" + rec.Service, "--label", "soar.run=" + rec.Operation}
+	args := []string{"create", "--name", rec.Container, "--restart", "no", "--network", network(j), "--label", "vamos.host=" + j.HostID, "--label", "vamos.app=" + j.App, "--label", "vamos.operation=" + rec.Operation, "--label", "vamos.service=" + rec.Service, "--label", "vamos.run=" + rec.Operation}
 	if rec.Purpose == "release" {
-		args = append(args, "--label", "soar.release="+rec.ParentOperation)
+		args = append(args, "--label", "vamos.release="+rec.ParentOperation)
 	}
 	args = append(args, resourceArgs(rec.Config.Resources)...)
 	keys := make([]string, 0, len(rec.Config.Env))

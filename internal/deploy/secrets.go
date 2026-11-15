@@ -4,11 +4,11 @@ import (
 	"context"
 	"regexp"
 
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 func (m *Manager) secretStore() secrets.Store {
-	return secrets.Store{Dir: m.path("/var/lib/soar/secrets")}
+	return secrets.Store{Dir: m.path("/var/lib/vamos/secrets")}
 }
 
 func secretOnlyStatus(app, domain string) Status {

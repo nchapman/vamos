@@ -86,7 +86,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 		// before configuration was recorded. Initial preflight proved them absent.
 		if s.Accounts == nil {
 			s.Accounts = map[string]string{}
-			for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker", "passwd:soar", "group:soar"} {
+			for _, key := range []string{"passwd:caddy", "group:caddy", "group:docker", "passwd:vamos", "group:vamos"} {
 				parts := strings.Split(key, ":")
 				value, err := m.account(ctx, parts[0], parts[1])
 				if err != nil {
@@ -100,8 +100,8 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 					if parts[0] == "group" && (len(fields) != 4 || fields[0] != parts[1] || fields[3] != "") {
 						return nil, errors.New("unexpected service group after interrupted setup")
 					}
-					if parts[0] == "passwd" && parts[1] == "soar" && (len(fields) != 7 || fields[0] != "soar" || (fields[5] != "/" && fields[5] != "/nonexistent") || fields[6] != AgentPath) {
-						return nil, errors.New("unexpected soar account after interrupted setup")
+					if parts[0] == "passwd" && parts[1] == "vamos" && (len(fields) != 7 || fields[0] != "vamos" || (fields[5] != "/" && fields[5] != "/nonexistent") || fields[6] != AgentPath) {
+						return nil, errors.New("unexpected vamos account after interrupted setup")
 					}
 				}
 				s.Accounts[key] = value
@@ -259,7 +259,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if err := m.unmask(ctx); err != nil {
 		return nil, err
 	}
-	for _, path := range []string{"/etc/soar", "/etc/ssh/sshd_config.d/soar.conf", "/etc/systemd/system/" + agentUnit} {
+	for _, path := range []string{"/etc/vamos", "/etc/ssh/sshd_config.d/vamos.conf", "/etc/systemd/system/" + agentUnit} {
 		if err := rejectSymlink(m.path(path)); err != nil {
 			return nil, err
 		}
@@ -274,23 +274,23 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if _, err := m.command(ctx, "systemctl", "daemon-reload"); err != nil {
 		return nil, err
 	}
-	if s.Accounts["passwd:soar"] != "" {
-		if _, err := m.command(ctx, "userdel", "soar"); err != nil {
+	if s.Accounts["passwd:vamos"] != "" {
+		if _, err := m.command(ctx, "userdel", "vamos"); err != nil {
 			return nil, err
 		}
 	}
-	if s.Accounts["group:soar"] != "" {
+	if s.Accounts["group:vamos"] != "" {
 		// userdel may remove an owned user-private group automatically. Re-read
 		// it rather than treating that documented outcome as a failed teardown.
-		value, err := m.account(ctx, "group", "soar")
+		value, err := m.account(ctx, "group", "vamos")
 		if err != nil {
 			return nil, err
 		}
 		if value != "" {
-			if value != s.Accounts["group:soar"] {
-				return nil, errors.New("soar group drifted during teardown")
+			if value != s.Accounts["group:vamos"] {
+				return nil, errors.New("vamos group drifted during teardown")
 			}
-			if _, err := m.command(ctx, "groupdel", "soar"); err != nil {
+			if _, err := m.command(ctx, "groupdel", "vamos"); err != nil {
 				return nil, err
 			}
 		}
@@ -309,7 +309,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 }
 
 func (m *Manager) removeQueueHistory() error {
-	for _, transient := range []string{"/run/soar", "/run/lock/soar"} {
+	for _, transient := range []string{"/run/vamos", "/run/lock/vamos"} {
 		target := m.path(transient)
 		if err := rejectSymlink(target); err != nil {
 			return err
@@ -318,7 +318,7 @@ func (m *Manager) removeQueueHistory() error {
 			return err
 		}
 	}
-	queueRoot := m.path("/var/lib/soar/queue")
+	queueRoot := m.path("/var/lib/vamos/queue")
 	if err := rejectSymlink(queueRoot); err != nil {
 		return err
 	}

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestAppsReadOnlyResponseAcceptance(t *testing.T) {
@@ -27,7 +27,7 @@ func TestAppsReadOnlyResponseAcceptance(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			response, err := runApp(context.Background(), "root@home", request, []byte("binary"), nil, func(_ context.Context, program string, args []string, input []byte) (process.Result, error) {
 				command := args[len(args)-1]
-				if program != "ssh" || !strings.Contains(command, "/run/soar-read.") {
+				if program != "ssh" || !strings.Contains(command, "/run/vamos-read.") {
 					t.Fatalf("not read-only transport: %s %v", program, args)
 				}
 				return process.Result{Stdout: []byte(tc.data)}, nil

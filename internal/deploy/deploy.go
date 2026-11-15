@@ -18,14 +18,14 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/appstate"
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/engine"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/appstate"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/engine"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 type Request struct {
@@ -181,7 +181,7 @@ type Manager struct {
 	// multiple apps deploy concurrently.
 	IngressLock func(ctx context.Context) (func(), error)
 	// Snapshotter overrides the BuildKit snapshotter choice ("auto" or
-	// "native"). Empty defers to the SOAR_BUILDKIT_SNAPSHOTTER environment
+	// "native"). Empty defers to the VAMOS_BUILDKIT_SNAPSHOTTER environment
 	// variable so operators can keep configuring hosts through systemd.
 	Snapshotter    string
 	Root           string
@@ -479,7 +479,7 @@ func ValidateRequest(r Request) error {
 	return nil
 }
 func (m *Manager) path(p string) string  { return filepath.Join(m.Root, strings.TrimPrefix(p, "/")) }
-func (m *Manager) dir(app string) string { return m.path("/var/lib/soar/apps/" + app) }
+func (m *Manager) dir(app string) string { return m.path("/var/lib/vamos/apps/" + app) }
 func safe(p string) error {
 	for {
 		s, e := os.Lstat(p)
@@ -1089,7 +1089,7 @@ func validateJournal(j *journal, app string) error {
 		if r == nil {
 			continue
 		}
-		if len(r.Instances) != 0 || r.ExecutionIntent || r.VolumeID != "" || r.Service != "" || r.Config != nil || !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "soar-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
+		if len(r.Instances) != 0 || r.ExecutionIntent || r.VolumeID != "" || r.Service != "" || r.Config != nil || !validSecretRefs(r.SecretRefs) || !operation.MatchString(r.Operation) || r.Container != "vamos-"+app+"-"+r.Operation || !imageID.MatchString(r.Image) {
 			return bad
 		}
 		for _, port := range []string{r.Port, r.PublishPort} {

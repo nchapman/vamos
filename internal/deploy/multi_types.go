@@ -1,7 +1,7 @@
 package deploy
 
 import (
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 const MaxServices = 8
@@ -129,7 +129,7 @@ func hasCurrent(j *journal) bool {
 
 func containerName(app, service, op string) string {
 	if service == "" {
-		return "soar-" + app + "-" + op
+		return "vamos-" + app + "-" + op
 	}
-	return "soar-" + app + "-" + service + "-" + op
+	return "vamos-" + app + "-" + service + "-" + op
 }

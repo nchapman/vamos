@@ -11,10 +11,10 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 const maxAppRequest = 64 * 1024

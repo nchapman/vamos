@@ -15,7 +15,7 @@ import (
 )
 
 const Image = "moby/buildkit:v0.27.1@sha256:1e110c71d389d6d24f67b9438e2f7b8da749a6ff407b22a1631e025c95599368"
-const bridge = "soar-build0"
+const bridge = "vamos-build0"
 
 var hostPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 var idPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -34,10 +34,10 @@ type receipt struct {
 }
 
 func intent(host, snapshotter string) receipt {
-	return receipt{Version: 1, Host: host, Snapshotter: snapshotter, Container: "soar-buildkit-" + host, Network: "soar-buildkit-" + host + "-net", Volume: "soar-buildkit-" + host + "-cache", Builder: "soar-" + host, Bridge: bridge, Image: Image}
+	return receipt{Version: 1, Host: host, Snapshotter: snapshotter, Container: "vamos-buildkit-" + host, Network: "vamos-buildkit-" + host + "-net", Volume: "vamos-buildkit-" + host + "-cache", Builder: "vamos-" + host, Bridge: bridge, Image: Image}
 }
 func (s receipt) labels(role string) map[string]string {
-	return map[string]string{"org.soar.buildkit.host": s.Host, "org.soar.buildkit.nonce": s.Nonce, "org.soar.buildkit.role": role}
+	return map[string]string{"org.vamos.buildkit.host": s.Host, "org.vamos.buildkit.nonce": s.Nonce, "org.vamos.buildkit.role": role}
 }
 func strictJSON(b []byte, out any) error {
 	if uniqueKeys(json.NewDecoder(bytes.NewReader(b)), 0) != nil {
@@ -152,7 +152,7 @@ func (m Manager) state(host string) (receipt, string, error) {
 	if !filepath.IsAbs(root) {
 		return receipt{}, "", errInfra
 	}
-	dir := filepath.Join(root, "var/lib/soar/buildkit")
+	dir := filepath.Join(root, "var/lib/vamos/buildkit")
 	if err := safeDir(filepath.Dir(dir), true); err != nil {
 		return receipt{}, "", err
 	}

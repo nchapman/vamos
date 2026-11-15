@@ -20,9 +20,9 @@ func TestPresentationPolicy(t *testing.T) {
 		theme          string
 	}{
 		{"default", nil, true, true, "terminal"},
-		{"light", map[string]string{"SOAR_THEME": "light"}, true, true, "light"},
-		{"dark", map[string]string{"SOAR_THEME": "dark"}, true, true, "dark"},
-		{"invalid-theme", map[string]string{"SOAR_THEME": "unknown"}, true, true, "terminal"},
+		{"light", map[string]string{"VAMOS_THEME": "light"}, true, true, "light"},
+		{"dark", map[string]string{"VAMOS_THEME": "dark"}, true, true, "dark"},
+		{"invalid-theme", map[string]string{"VAMOS_THEME": "unknown"}, true, true, "terminal"},
 		{"no-color", map[string]string{"NO_COLOR": "1"}, true, false, "terminal"},
 		{"clicolor", map[string]string{"CLICOLOR": "0"}, true, false, "terminal"},
 		{"ci", map[string]string{"CI": "true"}, false, false, ""},
@@ -42,7 +42,7 @@ func TestPresentationPolicy(t *testing.T) {
 func TestPresentationDoesNotForceStylesIntoPipes(t *testing.T) {
 	t.Setenv("CLICOLOR_FORCE", "1")
 	t.Setenv("FORCE_COLOR", "1")
-	t.Setenv("SOAR_THEME", "dark")
+	t.Setenv("VAMOS_THEME", "dark")
 	var b bytes.Buffer
 	if presentationFor(&b) != nil {
 		t.Fatal("ordinary writer treated as a terminal")
@@ -65,11 +65,11 @@ func TestPresentationEscapesControlsButPreservesCommandArguments(t *testing.T) {
 	if !strings.Contains(plain, `hello\x1b[2J\r\n\t\u202eEND`) {
 		t.Fatal(plain)
 	}
-	command := suggestedCommand("soar", "deploy", "-f", "a user's long configuration.yaml", "--server", "staging")
+	command := suggestedCommand("vamos", "deploy", "-f", "a user's long configuration.yaml", "--server", "staging")
 	if got := p.command(command); got != command+"\n" {
 		t.Fatalf("command changed: %q", got)
 	}
-	if got := p.command("soar deploy -f 'unsafe\npath'"); !strings.Contains(got, "omitted") || strings.Contains(got, "soar deploy") {
+	if got := p.command("vamos deploy -f 'unsafe\npath'"); !strings.Contains(got, "omitted") || strings.Contains(got, "vamos deploy") {
 		t.Fatal(got)
 	}
 }

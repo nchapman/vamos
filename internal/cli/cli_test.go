@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/cli"
+	"github.com/nchapman/vamos/internal/cli"
 )
 
 func TestInformationalCommands(t *testing.T) {
@@ -17,7 +17,7 @@ func TestInformationalCommands(t *testing.T) {
 			code := cli.Run(args, &stdout, &stderr, "test-version")
 			want := "Usage:"
 			if len(args) > 0 && strings.Contains(args[0], "version") {
-				want = "soar test-version"
+				want = "vamos test-version"
 			}
 			if code != 0 || !strings.Contains(stdout.String(), want) || stderr.Len() != 0 {
 				t.Fatalf("code=%d stdout=%q stderr=%q", code, &stdout, &stderr)
@@ -86,7 +86,7 @@ func TestValidateFailures(t *testing.T) {
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
-	filename := filepath.Join(t.TempDir(), "soar.yaml")
+	filename := filepath.Join(t.TempDir(), "vamos.yaml")
 	if err := os.WriteFile(filename, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

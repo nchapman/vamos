@@ -8,7 +8,7 @@ protection, quotas, migration system, or backup/restore workflow.
 From the repository root, on a bootstrapped test server:
 
 ```sh
-./bin/soar deploy -f examples/journal/soar.yaml
+./bin/vamos deploy -f examples/journal/vamos.yaml
 # Substitute your server's base domain:
 URL=https://journal.apps.example.com
 curl -fsS "$URL/readyz"
@@ -38,7 +38,7 @@ never authorizes restarting the old binary against possibly changed data.
 See [storage lifecycle](../../docs/volumes.md). These are testing instructions,
 not a claim that live tests have already passed.
 
-The image deliberately has no Dockerfile `VOLUME`. Soar supplies `/data` with
+The image deliberately has no Dockerfile `VOLUME`. Vamos supplies `/data` with
 no implicit image-data copy. The entrypoint starts as root only to inspect
 permissions and initialize a **new empty root-owned** mount root to numeric
 UID/GID 10001, mode 0700. It never recursively chowns/chmods existing data.

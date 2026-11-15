@@ -3,7 +3,7 @@ package deploy
 import (
 	"context"
 	"encoding/json"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 	"os"
 	"path/filepath"
 	"strings"

@@ -132,7 +132,7 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 			} else {
 				f, err := os.OpenFile(filepath.Join(o.artifacts, "guest-artifacts.tar"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 				if err == nil {
-					err = r.exec.Run(cleanup, runArgs(m.ID, "sh", "-c", "if [ -d /opt/soar-test/.integration-artifacts ]; then tar -C /opt/soar-test/.integration-artifacts -cf - .; else tar -cf - --files-from /dev/null; fi"), nil, f, r.stderr)
+					err = r.exec.Run(cleanup, runArgs(m.ID, "sh", "-c", "if [ -d /opt/vamos-test/.integration-artifacts ]; then tar -C /opt/vamos-test/.integration-artifacts -cf - .; else tar -cf - --files-from /dev/null; fi"), nil, f, r.stderr)
 					err = errors.Join(err, f.Close())
 				}
 				if err != nil {
@@ -186,7 +186,7 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	if err := save(); err != nil {
 		return err
 	}
-	args := []string{"create", "--isolated", "--isolate-network", "--user", "soartest", "--memory", "4G", "--cpus", "4", "--disk", "20G"}
+	args := []string{"create", "--isolated", "--isolate-network", "--user", "vamostest", "--memory", "4G", "--cpus", "4", "--disk", "20G"}
 	if o.arch != "native" {
 		args = append(args, "-a", o.arch)
 	}
@@ -215,20 +215,20 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	call := func(in io.Reader, cmd ...string) error {
 		return r.exec.Run(ctx, runArgs(m.ID, cmd...), in, r.out, r.stderr)
 	}
-	if err := call(strings.NewReader(o.token+"\n"), "sh", "-c", "umask 077; mkdir -p /var/lib /opt/soar-test && cat > /var/lib/soar-integration-owner"); err != nil {
+	if err := call(strings.NewReader(o.token+"\n"), "sh", "-c", "umask 077; mkdir -p /var/lib /opt/vamos-test && cat > /var/lib/vamos-integration-owner"); err != nil {
 		return err
 	}
 	f, err := os.Open(archive)
 	if err != nil {
 		return err
 	}
-	err = call(f, "tar", "-x", "-C", "/opt/soar-test")
+	err = call(f, "tar", "-x", "-C", "/opt/vamos-test")
 	err = errors.Join(err, f.Close())
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(r.out, "Guest prepare phase")
-	if err := call(nil, "python3", "/opt/soar-test/integration/linux_suite.py", "--owner", o.token); err != nil {
+	if err := call(nil, "python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token); err != nil {
 		return fmt.Errorf("guest prepare: %w", err)
 	}
 	// Prepare exit zero certifies the private guest checkpoint is ready. Always
@@ -272,7 +272,7 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	verifyCtx, cancelVerify := context.WithTimeout(ctx, verifyTimeout)
 	defer cancelVerify()
 	fmt.Fprintln(r.out, "Guest verify-restart phase")
-	if err := r.exec.Run(verifyCtx, runArgs(m.ID, "python3", "/opt/soar-test/integration/linux_suite.py", "--owner", o.token, "--phase", "verify-restart"), nil, r.out, r.stderr); err != nil {
+	if err := r.exec.Run(verifyCtx, runArgs(m.ID, "python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token, "--phase", "verify-restart"), nil, r.out, r.stderr); err != nil {
 		return fmt.Errorf("guest verify-restart: %w", err)
 	}
 	// Run after all Docker ownership/teardown and reboot checks. Repository
@@ -283,7 +283,7 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	repositoryCtx, cancelRepository := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancelRepository()
 	fmt.Fprintln(r.out, "Guest live S3 repository acceptance phase")
-	if err := r.exec.Run(repositoryCtx, runArgs(m.ID, "python3", "/opt/soar-test/integration/repository/acceptance.py", "--owner", o.token), nil, r.out, r.stderr); err != nil {
+	if err := r.exec.Run(repositoryCtx, runArgs(m.ID, "python3", "/opt/vamos-test/integration/repository/acceptance.py", "--owner", o.token), nil, r.out, r.stderr); err != nil {
 		return fmt.Errorf("guest repository acceptance: %w", err)
 	}
 	return nil
@@ -320,7 +320,7 @@ func archiveSource(root, dest string) (result error) {
 				return err
 			}
 			name := d.Name()
-			if name == ".git" || name == ".soar" || name == ".pi" || name == "__pycache__" || path == filepath.Join(root, "integration", "visual", "node_modules") || strings.HasPrefix(name, ".env") {
+			if name == ".git" || name == ".vamos" || name == ".pi" || name == "__pycache__" || path == filepath.Join(root, "integration", "visual", "node_modules") || strings.HasPrefix(name, ".env") {
 				if d.IsDir() {
 					return filepath.SkipDir
 				}
@@ -390,7 +390,7 @@ func entry() error {
 	if err != nil {
 		return err
 	}
-	name = "soar-test-" + name
+	name = "vamos-test-" + name
 	dir := filepath.Join(root, ".pi", "integration", name)
 	if err = os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		return err

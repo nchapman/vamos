@@ -45,7 +45,7 @@ set -eu
 shift
 quiet=false
 if [ "${1-}" = --quiet ]; then quiet=true; shift; fi
-[ "$#" = 1 ] && [ "$1" = soar-host-operation.service ] || exit 99
+[ "$#" = 1 ] && [ "$1" = vamos-host-operation.service ] || exit 99
 printf '%s\n' 'Failed to connect to bus: private systemctl diagnostic' >&2
 if [ "$quiet" = false ]; then printf '%s\n' "$FAKE_STATE"; fi
 exit "$FAKE_CODE"
@@ -54,7 +54,7 @@ exit "$FAKE_CODE"
 					t.Fatal(err)
 				}
 				stateDir := filepath.Join(dir, "host-state")
-				script := strings.ReplaceAll(statusScript, "/var/lib/soar", stateDir)
+				script := strings.ReplaceAll(statusScript, "/var/lib/vamos", stateDir)
 				cmd := exec.Command("/bin/sh", "-s")
 				cmd.Stdin = strings.NewReader(script)
 				cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "FAKE_STATE="+state, fmt.Sprintf("FAKE_CODE=%d", code))
@@ -91,11 +91,11 @@ func TestStatusScriptDetectsActiveCoordinatorWorker(t *testing.T) {
 	fake := `#!/bin/sh
 set -eu
 [ "$1" = is-active ] || exit 99
-if [ "$2" = "soar-host-operation.service" ]; then
+if [ "$2" = "vamos-host-operation.service" ]; then
   printf 'inactive\n'
   exit 3
 fi
-if [ "$2" = "soar-op-` + opID + `.service" ]; then
+if [ "$2" = "vamos-op-` + opID + `.service" ]; then
   printf 'active\n'
   exit 0
 fi
@@ -113,7 +113,7 @@ exit 4
 	if err := os.WriteFile(filepath.Join(opsDir, opID+".json"), []byte(`{"version":1,"operation_id":"`+opID+`","phase":"running"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	script := strings.ReplaceAll(statusScript, "/var/lib/soar", stateDir)
+	script := strings.ReplaceAll(statusScript, "/var/lib/vamos", stateDir)
 	cmd := exec.Command("/bin/sh", "-s")
 	cmd.Stdin = strings.NewReader(script)
 	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"))

@@ -27,7 +27,7 @@ func (m Manager) existingReceipt(hostID string, allowEmpty bool) (*build, error)
 	if root == "" {
 		root = "/"
 	}
-	dir := filepath.Join(root, "var/lib/soar/buildkit")
+	dir := filepath.Join(root, "var/lib/vamos/buildkit")
 	st, err := os.Lstat(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -91,7 +91,7 @@ func (m Manager) RemoveReceipt(ctx context.Context, hostID string) error {
 					owned = owned || (guard.chain == chain && reflect.DeepEqual(rule, guard.args))
 				}
 				if !owned {
-					if strings.Contains(strings.Join(rule, " "), "soar-buildkit:"+b.s.Host) {
+					if strings.Contains(strings.Join(rule, " "), "vamos-buildkit:"+b.s.Host) {
 						return errInfra
 					}
 					continue

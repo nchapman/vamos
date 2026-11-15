@@ -1,7 +1,7 @@
 # Fixed bootstrap collector. Never source os-release or interpolate user input.
 set -eu
 export LC_ALL=C
-printf '%s\n' 'soar-inspect-v1'
+printf '%s\n' 'vamos-inspect-v1'
 uname -s
 uname -m
 id -u

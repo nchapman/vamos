@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/volumes"
+	"github.com/nchapman/vamos/internal/volumes"
 )
 
 func (m *Manager) volumeStore() volumes.Store {
-	return volumes.Store{Root: filepath.Join(m.Root, "var/lib/soar/volumes")}
+	return volumes.Store{Root: filepath.Join(m.Root, "var/lib/vamos/volumes")}
 }
 
 // Planning allocates intent only. The caller makes the archive durable before saving it.
@@ -105,7 +105,7 @@ func volumeMountArgument(name, mount string) string {
 }
 
 func volumeLabels(j *journal, r volumes.Record) map[string]string {
-	return map[string]string{"soar.host": j.HostID, "soar.app": j.App, "soar.service": r.Service, "soar.volume": r.ID, "soar.operation": r.Operation}
+	return map[string]string{"vamos.host": j.HostID, "vamos.app": j.App, "vamos.service": r.Service, "vamos.volume": r.ID, "vamos.operation": r.Operation}
 }
 func (m *Manager) inspectVolume(ctx context.Context, j *journal, r volumes.Record) (string, bool, error) {
 	yes, err := m.exists(ctx, "volume", r.DockerName())
@@ -183,7 +183,7 @@ func (m *Manager) ensureVolumes(ctx context.Context, j *journal) error {
 		if missing[name] {
 			args := []string{"volume", "create", "--driver", "local"}
 			labels := volumeLabels(j, r)
-			for _, key := range []string{"soar.host", "soar.app", "soar.service", "soar.volume", "soar.operation"} {
+			for _, key := range []string{"vamos.host", "vamos.app", "vamos.service", "vamos.volume", "vamos.operation"} {
 				args = append(args, "--label", key+"="+labels[key])
 			}
 			args = append(args, r.DockerName())
@@ -296,8 +296,8 @@ func (m *Manager) volumeReferences(ctx context.Context, j *journal, rec volumes.
 		if e != nil {
 			return e
 		}
-		op := v.Config.Labels["soar.operation"]
-		if !owned(v.Config.Labels, j, op) || !operation.MatchString(op) || v.Config.Labels["soar.service"] != rec.Service || !maintenanceContainerIdentity(j, row.Names, rec.Service, op, replicaLabel(v.Config.Labels)) || strings.TrimPrefix(v.Name, "/") != row.Names {
+		op := v.Config.Labels["vamos.operation"]
+		if !owned(v.Config.Labels, j, op) || !operation.MatchString(op) || v.Config.Labels["vamos.service"] != rec.Service || !maintenanceContainerIdentity(j, row.Names, rec.Service, op, replicaLabel(v.Config.Labels)) || strings.TrimPrefix(v.Name, "/") != row.Names {
 			return errors.New("foreign volume reference")
 		}
 		if e = validateVolumeMounts(v, rec); e != nil {
@@ -336,7 +336,7 @@ func (m *Manager) volumeReferences(ctx context.Context, j *journal, rec volumes.
 // Old cleanup candidates can outlive both snapshots. Their retained IID files
 // are still provenance; matching Docker labels alone never authorize a reference.
 func (m *Manager) volumeContainerProvenance(j *journal, rec volumes.Record, v *inspection) error {
-	name, op := strings.TrimPrefix(v.Name, "/"), v.Config.Labels["soar.operation"]
+	name, op := strings.TrimPrefix(v.Name, "/"), v.Config.Labels["vamos.operation"]
 	for _, rel := range retainedReleases(j) {
 		if releaseHas(rel, name) && runtimeLabelMatches(rel, name, v.Config.Labels) && rel.Service == rec.Service && rel.Operation == op && rel.VolumeID == rec.ID && rel.Image == v.Config.Image {
 			return nil

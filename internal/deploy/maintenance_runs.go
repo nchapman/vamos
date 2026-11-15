@@ -77,7 +77,7 @@ func (m *Manager) plannedRunRemoval(j *journal, r *runRecord) bool {
 }
 
 func (m *Manager) maintenanceRunContainer(ctx context.Context, j *journal, v *resourceInspection, row resourceRow) error {
-	r, err := m.loadRun(j, v.Config.Labels["soar.run"])
+	r, err := m.loadRun(j, v.Config.Labels["vamos.run"])
 	if err != nil {
 		return err
 	}

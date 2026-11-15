@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/nchapman/soar/internal/deploy"
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func printDomainStatuses(w io.Writer, domains []deploy.DomainStatus) error {

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/secrets"
 	"io"
 	"path/filepath"
 	"strings"
@@ -29,7 +29,7 @@ func TestSecretStageBindingAndSafeFailure(t *testing.T) {
 		return deploy.Response{}, errors.New(" canary ")
 	}
 	code := secretsCommand(context.Background(), []string{"stage", "-f", path, "--stdin", "--json", "token"}, strings.NewReader(" canary \n"), &out, &diagnostic, deps, readSecretInput)
-	if code != 1 || out.Len() != 0 || strings.Contains(diagnostic.String(), "canary") || !strings.Contains(diagnostic.String(), "outcome unknown") || !strings.Contains(diagnostic.String(), operation) || !strings.Contains(diagnostic.String(), "soar secrets list --server home --app hello") || strings.Contains(diagnostic.String(), "resume") {
+	if code != 1 || out.Len() != 0 || strings.Contains(diagnostic.String(), "canary") || !strings.Contains(diagnostic.String(), "outcome unknown") || !strings.Contains(diagnostic.String(), operation) || !strings.Contains(diagnostic.String(), "vamos secrets list --server home --app hello") || strings.Contains(diagnostic.String(), "resume") {
 		t.Fatalf("code=%d output=%s diagnostics=%s", code, &out, &diagnostic)
 	}
 	bound, err := readBinding(filepath.Dir(path))

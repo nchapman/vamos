@@ -2,18 +2,18 @@
 
 See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
-Soar supports app-scoped cleanup and destruction for public/private multi-service apps, including legacy single-service journals. These commands never run Docker prune, remove volumes, or force-delete images/containers.
+Vamos supports app-scoped cleanup and destruction for public/private multi-service apps, including legacy single-service journals. These commands never run Docker prune, remove volumes, or force-delete images/containers.
 
 ## Preview, then explicitly apply
 
 ```sh
 # Inside a project, -f and the existing project/server binding work as for deploy.
-./bin/soar cleanup -f examples/hello/soar.yaml
-./bin/soar cleanup -f examples/hello/soar.yaml --yes
+./bin/vamos cleanup -f examples/hello/vamos.yaml
+./bin/vamos cleanup -f examples/hello/vamos.yaml --yes
 
 # Outside a project, name both the server and app.
-./bin/soar destroy --server droplet --app temporary-app
-./bin/soar destroy --server droplet --app temporary-app --yes
+./bin/vamos destroy --server droplet --app temporary-app
+./bin/vamos destroy --server droplet --app temporary-app --yes
 ```
 
 Without `--yes`, both commands return a preview and delete nothing. `--yes` authorizes a **freshly recomputed plan** under the host mutation lock, not an earlier preview. Preview and apply therefore may list different resources if the host changed in between. `--json` emits the full response (plan plus status); `status --json` continues to emit only the status object.
@@ -22,7 +22,7 @@ Only a ready deployed app can begin maintenance. A secret-only app has no record
 
 ## Removing one service
 
-Use `soar service remove NAME --app APP --server SERVER` to preview, then add
+Use `vamos service remove NAME --app APP --server SERVER` to preview, then add
 `--yes` to apply. Manual services additionally require `--allow-protected`.
 The app must be settled and retain at least one service; use `destroy` for the
 last service. Removal retains data/secrets and never allows rollback to resurrect
@@ -59,7 +59,7 @@ Destruction removes the app's generated route, verified owned containers, its em
 
 The sequence is:
 
-1. Capture exact container/network IDs, immutable image IDs, and hashes of known files in a durable maintenance record. New operations publish private hash-linked pages under `/var/lib/soar/maintenance/<app>/` before installing their bounded journal reference. Historical inline maintenance records remain resumable.
+1. Capture exact container/network IDs, immutable image IDs, and hashes of known files in a durable maintenance record. New operations publish private hash-linked pages under `/var/lib/vamos/maintenance/<app>/` before installing their bounded journal reference. Historical inline maintenance records remain resumable.
 2. Persist old/new whole-host Caddy route intent.
 3. Validate/reload and prove the route-free live Caddy configuration.
 4. Disable restart, stop, and remove only recorded, reverified containers; remove safe images and the empty recorded network. Persist completion of this resource phase before unlinking hash-matching recorded files, so interrupted provenance deletion cannot cause another image/container deletion attempt.
@@ -70,8 +70,8 @@ Containers with unverified mounts, unexpected network attachments, replaced iden
 An interruption leaves a resumable operation. While maintenance is pending, other app mutations are fenced even after the original worker exits. Host setup/teardown also refuses active or incomplete app state. Status and logs remain available (logs require a surviving current container).
 
 ```sh
-./bin/soar status --server droplet --app temporary-app
-./bin/soar resume --server droplet --app temporary-app OPERATION_ID
+./bin/vamos status --server droplet --app temporary-app
+./bin/vamos resume --server droplet --app temporary-app OPERATION_ID
 ```
 
 The private page chain binds the host, app, operation, route intent and full
@@ -114,6 +114,6 @@ On the Ubuntu 26.04 amd64 droplet with Docker 29.1.3 and Caddy 2.6.2:
 - Cleanup preview/apply removed two retired hello containers, three unused build images, and four obsolete contexts. Current/previous containers, their images/contexts, and IID provenance remained. Both apps continued returning `ok`.
 - Destroy preview/apply removed the probe route, both probe containers/images, its bridge network, and captured inputs. Hello's public HTML remained byte-for-byte unchanged. Status returned `destroyed` with the same JSON shape as normal status.
 - Resuming completed cleanup and destruction was idempotent. Redeploying the probe from its minimal receipt and destroying it again both succeeded.
-- Final inspection found only hello's running current container and stopped previous container, their two images, the `soar-hello` network, and only hello in Caddy's live route configuration. The probe retained only its minimal receipt. No `/run/soar-stage.*` directories remained.
+- Final inspection found only hello's running current container and stopped previous container, their two images, the `vamos-hello` network, and only hello in Caddy's live route configuration. The probe retained only its minimal receipt. No `/run/vamos-stage.*` directories remained.
 
 Local `mise run check` (formatting, vet, race tests, native client and Linux amd64/arm64 builds) passed, and Windows test binaries cross-compiled. Native Windows/Linux client test execution and arm64 host execution remain unverified. The reboot was orderly: forced power-loss and remote worker termination at every individual destruction boundary were not exercised on the droplet. Host teardown acceptance/refusal for completed receipts was tested offline; the live hello host was deliberately not torn down.

@@ -69,7 +69,7 @@ func (b *build) inspect(ctx context.Context, kind, id string, out any) error {
 func labelArgs(labels map[string]string) []string {
 	// Stable order also makes runner traces useful in regression tests.
 	var args []string
-	for _, key := range []string{"org.soar.buildkit.host", "org.soar.buildkit.nonce", "org.soar.buildkit.role"} {
+	for _, key := range []string{"org.vamos.buildkit.host", "org.vamos.buildkit.nonce", "org.vamos.buildkit.role"} {
 		args = append(args, "--label", key+"="+labels[key])
 	}
 	return args

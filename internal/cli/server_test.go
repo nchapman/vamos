@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/host"
+	"github.com/nchapman/vamos/internal/host"
 )
 
 func TestInspectPresentation(t *testing.T) {

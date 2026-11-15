@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/nchapman/soar/internal/volumes"
+	"github.com/nchapman/vamos/internal/volumes"
 )
 
 // Registry existence alone fences identity replacement and purge, even when

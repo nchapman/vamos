@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 func TestAppResponseBudgetPreservesCompleteJSON(t *testing.T) {

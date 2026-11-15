@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 func TestBackupAddBehavior(t *testing.T) {

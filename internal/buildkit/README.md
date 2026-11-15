@@ -1,7 +1,7 @@
 # Isolated remote BuildKit
 
 This package is for a **trusted root worker**, not a hostile-tenant sandbox.
-The caller must hold Soar's global worker lock throughout `Manager.Build`.
+The caller must hold Vamos's global worker lock throughout `Manager.Build`.
 It does not change Docker's daemon configuration, restart Docker, install a
 service, or migrate existing resources. The expected daemon policy remains
 `{"bridge":"none","log-driver":"local"}`; Docker live restore must be disabled.
@@ -32,7 +32,7 @@ bounded runner without silently truncating infrastructure JSON inventories.
 ## Execution and ownership
 
 * A private, atomically replaced and fsynced receipt lives at
-  `/var/lib/soar/buildkit/state.json`. It records a random creation nonce and
+  `/var/lib/vamos/buildkit/state.json`. It records a random creation nonce and
   intent **before** creating Docker resources, then captures immutable IDs,
   image defaults, cache creation metadata and container configuration.
 * Receipt and namespace ownership, permissions, symlinks, unknown JSON fields,
@@ -71,7 +71,7 @@ Commands retain the trusted root worker's HOME, PATH, Docker registry config,
 proxy settings and credential-helper environment. `/usr/bin/env` removes
 `DOCKER_CONTEXT`, `DOCKER_TLS`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`,
 `BUILDKIT_HOST` and `BUILDX_BUILDER`, and sets the fixed local `DOCKER_HOST` and
-private `BUILDX_CONFIG=/var/lib/soar/buildkit/buildx`. Docker also receives explicit
+private `BUILDX_CONFIG=/var/lib/vamos/buildkit/buildx`. Docker also receives explicit
 `--host`; its stdio helper inherits the constrained endpoint. Credentials are not
 copied into private metadata or mounted inside the builder. Registry helpers and
 token acquisition may run in the host client, outside the bridge guard.
@@ -88,17 +88,17 @@ reconstructible; changed metadata is not silently replaced.
 
 Before **every** start, both `/usr/sbin/iptables` and `/usr/sbin/ip6tables` must
 successfully list and verify these leading mangle rules, each with comment
-`soar-buildkit:HOSTID`:
+`vamos-buildkit:HOSTID`:
 
 ```text
-PREROUTING: -i soar-build0 -m addrtype --dst-type LOCAL ... -j DROP
-FORWARD:    -i soar-build0 -o br-+ ... -j DROP
-FORWARD:    -i soar-build0 -o docker0 ... -j DROP
-FORWARD:    -i soar-build0 -o soar-build0 ... -j DROP
+PREROUTING: -i vamos-build0 -m addrtype --dst-type LOCAL ... -j DROP
+FORWARD:    -i vamos-build0 -o br-+ ... -j DROP
+FORWARD:    -i vamos-build0 -o docker0 ... -j DROP
+FORWARD:    -i vamos-build0 -o vamos-build0 ... -j DROP
 ```
 
 PREROUTING precedes DNAT, including host published-port DNAT. FORWARD blocks
-standard Soar `br-HASH` application bridges and same-bridge peers. Only exact
+standard Vamos `br-HASH` application bridges and same-bridge peers. Only exact
 owned rules may be moved/deleted during repair; unknown rules are preserved.
 Both effective leading placement and installation results are checked. The
 package does not flush chains or install permanent firewall services.
@@ -126,15 +126,15 @@ For host ID `HOSTID`:
 
 | Resource | Name |
 | --- | --- |
-| Container | `soar-buildkit-HOSTID` |
-| Docker network | `soar-buildkit-HOSTID-net` |
-| Linux bridge interface | `soar-build0` (one host-bound receipt per worker) |
-| Cache volume | `soar-buildkit-HOSTID-cache` |
-| Buildx instance | `soar-HOSTID` |
-| Buildx node | `soar-HOSTID0` |
+| Container | `vamos-buildkit-HOSTID` |
+| Docker network | `vamos-buildkit-HOSTID-net` |
+| Linux bridge interface | `vamos-build0` (one host-bound receipt per worker) |
+| Cache volume | `vamos-buildkit-HOSTID-cache` |
+| Buildx instance | `vamos-HOSTID` |
+| Buildx node | `vamos-HOSTID0` |
 
-Docker resources carry `org.soar.buildkit.host`, `org.soar.buildkit.nonce`, and
-`org.soar.buildkit.role` labels (`container`, `network`, `volume`). Containers and
+Docker resources carry `org.vamos.buildkit.host`, `org.vamos.buildkit.nonce`, and
+`org.vamos.buildkit.role` labels (`container`, `network`, `volume`). Containers and
 networks are bound by exact IDs; volumes are bound by name, nonce labels,
 creation timestamp, mountpoint and local-driver shape. Docker has no immutable
 volume ID: a root admin who fabricates identical metadata is outside this

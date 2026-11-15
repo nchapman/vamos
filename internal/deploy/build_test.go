@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 type imageBuilderFunc func(context.Context, string, string, string, []byte) (process.Result, error)
@@ -56,7 +56,7 @@ func TestBuildServiceRefusesDaemonPolicyDrift(t *testing.T) {
 }
 
 func TestBuilderSnapshotterPrefersManagerOverride(t *testing.T) {
-	t.Setenv("SOAR_BUILDKIT_SNAPSHOTTER", "auto")
+	t.Setenv("VAMOS_BUILDKIT_SNAPSHOTTER", "auto")
 	if got := builderSnapshotter(&Manager{Snapshotter: "native"}); got != "native" {
 		t.Fatalf("snapshotter = %q, want manager override native", got)
 	}

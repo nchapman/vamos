@@ -29,7 +29,7 @@ services:
       DB_HOST: database
       DB_NAME: rails_ledger
       DB_USER: rails_ledger
-      ALLOWED_HOSTS: rails-ledger-web.soar.localhost
+      ALLOWED_HOSTS: rails-ledger-web.vamos.localhost
     secrets:
       DB_PASSWORD: app-password
       SECRET_KEY_BASE: secret-key-base
@@ -46,7 +46,7 @@ services:
       DB_HOST: database
       DB_NAME: rails_ledger
       DB_USER: rails_ledger
-      ALLOWED_HOSTS: rails-ledger-web.soar.localhost
+      ALLOWED_HOSTS: rails-ledger-web.vamos.localhost
     secrets:
       DB_PASSWORD: app-password
       SECRET_KEY_BASE: secret-key-base

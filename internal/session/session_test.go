@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef"

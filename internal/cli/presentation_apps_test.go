@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 func helpAppsInventoryFixture() *deploy.AppList {

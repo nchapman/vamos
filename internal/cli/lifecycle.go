@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/soar/internal/executor"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/registry"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/executor"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/registry"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 type lifecycleDeps struct {

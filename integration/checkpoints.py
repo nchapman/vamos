@@ -19,9 +19,9 @@ except ImportError:
 
 
 def install(h):
-    if (Path(h.root) != Path('/opt/soar-test') or sys.platform != 'linux'
+    if (Path(h.root) != Path('/opt/vamos-test') or sys.platform != 'linux'
             or os.geteuid() != 0
-            or not Path('/var/lib/soar-integration-owner').is_file()
+            or not Path('/var/lib/vamos-integration-owner').is_file()
             or 'orbstack' not in Path('/proc/sys/kernel/osrelease').read_text().lower()):
         raise RuntimeError('gate installation requires the owned OrbStack root guest')
     destinations = [Path('/usr/local/bin') / name for name in ('docker', 'caddy')]
@@ -136,7 +136,7 @@ class Barrier:
 class Client:
     """Asynchronous CLI with private artifacts, never sharing Harness.sequence."""
     def __init__(self, h, args, cwd):
-        self.argv = [str(Path(h.root) / 'bin/soar'), *map(str, args)]
+        self.argv = [str(Path(h.root) / 'bin/vamos'), *map(str, args)]
         self.directory = Path(tempfile.mkdtemp(prefix='checkpoint-', dir=h.artifacts))
         self.directory.joinpath('command.json').write_text(json.dumps(self.argv))
         self.stdout = self.directory / 'stdout'
@@ -144,7 +144,7 @@ class Client:
         with self.stdout.open('wb') as out, self.stderr.open('wb') as err:
             os.chmod(self.stdout, 0o600)
             os.chmod(self.stderr, 0o600)
-            self.process = subprocess.Popen(['runuser', '-u', 'soartest', '--', *self.argv],
+            self.process = subprocess.Popen(['runuser', '-u', 'vamostest', '--', *self.argv],
                                             cwd=cwd, env=h.env, stdin=subprocess.DEVNULL,
                                             stdout=out, stderr=err, start_new_session=True)
 

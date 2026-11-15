@@ -39,7 +39,7 @@ def run(h):
         (h.artifacts / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 
     def bootstrap():
-        h.cli("server", "add", "--yes", "--domain", "soar.localhost", "local", "root@127.0.0.1")
+        h.cli("server", "add", "--yes", "--domain", "vamos.localhost", "local", "root@127.0.0.1")
         report = json.loads(h.cli("server", "status", "--json", "local").stdout)
         require(not report["active"] and report["state"]["phase"] == "ready", "host did not settle")
 
@@ -76,8 +76,8 @@ def run(h):
 
     def save(directory, manifest):
         # JSON is a YAML subset; avoid a third-party YAML dependency in the runner.
-        (directory / "soar.yaml").write_text(json.dumps(manifest, indent=2) + "\n")
-        h.command(["chown", "-R", "soartest:soartest", str(directory)], user="root")
+        (directory / "vamos.yaml").write_text(json.dumps(manifest, indent=2) + "\n")
+        h.command(["chown", "-R", "vamostest:vamostest", str(directory)], user="root")
 
     def cli(directory, operation, *args, error=None):
         return h.cli(operation, "--server", "local", *args, cwd=directory, expect_error=error)
@@ -119,8 +119,8 @@ def run(h):
     cli(orders, "deploy")
     cli(billing, "deploy")
     h.trust_local_ca()
-    hosts = {name: f"{app}-{name}.soar.localhost" for name in ("orders", "billing")}
-    alias = f"{app}-alias.soar.localhost"
+    hosts = {name: f"{app}-{name}.vamos.localhost" for name in ("orders", "billing")}
+    alias = f"{app}-alias.vamos.localhost"
     h.hosts(list(hosts.values()) + [alias])
     row = json.loads(h.https(hosts["orders"], "/entries", {"amount_cents": 173, "description": app}))
 

@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/nchapman/soar/internal/backupbackend"
+	"github.com/nchapman/vamos/internal/backupbackend"
 )
 
 var repositoryPasswordPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
@@ -65,7 +65,7 @@ func NewManager(root, runtimeDir string) *Manager {
 	return &Manager{Root: root, RuntimeDir: runtimeDir, Backend: backupbackend.New(root, runtimeDir)}
 }
 func (m *Manager) storage() store {
-	return store{dir: filepath.Join(m.Root, "var/lib/soar/backups/repositories")}
+	return store{dir: filepath.Join(m.Root, "var/lib/vamos/backups/repositories")}
 }
 func (m *Manager) timestamp() string {
 	if m.Now != nil {

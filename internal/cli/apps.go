@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, deps appDeps) int {
@@ -24,7 +24,7 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	executor := flags.String("executor", "", "Linux executor artifact override")
 	timeout := flags.Duration("timeout", 15*time.Second, "client deadline")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: soar apps [--server NAME] [--json] [--executor FILE] [--timeout duration]")
+		fmt.Fprintln(flags.Output(), "Usage: vamos apps [--server NAME] [--json] [--executor FILE] [--timeout duration]")
 		fmt.Fprintln(flags.Output(), "Uses the registered default server unless --server is supplied; ignores project binding.")
 		fmt.Fprintln(flags.Output(), "Lists recorded inventory, not live health.")
 	}

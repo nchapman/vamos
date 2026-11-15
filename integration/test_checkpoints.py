@@ -143,7 +143,7 @@ class Contracts(unittest.TestCase):
     def test_client_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             h = SimpleNamespace(root=Path(directory), artifacts=Path(directory),
-                                env={'PATH': '/private/bin', 'HOME': '/home/soartest'}, sequence=42)
+                                env={'PATH': '/private/bin', 'HOME': '/home/vamostest'}, sequence=42)
             with mock.patch.object(checkpoints.subprocess, 'Popen') as popen, \
                     mock.patch.object(checkpoints.os, 'killpg', create=True) as killpg:
                 process = popen.return_value
@@ -151,8 +151,8 @@ class Contracts(unittest.TestCase):
                 process.wait.return_value = 0
                 with checkpoints.Client(h, ['deploy', '--server', 'local'], Path(directory)) as client:
                     call = popen.call_args
-                    self.assertEqual(call.args[0], ['runuser', '-u', 'soartest', '--',
-                                                   str(h.root / 'bin/soar'), 'deploy', '--server', 'local'])
+                    self.assertEqual(call.args[0], ['runuser', '-u', 'vamostest', '--',
+                                                   str(h.root / 'bin/vamos'), 'deploy', '--server', 'local'])
                     self.assertEqual(call.kwargs['env'], h.env)
                     self.assertEqual(call.kwargs['cwd'], Path(directory))
                     self.assertTrue(call.kwargs['start_new_session'])

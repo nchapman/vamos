@@ -41,7 +41,7 @@ func TestMaintenanceCapacityDistinctImageBatch(t *testing.T) {
 		id := fmt.Sprintf("sha256:%064x", i+1)
 		if i < 32 {
 			p.Images = append(p.Images, id)
-			p.Containers = append(p.Containers, fmt.Sprintf("soar-run-%032x", i+1))
+			p.Containers = append(p.Containers, fmt.Sprintf("vamos-run-%032x", i+1))
 			p.Archives = append(p.Archives, fmt.Sprintf("%032x.run.json", i+1))
 		} else {
 			p.Retained = append(p.Retained, id+": referenced")

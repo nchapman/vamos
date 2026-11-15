@@ -51,7 +51,7 @@ func TestReceiptCleanupRemovesOnlyOwnedGuardsAndMetadata(t *testing.T) {
 			t.Fatal("foreign firewall rules changed", rules)
 		}
 	}
-	if _, err := os.Lstat(filepath.Join(f.root, "var/lib/soar/buildkit")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(f.root, "var/lib/vamos/buildkit")); !os.IsNotExist(err) {
 		t.Fatal("private metadata retained", err)
 	}
 	if err := m.RemoveReceipt(context.Background(), testHost); err != nil {
@@ -68,12 +68,12 @@ func TestReceiptCleanupRefusesUnknownFilesAndChangedRules(t *testing.T) {
 			host := testHost
 			switch mode {
 			case "file":
-				if err := os.WriteFile(filepath.Join(f.root, "var/lib/soar/buildkit/unknown"), []byte("retain me"), 0600); err != nil {
+				if err := os.WriteFile(filepath.Join(f.root, "var/lib/vamos/buildkit/unknown"), []byte("retain me"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "rule":
 				for key := range f.rules {
-					f.rules[key] = append(f.rules[key], []string{"-m", "comment", "--comment", "soar-buildkit:" + testHost, "-j", "ACCEPT"})
+					f.rules[key] = append(f.rules[key], []string{"-m", "comment", "--comment", "vamos-buildkit:" + testHost, "-j", "ACCEPT"})
 				}
 			case "host":
 				host = strings.Repeat("f", 32)
@@ -81,7 +81,7 @@ func TestReceiptCleanupRefusesUnknownFilesAndChangedRules(t *testing.T) {
 			if err := m.RemoveReceipt(context.Background(), host); err == nil {
 				t.Fatal("accepted unknown or changed ownership")
 			}
-			if _, err := os.Stat(filepath.Join(f.root, "var/lib/soar/buildkit/state.json")); err != nil {
+			if _, err := os.Stat(filepath.Join(f.root, "var/lib/vamos/buildkit/state.json")); err != nil {
 				t.Fatal("lost recovery receipt", err)
 			}
 		})
@@ -90,7 +90,7 @@ func TestReceiptCleanupRefusesUnknownFilesAndChangedRules(t *testing.T) {
 
 func TestReceiptCleanupReconcilesFinalEmptyDirectory(t *testing.T) {
 	m, f := newEngine(t)
-	dir := filepath.Join(f.root, "var/lib/soar/buildkit")
+	dir := filepath.Join(f.root, "var/lib/vamos/buildkit")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

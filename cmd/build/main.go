@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/nchapman/soar/internal/buildbundle"
+	"github.com/nchapman/vamos/internal/buildbundle"
 )
 
 func main() {

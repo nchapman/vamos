@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 //go:embed app.sh
@@ -119,7 +119,7 @@ func appOutcome(request deploy.Request, response deploy.Response, decodeErr, con
 	}
 	if request.Action == "secrets-stage" || request.Action == "secrets-set" {
 		if runErr != nil || decodeErr != nil || response.Version != 1 || response.Error != "" || response.ErrorCode != "" || !validSecretResponse(request, response) {
-			return deploy.Response{}, errors.New("secret staging outcome unknown; inspect retained versions with soar secrets list")
+			return deploy.Response{}, errors.New("secret staging outcome unknown; inspect retained versions with vamos secrets list")
 		}
 		return response, nil
 	}
@@ -135,12 +135,12 @@ func appOutcome(request deploy.Request, response deploy.Response, decodeErr, con
 		return response, fmt.Errorf("remote %s failed: %q", request.Action, response.Error)
 	}
 	if request.Action == "run" && (runErr != nil || decodeErr != nil || response.Version != 1 || response.Run == nil) {
-		return response, fmt.Errorf("run outcome unknown; inspect soar status --run %s", request.Operation)
+		return response, fmt.Errorf("run outcome unknown; inspect vamos status --run %s", request.Operation)
 	}
 	if runErr != nil {
 		err := runErr
 		if mutation {
-			return response, fmt.Errorf("deployment outcome may be unknown; use soar status before retrying: %w", err)
+			return response, fmt.Errorf("deployment outcome may be unknown; use vamos status before retrying: %w", err)
 		}
 		return response, err
 	}

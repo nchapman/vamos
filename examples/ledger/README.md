@@ -7,21 +7,21 @@ roles, backups and restore tooling are not provided.
 
 ## Empty host to running API
 
-Install the Soar CLI locally and have SSH access to a fresh Ubuntu 24.04+ host.
+Install the Vamos CLI locally and have SSH access to a fresh Ubuntu 24.04+ host.
 Replace the example host/domain below with yours; point wildcard DNS
 `*.apps.example.com` at that host and allow TCP 80/443 (plus your SSH port).
 No local Docker or YAML edits are needed. Run from this directory:
 
 ```sh
 cd examples/ledger
-soar server add --yes --domain apps.example.com home root@203.0.113.10
-soar secrets stage database-password
+vamos server add --yes --domain apps.example.com home root@203.0.113.10
+vamos secrets stage database-password
 # Enter a strong password at the hidden prompt; never put it in argv.
-soar deploy --service db
-soar run --service web -- ./bin/migrate
+vamos deploy --service db
+vamos run --service web -- ./bin/migrate
 # Continue only after migration exits successfully:
-soar deploy
-soar status
+vamos deploy
+vamos status
 
 # Use the web URL printed by deploy (with your actual base domain):
 URL=https://ledger.apps.example.com
@@ -54,13 +54,13 @@ After editing application code, run:
 
 ```sh
 # Only if schema work is needed, and compatible with the still-running API:
-soar run --service web -- ./bin/migrate
-soar deploy
+vamos run --service web -- ./bin/migrate
+vamos deploy
 curl --fail "$URL/entries"
 
 # Intentional existing protected db update; inspect the plan and accept downtime:
-soar deploy --service db --yes
-soar status
+vamos deploy --service db --yes
+vamos status
 curl --fail "$URL/readyz"
 ```
 
@@ -93,15 +93,15 @@ Each invocation may build; there is no promise of cross-command image reuse.
 
 Commands are noninteractive, with no stdin or TTY. Output and exit code are
 captured in a durable operation without changing the active release. If a run
-fails or SSH disconnects, use the operation ID printed by Soar:
+fails or SSH disconnects, use the operation ID printed by Vamos:
 
 ```sh
-soar status --run OP
-soar logs --run OP
+vamos status --run OP
+vamos logs --run OP
 ```
 
 Replace `OP` with that ID. Inspect the outcome before deciding whether to rerun;
-Soar never automatically retries a command. This initializer is idempotent, but
+Vamos never automatically retries a command. This initializer is idempotent, but
 future migrations or other administrative commands may not be. An interrupted
 client is not proof that database changes were cancelled.
 
@@ -132,8 +132,8 @@ a local named volume is not a backup, and a failed server can lose everything.
 ## Code rollback is not database recovery
 
 ```sh
-soar rollback --service web        # preview captured web code/config
-soar rollback --service web --yes # apply after checking schema compatibility
+vamos rollback --service web        # preview captured web code/config
+vamos rollback --service web --yes # apply after checking schema compatibility
 ```
 
 [Rollback](../../docs/rollback.md) restores captured local images, configuration and secret
@@ -141,7 +141,7 @@ versions, not SQL or schema state. The manual `db` service is never rolled back,
 even with `--service db`; intentional database changes require a vetted scoped
 deploy. Use backward-compatible migrations so old web code can read current data.
 Captured credentials may have been revoked, and staged secrets are not selected.
-`soar run` remains noninteractive and is never automatically retried or undone.
+`vamos run` remains noninteractive and is never automatically retried or undone.
 
 ## Local tests (no Docker or PostgreSQL needed)
 

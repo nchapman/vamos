@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func replicaMaintenance(t *testing.T) *multiMaintenanceInventory {
@@ -29,7 +29,7 @@ func replicaMaintenance(t *testing.T) *multiMaintenanceInventory {
 			r.Instances = append(r.Instances, member)
 			// The inventory boundary stores Docker objects, not duplicated captured configs.
 			v := f.add(&release{Container: member.Container, Service: name, Operation: r.Operation, Image: r.Image})
-			v.Config.Labels["soar.replica"] = fmt.Sprint(ordinal)
+			v.Config.Labels["vamos.replica"] = fmt.Sprint(ordinal)
 			v.State.Running = true
 		}
 		f.j.ServiceStates[name] = &serviceState{Phase: "ready", Current: r, Incarnation: strings.Repeat("a", 32)}
@@ -131,7 +131,7 @@ func TestReplicaMaintenanceRejectsUnrecordedMember(t *testing.T) {
 	f := replicaMaintenance(t)
 	r := f.j.ServiceStates["web"].Current
 	phantom := f.add(&release{Container: instanceName(f.j.App, "web", r.Operation, 4), Service: "web", Operation: r.Operation, Image: r.Image})
-	phantom.Config.Labels["soar.replica"] = "4"
+	phantom.Config.Labels["vamos.replica"] = "4"
 	if _, err := f.m.planMaintenance(context.Background(), f.j, "destroy", strings.Repeat("e", 32)); err == nil {
 		t.Fatal("unrecorded extra member authorized")
 	}
@@ -145,7 +145,7 @@ func TestReplicaMaintenanceRejectsWrongOrdinal(t *testing.T) {
 		f := replicaMaintenance(t)
 		for _, v := range f.containers {
 			if strings.HasSuffix(v.Name, "-1") {
-				v.Config.Labels["soar.replica"] = label
+				v.Config.Labels["vamos.replica"] = label
 				break
 			}
 		}

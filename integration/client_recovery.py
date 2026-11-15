@@ -11,7 +11,7 @@ def fresh_client(h):
     previous = h.env
     h.env = dict(previous, XDG_CONFIG_HOME=str(directory))
     try:
-        h.cli('server', 'connect', '--domain', 'soar.localhost', 'local', 'root@127.0.0.1')
+        h.cli('server', 'connect', '--domain', 'vamos.localhost', 'local', 'root@127.0.0.1')
         yield
     finally:
         h.env = previous

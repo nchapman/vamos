@@ -12,7 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const DefaultFile = "soar.yaml"
+const DefaultFile = "vamos.yaml"
 
 type UpdatePolicy string
 

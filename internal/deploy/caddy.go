@@ -18,7 +18,7 @@ func sameJSON(a, b []byte) bool {
 	return json.Unmarshal(a, &x) == nil && json.Unmarshal(b, &y) == nil && reflect.DeepEqual(x, y)
 }
 func (m *Manager) adapt(c context.Context, text string) ([]byte, error) {
-	p := m.path("/etc/caddy/.soar-adapt.Caddyfile")
+	p := m.path("/etc/caddy/.vamos-adapt.Caddyfile")
 	if e := atomic(p, []byte(text), 0600); e != nil {
 		return nil, e
 	}
@@ -98,7 +98,7 @@ func (m *Manager) promote(c context.Context, j *journal) error {
 			return e
 		}
 	}
-	temp := filepath.Join(filepath.Dir(p), ".soar-next.Caddyfile")
+	temp := filepath.Join(filepath.Dir(p), ".vamos-next.Caddyfile")
 	defer os.Remove(temp)
 	if e = atomic(temp, []byte(next), 0644); e != nil {
 		return e

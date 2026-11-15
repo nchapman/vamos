@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 // runtimeRef refers directly into the journal. In particular port intent edits
@@ -57,7 +57,7 @@ func (m *Manager) replicaResourceProvenance(j *journal, v *resourceInspection, n
 	if replicaLabel(v.Config.Labels) == 0 {
 		return nil
 	}
-	op, service := v.Config.Labels["soar.operation"], v.Config.Labels["soar.service"]
+	op, service := v.Config.Labels["vamos.operation"], v.Config.Labels["vamos.service"]
 	for _, r := range retainedReleases(j) {
 		if r.Operation != op || r.Service != service {
 			continue
@@ -88,7 +88,7 @@ func (m *Manager) replicaResourceProvenance(j *journal, v *resourceInspection, n
 }
 
 func replicaLabel(labels map[string]string) int {
-	value, present := labels["soar.replica"]
+	value, present := labels["vamos.replica"]
 	if !present {
 		return 0
 	}
@@ -104,7 +104,7 @@ func runtimeLabelMatches(r *release, name string, labels map[string]string) bool
 		if ref.Container != name {
 			continue
 		}
-		value, present := labels["soar.replica"]
+		value, present := labels["vamos.replica"]
 		if ref.Ordinal == 0 {
 			return !present
 		}

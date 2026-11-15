@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 func TestWorkflowMaintenanceRequiresDurableRunResult(t *testing.T) {
@@ -20,7 +20,7 @@ func TestWorkflowMaintenanceRequiresDurableRunResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	op := strings.Repeat("b", 32)
-	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "building", Container: "soar-run-" + op}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "web", Phase: "building", Container: "vamos-run-" + op}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 	if err := m.saveRun(j, r); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestWorkflowMaintenancePrunesBoundedHistory(t *testing.T) {
 	code := 0
 	for i := 0; i < 256; i++ {
 		op := fmt.Sprintf("%032x", i+100)
-		r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "worker", Phase: "complete", Container: "soar-run-" + op, Image: "sha256:" + strings.Repeat("c", 64), ExitCode: &code, Output: "saved output"}, DockerID: strings.Repeat("d", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+		r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "worker", Phase: "complete", Container: "vamos-run-" + op, Image: "sha256:" + strings.Repeat("c", 64), ExitCode: &code, Output: "saved output"}, DockerID: strings.Repeat("d", 64), Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 		if err := f.m.saveRun(j, r); err != nil {
 			t.Fatal(err)
 		}
@@ -93,7 +93,7 @@ func TestWorkflowMaintenanceFailedBuild(t *testing.T) {
 	}
 	j := f.load()
 	op := strings.Repeat("b", 32)
-	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "worker", Phase: "building", Container: "soar-run-" + op}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
+	r := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: op, Service: "worker", Phase: "building", Container: "vamos-run-" + op}, Config: config.Service{Image: "alpine:latest", Update: config.UpdateAuto, Command: []string{"true"}}}
 	if err := f.m.saveRun(j, r); err != nil {
 		t.Fatal(err)
 	}

@@ -13,18 +13,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nchapman/soar/internal/agentclient"
-	"github.com/nchapman/soar/internal/agentproto"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/transport"
+	"github.com/nchapman/vamos/internal/agentclient"
+	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/transport"
 	"golang.org/x/term"
 )
 
 // BridgeUser is the restricted host account whose forced command relays stdio
 // to the installed coordinator's socket.
-const BridgeUser = "soar"
+const BridgeUser = "vamos"
 
 // AgentTransport implements transport.Client over the restricted SSH bridge.
 type AgentTransport struct{}
@@ -134,7 +134,7 @@ func dialBridge(ctx context.Context, target string) (*bridgeConn, error) {
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("connect to %q over SSH: %w; verify the restricted bridge account and 'soar server add'", bridge, err)
+		return nil, fmt.Errorf("connect to %q over SSH: %w; verify the restricted bridge account and 'vamos server add'", bridge, err)
 	}
 	return &bridgeConn{bridge: bridge, cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderrBuf}, nil
 }
@@ -160,15 +160,15 @@ func (c *bridgeConn) diagnoseFailure(target string, opErr error) error {
 	stderr := c.stderr.Bytes()
 	var exitErr *exec.ExitError
 	if errors.As(waitErr, &exitErr) && exitErr.ExitCode() == 126 {
-		return fmt.Errorf("server agent bridge rejected connection to %q (exit 126): verify /etc/soar/authorized_keys forced command or run 'soar server upgrade'", target)
+		return fmt.Errorf("server agent bridge rejected connection to %q (exit 126): verify /etc/vamos/authorized_keys forced command or run 'vamos server upgrade'", target)
 	}
 	if waitErr != nil && (len(stderr) > 0 || errors.As(waitErr, &exitErr)) && strings.Contains(opErr.Error(), "empty agent frame") {
 		return connectionError(c.bridge, process.Result{Stderr: stderr}, waitErr)
 	}
 	if len(stderr) > 0 {
-		return fmt.Errorf("server agent handshake failed for %q: %w; SSH stderr: %q; verify deploy key access or run 'soar server upgrade' with a matching CLI", target, opErr, stderr)
+		return fmt.Errorf("server agent handshake failed for %q: %w; SSH stderr: %q; verify deploy key access or run 'vamos server upgrade' with a matching CLI", target, opErr, stderr)
 	}
-	return fmt.Errorf("server agent handshake failed for %q: %w; run 'soar server upgrade' with a matching CLI", target, opErr)
+	return fmt.Errorf("server agent handshake failed for %q: %w; run 'vamos server upgrade' with a matching CLI", target, opErr)
 }
 
 func connectAgent(ctx context.Context, target string, required []string) (*agentclient.Client, func(), error) {
@@ -227,7 +227,7 @@ func runMutation(ctx context.Context, client *agentclient.Client, request deploy
 	}
 	record, err := client.Wait(ctx, submitted.OperationID)
 	if err != nil {
-		return deploy.Response{}, fmt.Errorf("operation %s was admitted; reattach with 'soar status': %w", submitted.OperationID, err)
+		return deploy.Response{}, fmt.Errorf("operation %s was admitted; reattach with 'vamos status': %w", submitted.OperationID, err)
 	}
 	switch record.Phase {
 	case agentproto.PhaseSucceeded, agentproto.PhaseFailed:
@@ -243,7 +243,7 @@ func runMutation(ctx context.Context, client *agentclient.Client, request deploy
 		}
 		return deploy.Response{}, fmt.Errorf("remote %s failed: %q", request.Action, message)
 	case agentproto.PhaseUncertain:
-		return deploy.Response{}, fmt.Errorf("operation %s outcome is uncertain: %s; inspect 'soar status' before resuming or superseding", submitted.OperationID, record.Error)
+		return deploy.Response{}, fmt.Errorf("operation %s outcome is uncertain: %s; inspect 'vamos status' before resuming or superseding", submitted.OperationID, record.Error)
 	default:
 		message := record.Error
 		if message == "" {

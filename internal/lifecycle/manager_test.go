@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/gofrs/flock"
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 var testConfig = Config{Name: "test", Domain: "apps.example.com"}
@@ -92,8 +92,8 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		}
 		return out(value + "\n")
 	case "useradd":
-		f.accounts["passwd:soar"] = "soar:x:997:997::/:" + AgentPath
-		f.accounts["group:soar"] = "soar:x:997:"
+		f.accounts["passwd:vamos"] = "vamos:x:997:997::/:" + AgentPath
+		f.accounts["group:vamos"] = "vamos:x:997:"
 		return out("")
 	case "systemctl":
 		switch args[0] {
@@ -345,7 +345,7 @@ func TestTeardownRefusesUnsafeConditions(t *testing.T) {
 			case "unowned-removal":
 				f.unownedRemoval = true
 			case "app-data":
-				f.write("/var/lib/soar/apps/important", "data")
+				f.write("/var/lib/vamos/apps/important", "data")
 			case "account":
 				f.accounts["group:docker"] = "docker:x:998:other-user"
 			case "symlink":
@@ -382,7 +382,7 @@ func TestFreshSetupRefusesPreexistingResources(t *testing.T) {
 			case "package":
 				f.installed["containerd"] = installedPackage{"installed", "old"}
 			case "state-dir":
-				f.write("/var/lib/soar/unmanaged", "important")
+				f.write("/var/lib/vamos/unmanaged", "important")
 			case "account":
 				f.accounts["group:docker"] = "docker:x:999:someone"
 			case "unit-mask":

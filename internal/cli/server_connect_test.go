@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/host"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/registry"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/registry"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 func connectState() *lifecycle.State {

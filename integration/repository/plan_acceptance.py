@@ -57,7 +57,7 @@ def run(h, repository_id, repository_credentials):
     app = 'plan-' + secrets.token_hex(8)
     work = h.work / app
     shutil.copytree(h.root / 'examples/journal', work,
-                    ignore=shutil.ignore_patterns('.soar', '__pycache__'))
+                    ignore=shutil.ignore_patterns('.vamos', '__pycache__'))
     work.chmod(0o700)
     values = [v.encode() for k, v in repository_credentials.items() if k in ('password', 'access_key_id', 'secret_access_key') and v]
     password, staged = secrets.token_urlsafe(36).encode(), secrets.token_urlsafe(36).encode()
@@ -69,7 +69,7 @@ def run(h, repository_id, repository_credentials):
         return result
 
     def cli(*args, success=True, input=None):
-        result = command([h.root / 'bin/soar', *args], cwd=work, input=input)
+        result = command([h.root / 'bin/vamos', *args], cwd=work, input=input)
         require((result.returncode == 0) == success, 'plan phase CLI unexpected exit status')
         return result.stdout
 
@@ -80,9 +80,9 @@ def run(h, repository_id, repository_credentials):
         os.chown(path, h.user.pw_uid, h.user.pw_gid)
 
     manifest = fixture_manifest(app)
-    result = command(['chown', '-R', 'soartest:soartest', work], user='root')
+    result = command(['chown', '-R', 'vamostest:vamostest', work], user='root')
     require(result.returncode == 0, 'fixture ownership')
-    save('soar.yaml', manifest)
+    save('vamos.yaml', manifest)
     def stage(value):
         cli('secrets', 'stage', '--server', 'local', '--app', app, '--stdin', 'database-password', input=value)
     def status():
@@ -108,7 +108,7 @@ def run(h, repository_id, repository_credentials):
 
     stage(password)
     cli('deploy', '--server', 'local')
-    state = json.loads((Path('/var/lib/soar/apps') / app / 'state.json').read_text())
+    state = json.loads((Path('/var/lib/vamos/apps') / app / 'state.json').read_text())
     require(state['version'] in (7, 8), 'requires fixed-incarnation v7/v8 runtime')
     before, runtime = snapshot()
     plan = {'app': app, 'sources': {
@@ -116,7 +116,7 @@ def run(h, repository_id, repository_credentials):
         'entries': {'type': 'sqlite', 'service': 'web', 'volume': 'data', 'path': 'journal.sqlite'},
         'uploads': {'type': 'files', 'service': 'web', 'volume': 'data', 'path': 'uploads'}},
         'sets': {'daily': {'sources': ['primary', 'entries', 'uploads'], 'consistency': 'quiesced', 'stop': ['web'], 'repository': 'fixture-new'}}}
-    record = Path('/var/lib/soar/backups/plans') / (app + '.json')
+    record = Path('/var/lib/vamos/backups/plans') / (app + '.json')
     require(show()['current_revision'] == 'none' and not record.exists(), 'plan already installed')
     preview = configure(plan)
     require(not record.exists() and preview['current_revision'] == 'none', 'preview wrote plan')
@@ -128,7 +128,7 @@ def run(h, repository_id, repository_credentials):
     unchanged(json.loads(record.read_text()), installed['current'], 'persisted record')
     unchanged(runtime, snapshot()[1], 'runtime across plan installation')
     web_volume = installed['current']['bindings']['sources']['entries']['volume']['id']
-    require(any(m.get('Name') == 'soar-vol-' + web_volume for m in runtime['web']['mounts']), 'actual web volume differs')
+    require(any(m.get('Name') == 'vamos-vol-' + web_volume for m in runtime['web']['mounts']), 'actual web volume differs')
     baseline = record.read_bytes()
     for source, key, value in [('primary', 'service', 'absent'), ('entries', 'volume', 'absent'), ('primary', 'credentials', {'service': 'database', 'env': 'ABSENT'})]:
         invalid = copy.deepcopy(plan)
@@ -162,12 +162,12 @@ def run(h, repository_id, repository_credentials):
     unchanged(replacement['current_revision'], show()['current_revision'], 'staged-secret current revision')
     unchanged(runtime, snapshot()[1], 'runtime across staging/refusals/replacement')
     manifest['services']['web']['env'] = {'PLAN_ACCEPTANCE': 'compatible'}
-    save('soar.yaml', manifest)
+    save('vamos.yaml', manifest)
     cli('deploy', '--server', 'local', '--service', 'web')
     after, updated = snapshot()
     unchanged(runtime['database'], updated['database'], 'protected database')
     require(updated['web']['id'] != runtime['web']['id'], 'scoped deploy did not replace web runtime')
-    require(any(m.get('Name') == 'soar-vol-' + web_volume for m in updated['web']['mounts']), 'scoped deploy changed actual web volume')
+    require(any(m.get('Name') == 'vamos-vol-' + web_volume for m in updated['web']['mounts']), 'scoped deploy changed actual web volume')
     unchanged(pending, after['secrets'], 'applied/pending secret provenance')
     validate_bindings(replacement['current'], after, repository_id)
     unchanged(digest, configure(plan)['digest'], 'compatible deploy digest')

@@ -9,8 +9,8 @@
 
 # Never send local environment, platform state, or key material to a build.
 **/.env*
-**/.soar
-**/.soar/**
+**/.vamos
+**/.vamos/**
 **/*.key
 **/*.pem
 **/credentials*.yml.enc

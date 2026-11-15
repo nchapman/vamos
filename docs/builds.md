@@ -1,6 +1,6 @@
 # Isolated remote builds
 
-Soar builds captured source on the deployment host, but not in the host's network
+Vamos builds captured source on the deployment host, but not in the host's network
 namespace. This applies to ordinary/scoped deployments, captured-build recovery,
 and builds for one-off commands. Prebuilt-image deployments do not need the build
 service.
@@ -16,20 +16,20 @@ in the host-side Docker daemon outside the boundary.
 - Build traffic to host-local addresses is dropped before Docker port translation.
   This includes the build gateway and the host's other interface addresses, not
   just host loopback. Caddy's loopback admin listener is not exposed to builds.
-- Forwarding from the build bridge to Soar's application bridges is blocked,
+- Forwarding from the build bridge to Vamos's application bridges is blocked,
   including direct container IPs and translated published-port paths.
 - IPv4 and IPv6 guards are installed and verified before the builder starts.
 - The builder has no published API port or mounted Docker socket. The host client
   connects through `docker exec` and BuildKit's stdio transport.
 - Neither host-network nor insecure-execution entitlements are enabled. Source
-  configuration cannot request them through Soar.
+  configuration cannot request them through Vamos.
 - Buildx uses explicit private builder metadata and a fixed local Docker endpoint,
   not the administrator's currently selected builder or Docker context. Root's
   existing Docker registry configuration, credential helpers and their environment
   remain available. Credentials are not copied into a new configuration or mounted
   inside the builder; private registries must still be reachable through the guard.
 
-The Docker daemon retains its existing Soar configuration, including the disabled
+The Docker daemon retains its existing Vamos configuration, including the disabled
 shared default bridge. First use does not rewrite daemon configuration or restart
 Docker or application containers. Existing installations need no host-network
 migration for this build path.
@@ -37,7 +37,7 @@ migration for this build path.
 ## Ownership and recovery
 
 The first build records private creation intent under
-`/var/lib/soar/buildkit/`, then creates the labeled network, cache volume and
+`/var/lib/vamos/buildkit/`, then creates the labeled network, cache volume and
 builder container. Subsequent work verifies the captured identities and runtime
 configuration. Unknown resources, replacements, changed endpoints, unexpected
 attachments and failed inventories are not adopted or interpreted as absence.
@@ -67,7 +67,7 @@ After all normal teardown fences pass, an authorized host purge removes only the
 exact recorded firewall rules and disposable Buildx metadata. It never deletes
 root's Docker configuration or credentials.
 
-`SOAR_BUILDKIT_SNAPSHOTTER=native` is a privileged **server-worker environment**
+`VAMOS_BUILDKIT_SNAPSHOTTER=native` is a privileged **server-worker environment**
 setting for hosts that cannot mount nested overlays. Normal initialization uses
 `auto`; the selection is captured in the builder receipt. This is not an
 application manifest option, and changing a receipt's configuration by hand is
@@ -82,7 +82,7 @@ host administrators and application build inputs remain trusted. Builds can
 consume host CPU, memory and disk. Cache is shared by builds on the host, not a
 hostile-tenant confidentiality boundary.
 
-The forwarding guard covers Soar's supported Docker bridge topology. It is not
+The forwarding guard covers Vamos's supported Docker bridge topology. It is not
 an internet-only egress allowlist: LAN/VPN destinations, other networking drivers,
 cloud metadata services and externally reachable application URLs are not all
 excluded. An external proxy or relay can provide indirect access beyond a direct
@@ -93,12 +93,12 @@ builder's bridge firewall. This is not a guarantee that every build-related
 client request originates inside the builder.
 
 Coordinate firewall and daemon administration with deployments. Do not flush or
-reload away Soar's guard rules while a builder is running. A pre-start check cannot
+reload away Vamos's guard rules while a builder is running. A pre-start check cannot
 protect an already running build from a later privileged firewall change. Docker
 live restore is outside the accepted daemon policy; do not enable it to keep the
 builder alive across a daemon restart. Root administrators can always bypass or
 replace these controls.
 
-Root SSH remains required for the current Soar deployment protocol. Restricting
+Root SSH remains required for the current Vamos deployment protocol. Restricting
 routine deployment credentials and replacing client-uploaded privileged executors
 are separate work; this change does not claim to implement either.

@@ -21,7 +21,7 @@ Every client connection begins with `hello` before submitting mutations:
    - `concurrency` (`max_queue_depth`, `max_staged_bytes`, `max_concurrent_builds`, `max_concurrent_deploys`)
 3. Compatibility check:
    - Client older than agent `api_min`: fail before sending payloads and instruct upgrading the local CLI.
-   - Agent older than client `api_min` or missing a required capability: fail before mutation and instruct `soar server upgrade`.
+   - Agent older than client `api_min` or missing a required capability: fail before mutation and instruct `vamos server upgrade`.
 
 ## Methods
 
@@ -42,8 +42,8 @@ Every client connection begins with `hello` before submitting mutations:
 
 ## Concurrency policy and ACLs
 
-- Default host concurrency is stored in root-owned `/etc/soar/agent.json`: `max_queue_depth=32`, `max_staged_bytes=512 MiB`, `max_concurrent_builds=1`, `max_concurrent_deploys=1`. The coordinator enforces deploy/build semaphores, one mutation per app, and a short ingress transaction lock; restart the agent after an administrator changes this validated file.
+- Default host concurrency is stored in root-owned `/etc/vamos/agent.json`: `max_queue_depth=32`, `max_staged_bytes=512 MiB`, `max_concurrent_builds=1`, `max_concurrent_deploys=1`. The coordinator enforces deploy/build semaphores, one mutation per app, and a short ingress transaction lock; restart the agent after an administrator changes this validated file.
 - `admin` principals may execute host-administration actions (`server-add`, `server-upgrade`, `server-configure`, `server-teardown`, `acl-manage`).
 - `deployer` principals are confined to explicitly allowed apps and actions and cannot list all host apps (`apps`) without explicit wildcard scope.
-- Scoped CI access is mapped by root-owned `/etc/soar/authorized_keys`: every nonempty key must use `restrict,command="/usr/local/lib/soar/executor internal-agent bridge --principal <id>"` (legacy `soar-agent` path also accepted) and name a principal in `/etc/soar/principals.json`. The daemon refuses unsafe or unmatched mappings at startup, so the client cannot choose its own principal.
-- `soar server add` installs the operator's own key (SSH agent, `~/.ssh`, or `--deploy-key PATH`) as the initial `default-deployer` bridge key with wildcard app scope. Ordinary CLI app traffic (`deploy`, `status`, `logs`, `run`, `rollback`, `resume`, `cleanup`, `destroy`, `service`, `secrets`, `backup`, `apps`, `exec`, `console`) connects as `soar@host` through this bridge; only host administration (`server add/upgrade/teardown`) still uses root SSH. An explicit `--executor` override is rejected on the agent path; recover version skew with `soar server upgrade`.
+- Scoped CI access is mapped by root-owned `/etc/vamos/authorized_keys`: every nonempty key must use `restrict,command="/usr/local/lib/vamos/executor internal-agent bridge --principal <id>"` (legacy `vamos-agent` path also accepted) and name a principal in `/etc/vamos/principals.json`. The daemon refuses unsafe or unmatched mappings at startup, so the client cannot choose its own principal.
+- `vamos server add` installs the operator's own key (SSH agent, `~/.ssh`, or `--deploy-key PATH`) as the initial `default-deployer` bridge key with wildcard app scope. Ordinary CLI app traffic (`deploy`, `status`, `logs`, `run`, `rollback`, `resume`, `cleanup`, `destroy`, `service`, `secrets`, `backup`, `apps`, `exec`, `console`) connects as `vamos@host` through this bridge; only host administration (`server add/upgrade/teardown`) still uses root SSH. An explicit `--executor` override is rejected on the agent path; recover version skew with `vamos server upgrade`.

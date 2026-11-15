@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestExplicitOutputAllowanceRemainsBounded(t *testing.T) {

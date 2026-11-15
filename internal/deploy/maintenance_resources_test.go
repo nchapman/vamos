@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func TestMaintenanceRemovalIdentityBoundary(t *testing.T) {
@@ -20,14 +20,14 @@ func TestMaintenanceRemovalIdentityBoundary(t *testing.T) {
 			op := strings.Repeat("a", 32)
 			id := strings.Repeat("b", 64)
 			image := "sha256:" + strings.Repeat("c", 64)
-			name := "soar-notes-" + op
+			name := "vamos-notes-" + op
 			p := plannedContainer{Name: name, ID: id, Image: image, Operation: op, NetworkID: strings.Repeat("e", 64)}
 			w := &maintenance{Action: "cleanup", Containers: []plannedContainer{p}}
 			if mode == "destroy" || mode == "network-replacement" || mode == "update-error" {
 				w.Action = "destroy"
 			}
 			if mode == "network-replacement" {
-				w.Network = &plannedNetwork{Name: "soar-notes", ID: strings.Repeat("f", 64)}
+				w.Network = &plannedNetwork{Name: "vamos-notes", ID: strings.Repeat("f", 64)}
 			}
 			mutations := []string{}
 			inspects := 0
@@ -51,19 +51,19 @@ func TestMaintenanceRemovalIdentityBoundary(t *testing.T) {
 				}
 				if a[1] == "inspect" {
 					if a[0] == "network" {
-						v := resourceInspection{Name: "soar-notes"}
+						v := resourceInspection{Name: "vamos-notes"}
 						v.ID = strings.Repeat("e", 64)
 						v.Driver = "bridge"
-						v.Labels = map[string]string{"soar.host": "host", "soar.app": "notes"}
+						v.Labels = map[string]string{"vamos.host": "host", "vamos.app": "notes"}
 						b, _ := json.Marshal([]resourceInspection{v})
 						return process.Result{Stdout: b}, nil
 					}
 					inspects++
 					v := resourceInspection{Name: "/" + name, Image: image}
 					v.ID = id
-					v.Config.Labels = map[string]string{"soar.host": "host", "soar.app": "notes", "soar.operation": op}
-					v.HostConfig.NetworkMode = "soar-notes"
-					v.NetworkSettings.Networks = map[string]json.RawMessage{"soar-notes": json.RawMessage(`{"NetworkID":"` + strings.Repeat("e", 64) + `"}`)}
+					v.Config.Labels = map[string]string{"vamos.host": "host", "vamos.app": "notes", "vamos.operation": op}
+					v.HostConfig.NetworkMode = "vamos-notes"
+					v.NetworkSettings.Networks = map[string]json.RawMessage{"vamos-notes": json.RawMessage(`{"NetworkID":"` + strings.Repeat("e", 64) + `"}`)}
 					v.State.Running = mode == "running" || mode == "destroy"
 					b, _ := json.Marshal([]resourceInspection{v})
 					return process.Result{Stdout: b}, nil

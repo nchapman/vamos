@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nchapman/soar/internal/host"
+	"github.com/nchapman/vamos/internal/host"
 )
 
 const validRequest = `{"version":1,"operation":"inspect"}`
-const goodProbe = "soar-inspect-v1\nLinux\nx86_64\n0\nsystemd\nyes\npresent\nID=ubuntu\nVERSION_ID=24.04\n"
+const goodProbe = "vamos-inspect-v1\nLinux\nx86_64\n0\nsystemd\nyes\npresent\nID=ubuntu\nVERSION_ID=24.04\n"
 
 func TestProtocolInspection(t *testing.T) {
 	for _, supported := range []bool{true, false} {

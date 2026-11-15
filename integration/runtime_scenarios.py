@@ -128,14 +128,14 @@ class Project:
         self.app = prefix + secrets.token_hex(4)
         self.directory = h.work / self.app
         shutil.copytree(h.root / 'examples' / example, self.directory,
-                        ignore=shutil.ignore_patterns('.soar', '__pycache__', '.bundle', 'vendor', 'log', 'tmp'))
-        self.host = f'{self.app}.soar.localhost'
-        self.alias = f'{self.app}-alias.soar.localhost'
+                        ignore=shutil.ignore_patterns('.vamos', '__pycache__', '.bundle', 'vendor', 'log', 'tmp'))
+        self.host = f'{self.app}.vamos.localhost'
+        self.alias = f'{self.app}-alias.vamos.localhost'
         h.hosts([self.host, self.alias])
 
     def save(self, manifest):
-        (self.directory / 'soar.yaml').write_text(json.dumps(manifest, indent=2) + '\n')
-        self.h.command(['chown', '-R', 'soartest:soartest', self.directory], user='root')
+        (self.directory / 'vamos.yaml').write_text(json.dumps(manifest, indent=2) + '\n')
+        self.h.command(['chown', '-R', 'vamostest:vamostest', self.directory], user='root')
 
     def cli(self, operation, *args, error=None):
         return self.h.cli(operation, '--server', 'local', *args,
@@ -190,7 +190,7 @@ class Project:
         logs = self.cli('logs', '--run', hook['operation']).stdout
         # Exactly one retained release runner for this parent, not one per replica/service.
         found = self.h.command(['docker', 'ps', '-aq', '--no-trunc', '--filter',
-                                'label=soar.release=' + hook['parent_operation']], user='root').stdout
+                                'label=vamos.release=' + hook['parent_operation']], user='root').stdout
         require(found.decode().split() == [info['id']], 'release did not run once per operation')
         return hook, info, logs
 
@@ -276,7 +276,7 @@ def rails(h, summary, done):
     volume = status['volumes'][0]['id']
     mount = next(m for m in current['database'][0]['mounts']
                  if m['Destination'] == '/var/lib/postgresql/data')
-    require(mount['Name'] == 'soar-vol-' + volume, 'PostgreSQL volume identity mismatch')
+    require(mount['Name'] == 'vamos-vol-' + volume, 'PostgreSQL volume identity mismatch')
     for name in ('web', 'worker'):
         require(all(not info['mounts'] for info in current[name]), 'stateless app has mounts')
     networks = current['database'][0]['networks']
@@ -346,7 +346,7 @@ def rails(h, summary, done):
     p.cli('logs', '--service', 'web', error='--replica')
     # console checks terminals before resolving replicas. Give it a real PTY,
     # rather than mistaking the pipe/TTY refusal for replica ambiguity.
-    console = [h.root / 'bin/soar', 'console', '--server', 'local', '--app', p.app,
+    console = [h.root / 'bin/vamos', 'console', '--server', 'local', '--app', p.app,
                '--service', 'web', '--shell', '/bin/sh']
     refused = h.command(['script', '--quiet', '--return', '--command',
                          shlex.join(map(str, console)), '/dev/null'],

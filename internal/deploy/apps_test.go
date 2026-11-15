@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/appstate"
-	"github.com/nchapman/soar/internal/process"
-	"github.com/nchapman/soar/internal/volumes"
+	"github.com/nchapman/vamos/internal/appstate"
+	"github.com/nchapman/vamos/internal/process"
+	"github.com/nchapman/vamos/internal/volumes"
 )
 
 func inventoryRequest(r Request) Request { return Request{Version: 1, Action: "apps", Host: r.Host} }
@@ -116,7 +116,7 @@ func TestAppsFailClosedOnBadMetadata(t *testing.T) {
 				}
 			case "foreign-secret", "corrupt-secret":
 				stageSecret(t, m, r, "1", secretCanary)
-				path := m.path("/var/lib/soar/secrets/notes.json")
+				path := m.path("/var/lib/vamos/secrets/notes.json")
 				data, err := os.ReadFile(path)
 				if err != nil {
 					t.Fatal(err)
@@ -134,7 +134,7 @@ func TestAppsFailClosedOnBadMetadata(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "unexpected-file":
-				if err := atomic(m.path("/var/lib/soar/secrets/not-json"), []byte("x"), 0600); err != nil {
+				if err := atomic(m.path("/var/lib/vamos/secrets/not-json"), []byte("x"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "unsafe-directory":
@@ -145,7 +145,7 @@ func TestAppsFailClosedOnBadMetadata(t *testing.T) {
 			case "host-config":
 				q.Host.Domain = "other.example.com"
 			case "host-owner-mode":
-				if err := os.Chmod(m.path("/var/lib/soar/host.json"), 0666); err != nil {
+				if err := os.Chmod(m.path("/var/lib/vamos/host.json"), 0666); err != nil {
 					t.Fatal(err)
 				}
 			}

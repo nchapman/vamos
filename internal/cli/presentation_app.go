@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/registry"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/registry"
 )
 
 type appReport struct {
@@ -18,7 +18,7 @@ type appReport struct {
 }
 
 func (r appReport) command(action string, extra ...string) string {
-	args := []string{"soar", action, "--server", r.server.Name, "--app", r.app}
+	args := []string{"vamos", action, "--server", r.server.Name, "--app", r.app}
 	args = append(args, r.extraFlags...)
 	args = append(args, extra...)
 	return suggestedCommand(args...)

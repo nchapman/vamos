@@ -12,14 +12,14 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/secrets"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/secrets"
 )
 
 func bundleDigest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
-// Soar's supported runtime has Docker-managed filtering and ordinary bridge NAT.
+// Vamos's supported runtime has Docker-managed filtering and ordinary bridge NAT.
 // Never silently repair daemon policy or restart Docker during app deployment.
 func (m *Manager) verifyMultiHost() error {
 	p := m.path("/etc/docker/daemon.json")
@@ -38,7 +38,7 @@ func (m *Manager) verifyMultiHost() error {
 		return err
 	}
 	if !sameJSON(data, []byte(`{"bridge":"none","log-driver":"local"}`)) {
-		return errors.New("Docker daemon configuration drift; multi-service deployment requires the Soar-managed networking policy")
+		return errors.New("Docker daemon configuration drift; multi-service deployment requires the Vamos-managed networking policy")
 	}
 	return nil
 }

@@ -13,7 +13,7 @@ import (
 
 	"github.com/moby/patternmatcher"
 	"github.com/moby/patternmatcher/ignorefile"
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 const MaxBytes = 32 * 1024 * 1024
@@ -29,7 +29,7 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 
 func reserved(name string) bool {
 	for _, p := range strings.Split(filepath.ToSlash(name), "/") {
-		if p == ".git" || p == ".soar" {
+		if p == ".git" || p == ".vamos" {
 			return true
 		}
 	}

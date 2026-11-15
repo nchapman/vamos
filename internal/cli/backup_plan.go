@@ -12,15 +12,15 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/nchapman/soar/internal/backup"
-	"github.com/nchapman/soar/internal/deploy"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/ssh"
+	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/deploy"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/ssh"
 )
 
 const backupPlanHelp = `Usage:
-  soar backup configure --server NAME --app APP -f backup.yaml [--yes] [--json]
-  soar backup plan --server NAME --app APP [--json]
+  vamos backup configure --server NAME --app APP -f backup.yaml [--yes] [--json]
+  vamos backup plan --server NAME --app APP [--json]
 Flags must precede arguments; positional arguments are not accepted.
 --app is required. -f defaults to backup.yaml.
 --server defaults to the registered default, not project bindings.
@@ -114,7 +114,7 @@ func backupPlanCommand(ctx context.Context, args []string, stdin io.Reader, stdo
 	defer cancel()
 	fail := func(apply bool) int {
 		if apply {
-			fmt.Fprintf(stderr, "Backup plan apply outcome is unknown or refused. Inspect recorded metadata with: soar backup plan --server %s --app %s\n", server.Name, *app)
+			fmt.Fprintf(stderr, "Backup plan apply outcome is unknown or refused. Inspect recorded metadata with: vamos backup plan --server %s --app %s\n", server.Name, *app)
 		} else {
 			fmt.Fprintln(stderr, "Backup plan observation failed; no apply requested.")
 		}

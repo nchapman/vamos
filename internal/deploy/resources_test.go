@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/config"
-	"github.com/nchapman/soar/internal/lifecycle"
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func testResources(cpus float64, memory int64) *config.Resources {
@@ -324,14 +324,14 @@ func TestResourcesRunInheritsAndVerifies(t *testing.T) {
 				}
 				if name == "docker" && args[0] == "start" {
 					starts++
-					f.docker.containers["soar-run-"+q.Operation].State.Running = true
+					f.docker.containers["vamos-run-"+q.Operation].State.Running = true
 					return process.Result{}, errors.New("lost start response")
 				}
 				return old(ctx, name, args, input)
 			}
 			if mode == "tampered" {
 				f.docker.inspectHook = func(v *inspection) {
-					if v.Config.Labels["soar.run"] != "" {
+					if v.Config.Labels["vamos.run"] != "" {
 						v.HostConfig.NanoCPUs = 0
 					}
 				}

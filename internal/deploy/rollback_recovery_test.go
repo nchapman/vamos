@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nchapman/soar/internal/process"
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func recoveryRollback(f *multiFlow, op, service string, apply, downtime bool) (Response, error) {
@@ -158,7 +158,7 @@ func TestRollbackRecoveryVolumeRequiresScopedDowntimeAndResumesSingleWriter(t *t
 		t.Helper()
 		running := 0
 		for _, v := range f.docker.containers {
-			if v.Config.Labels["soar.service"] == "web" && v.State.Running {
+			if v.Config.Labels["vamos.service"] == "web" && v.State.Running {
 				running++
 			}
 		}

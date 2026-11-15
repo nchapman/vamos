@@ -135,7 +135,7 @@ var unsafe = errors.New("secret store requires private executor-owned directorie
 
 func (s Store) directory() string {
 	if s.Dir == "" {
-		return "/var/lib/soar/secrets"
+		return "/var/lib/vamos/secrets"
 	}
 	return s.Dir
 }

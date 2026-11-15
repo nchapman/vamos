@@ -116,7 +116,7 @@ func prepareServiceIdentities(r Request, old, next *journal) error {
 				return fmt.Errorf("service %s already exists; re-add cannot replace it", name)
 			}
 			if supplied == "" {
-				return fmt.Errorf("%w: service %s already exists; explicitly bind this directory with soar service bind before deploying", ErrBindingRequired, name)
+				return fmt.Errorf("%w: service %s already exists; explicitly bind this directory with vamos service bind before deploying", ErrBindingRequired, name)
 			}
 			if supplied != id {
 				return fmt.Errorf("%w: service %s binding is stale; inspect and explicitly bind to its current incarnation", ErrBindingRequired, name)

@@ -9,8 +9,8 @@ installation. The existing Python `examples/ledger` is unchanged.
 This is a real API-only Rails app using PostgreSQL and a separate Solid Queue
 worker, with one shared image for web, worker, and release. It has no Redis,
 object store, uploads, assets, encrypted credentials, or local persistent state.
-`soar.yaml` targets the resources, replicas, and operation-scoped release APIs.
-Use a current Soar binary supporting all three features; older binaries do not
+`vamos.yaml` targets the resources, replicas, and operation-scoped release APIs.
+Use a current Vamos binary supporting all three features; older binaries do not
 support this manifest. It declares two web replicas, one private
 worker, and a manual PostgreSQL service, each limited to 0.5 CPU and 512 MiB with
 no additional swap. Only PostgreSQL has a volume.
@@ -117,7 +117,7 @@ The Dockerfile uses `ruby:3.4.10-slim`, a throwaway native-extension build stage
 and a nonroot UID/GID 1000 final stage. It installs only runtime libraries in the
 final image and excludes development/test bundles. It declares **no VOLUMEs**.
 The Docker build context is this directory, not the repository root. `.dockerignore`
-excludes `.env*`, keys, credentials, local bundles, `.soar`, tests, logs, and temp
+excludes `.env*`, keys, credentials, local bundles, `.vamos`, tests, logs, and temp
 files. Image build requires gem/package network access, but no DB or app secrets.
 
 Manifest process commands:
@@ -159,33 +159,33 @@ completion has a different marker; a second release is harmless; replacement
 preserves data and the DB volume; a failed release blocks promotion. Platform
 integration owns replicas/resource enforcement/release lifecycle assertions.
 
-## Soar deployment and runtime acceptance
+## Vamos deployment and runtime acceptance
 
 Use the disposable guest's `local` server target; this example does not provision
-a server. The checked-in hostname assumes its test domain is `soar.localhost`.
+a server. The checked-in hostname assumes its test domain is `vamos.localhost`.
 For another domain, change `ALLOWED_HOSTS` to the exact generated web hostname
 (and any explicit `http.domains` aliases) before deploying. Do not disable host
 checks. Run commands from this directory so the Docker build context is correct.
 
 1. Stage `database-password` and `app-password` with the **same** random password,
    and `secret-key-base` with an independently generated value, using
-   `soar secrets stage --server local --app rails-ledger --stdin NAME`.
+   `vamos secrets stage --server local --app rails-ledger --stdin NAME`.
    Supply values through stdin, never manifest literals or command arguments.
 2. Create a temporary `bootstrap.yaml` with `app: rails-ledger` and **only the
-   unchanged `services.database` block from `soar.yaml`**. Do not include `release`.
-   Run `soar deploy --server local -f bootstrap.yaml`. PostgreSQL creates the
+   unchanged `services.database` block from `vamos.yaml`**. Do not include `release`.
+   Run `vamos deploy --server local -f bootstrap.yaml`. PostgreSQL creates the
    database/role when initializing its empty volume. There are no implicit
    service dependencies. `deploy --service database` with the full manifest is
    invalid because it excludes the declared release runner (`web`).
-3. Run `soar deploy --server local` with the full `soar.yaml`. Its release runs
+3. Run `vamos deploy --server local` with the full `vamos.yaml`. Its release runs
    once for the deployment operation, not once per replica or service. It waits
    for DB connectivity and runs the explicit app/queue migrations before any
    runtime update. Neither web nor worker performs implicit migrations.
-4. Inspect `soar status --server local --app rails-ledger --json`. The replica
+4. Inspect `vamos status --server local --app rails-ledger --json`. The replica
    worktree's public schema uses `services.web.instances[].ordinal` (1-based),
    `container`, `port`, `running`, and `available`; image is service-level.
    `release.operation` identifies the separate run for
-   `soar logs --server local --app rails-ledger --run OPERATION`.
+   `vamos logs --server local --app rails-ledger --run OPERATION`.
    Use `--service web --replica 1` (or `2`) for `exec`, `logs`, and `console`;
    omitting the selector for a multi-instance service is an error.
 5. For a worker-only update, remove the top-level `release` directive from the
@@ -198,7 +198,7 @@ checks. Run commands from this directory so the Docker build context is correct.
 6. A failed release leaves existing runtimes and routes intact. Inspect its
    explicit run logs. `resume PARENT_OPERATION` observes the same failed run and
    does not retry it. After fixing the command, use
-   `soar deploy --server local --supersede PARENT_OPERATION` with the same service
+   `vamos deploy --server local --supersede PARENT_OPERATION` with the same service
    scope to authorize a new release attempt. Code rollback cannot undo schema
    or data changes made by a release.
 
@@ -276,7 +276,7 @@ with a test-only `SECRET_KEY_BASE`) exited 1 with “migrations not run”.
 The initial local DB-test attempt used a deliberately closed endpoint and did
 not run database tests. Live runtime acceptance subsequently passed with a real
 PostgreSQL database on Ubuntu 24.04 arm64. The final full acceptance run,
-`soar-test-f5b6acb3fd56`, passed all seven runtime groups and restart recovery;
+`vamos-test-f5b6acb3fd56`, passed all seven runtime groups and restart recovery;
 its owned guest was deleted. It covered migrations, separate Solid Queue
 processing and shared rows through both web replicas. The complete database-backed
 Rails suite also passed through a test-only one-off image in a separate

@@ -1,6 +1,6 @@
 # Encrypted backup repository setup
 
-**This guide covers repository setup.** Soar can create or connect to an
+**This guide covers repository setup.** Vamos can create or connect to an
 encrypted S3-compatible repository and verify its identity. It does **not** yet
 capture application data, restore it, schedule backups, prune snapshots, or run a
 recovery drill. A repository reporting `ready` is not evidence that your data is
@@ -9,8 +9,8 @@ backed up. [Shared plan configuration](backup-plans.md) is also implemented;
 
 ## Requirements
 
-- An existing, ready Soar server and an independently provisioned S3-compatible
-  bucket, reachable over HTTPS. Soar does not provision cloud resources or buckets.
+- An existing, ready Vamos server and an independently provisioned S3-compatible
+  bucket, reachable over HTTPS. Vamos does not provision cloud resources or buckets.
 - A provider endpoint, region (default `us-east-1`), bucket and prefix. Endpoints
   cannot contain credentials, a URL path, query, or fragment. Bucket names use
   lowercase letters, numbers and hyphens; prefixes use letters, numbers,
@@ -38,12 +38,12 @@ server using `--server` or the default server; app-directory bindings do not sel
 or scope a repository.
 
 ```sh
-mkdir -p "$HOME/.config/soar/recovery"
-chmod 700 "$HOME/.config/soar/recovery"
-soar backup repository add --server home --mode new \
+mkdir -p "$HOME/.config/vamos/recovery"
+chmod 700 "$HOME/.config/vamos/recovery"
+vamos backup repository add --server home --mode new \
   --endpoint https://s3.example.com --bucket personal-backups \
-  --region us-east-1 --prefix soar --lookup path \
-  --recovery-file "$HOME/.config/soar/recovery/offsite.json" \
+  --region us-east-1 --prefix vamos --lookup path \
+  --recovery-file "$HOME/.config/vamos/recovery/offsite.json" \
   --credentials-stdin --yes offsite < private-storage-credentials.json
 ```
 
@@ -70,7 +70,7 @@ Without `--yes`, nonterminal add is a preview: it does not read credentials, wri
 a recovery kit, inspect SSH, or contact storage.
 
 New repositories receive a fresh operation-scoped prefix, for example
-`soar/<32-hex-operation>`. The supplied base is not initialized directly. Soar
+`vamos/<32-hex-operation>`. The supplied base is not initialized directly. Vamos
 checks the existing bucket and exact subtree for emptiness independently of restic.
 A failed probe never triggers initialization. The random prefix is essential:
 restic initialization does not provide an atomic cross-host create-if-absent lock.
@@ -82,11 +82,11 @@ Use its **exact** prefix and the independently known, full 64-hex decrypted
 repository ID. This registers a pin; it never initializes or repairs the repository.
 
 ```sh
-soar backup repository add --server home --mode connect \
+vamos backup repository add --server home --mode connect \
   --endpoint https://s3.example.com --bucket personal-backups \
   --region us-east-1 --prefix existing/exact-prefix --lookup path \
   --repository-id FULL_64_HEX_REPOSITORY_ID \
-  --recovery-file "$HOME/.config/soar/recovery/existing.json" \
+  --recovery-file "$HOME/.config/vamos/recovery/existing.json" \
   --credentials-stdin --yes existing < private-existing-credentials.json
 ```
 
@@ -98,10 +98,10 @@ wrong ID or unsupported format fails verification; none causes initialization.
 ## Observe and reconcile
 
 ```sh
-soar backup repository list --server home --json
-soar backup repository show --server home offsite
-soar backup repository verify --server home offsite
-soar backup repository resume --server home offsite ORIGINAL_32_HEX_OPERATION
+vamos backup repository list --server home --json
+vamos backup repository show --server home offsite
+vamos backup repository verify --server home offsite
+vamos backup repository resume --server home offsite ORIGINAL_32_HEX_OPERATION
 ```
 
 - `list` / `show` read recorded metadata only. They do not contact S3 or prove
@@ -136,13 +136,13 @@ An interrupted setup leaves the pending kit intact. A failure to finalize a kit
 must not be interpreted as remote setup having failed.
 
 On the server, private host-bound records live under
-`/var/lib/soar/backups/repositories/` (`0700` directories, `0600` records). Credentials
+`/var/lib/vamos/backups/repositories/` (`0700` directories, `0600` records). Credentials
 travel in a separate private archive entry, never request metadata. Raw backend
 output and credential values are not returned by repository commands. The pinned
-tool lives under `/usr/local/lib/soar/tools/restic/0.19.1/`; temporary credential
+tool lives under `/usr/local/lib/vamos/tools/restic/0.19.1/`; temporary credential
 files stay in the root-only worker runtime directory and are removed on completion.
 
-The kit is usable without Soar's local registry: install the independently verified
+The kit is usable without Vamos's local registry: install the independently verified
 restic version, provide the exact S3 URL (`s3:ENDPOINT/BUCKET/PREFIX`), password file,
 provider credentials and optional CA file, then read config with `--no-cache
 --no-lock` and compare its full ID. Use private files/controlled environment rather
@@ -163,7 +163,7 @@ cleanup or retry mechanism.
   test compilation passed; no Windows live SSH or ACL acceptance is claimed.
 - Review and follow-up review completed with no remaining actionable findings.
 - The complete owned Ubuntu 24.04 arm64 integration run
-  `soar-test-3a69292083eb` passed existing deployment/runtime scenarios, restart
+  `vamos-test-3a69292083eb` passed existing deployment/runtime scenarios, restart
   recovery, and the new repository phase. It collected artifacts and deleted its VM.
 - The repository phase used real pinned restic and a digest-pinned guest-local
   RustFS service over HTTPS with a private CA. It verified installation across

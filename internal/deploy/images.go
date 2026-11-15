@@ -13,8 +13,8 @@ import (
 	"unicode"
 
 	"github.com/distribution/reference"
-	"github.com/nchapman/soar/internal/buildcontext"
-	"github.com/nchapman/soar/internal/config"
+	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 // imageKey separates image sources from build specifications and coalesces
@@ -27,7 +27,7 @@ func imageKey(cfg config.Service) string {
 	if ref, err := reference.ParseNormalizedNamed(source); err == nil {
 		source = reference.TagNameOnly(ref).String()
 	}
-	sum := sha256.Sum256([]byte("soar:image-source\x00" + source))
+	sum := sha256.Sum256([]byte("vamos:image-source\x00" + source))
 	return hex.EncodeToString(sum[:16])
 }
 
