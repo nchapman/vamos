@@ -189,3 +189,28 @@ func TestBuildEnvironment(t *testing.T) {
 		t.Fatal("inherited GOARCH")
 	}
 }
+
+func TestBuildForCrossTargetBundle(t *testing.T) {
+	root := fixture(t)
+	out := filepath.Join(t.TempDir(), "win-bundle")
+	if err := BuildFor(context.Background(), root, out, "v2.0.0", "windows", "amd64", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	files, err := snapshot(root, filepath.Join(t.TempDir(), "snapshot"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp, _ := buildmeta.Encode(identity(files, runtime.Version(), "v2.0.0"), "v2.0.0")
+	for _, name := range []string{"vamos.exe", "vamos-linux-amd64", "vamos-linux-arm64"} {
+		data, err := os.ReadFile(filepath.Join(out, name))
+		if err != nil {
+			t.Fatalf("missing %s: %v", name, err)
+		}
+		if err := buildmeta.Check(stamp, data); err != nil {
+			t.Fatalf("verify %s: %v", name, err)
+		}
+	}
+	if err := BuildFor(context.Background(), root, t.TempDir(), "v2.0.0", "../bad", "amd64", io.Discard); err == nil {
+		t.Fatal("accepted invalid target OS")
+	}
+}

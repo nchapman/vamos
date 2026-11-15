@@ -28,21 +28,53 @@ const profile = "vamos-bundle-inputs-v1;trimpath;buildvcs=false;mod=readonly;cgo
 type target struct{ name, os, arch string }
 
 func targets() []target {
+	return targetsFor(runtime.GOOS, runtime.GOARCH)
+}
+
+func targetsFor(clientOS, clientArch string) []target {
 	name := "vamos"
-	if runtime.GOOS == "windows" {
+	if clientOS == "windows" {
 		name += ".exe"
 	}
 	return []target{
-		{name, runtime.GOOS, runtime.GOARCH},
+		{name, clientOS, clientArch},
 		{"vamos-linux-amd64", "linux", "amd64"},
 		{"vamos-linux-arm64", "linux", "arm64"},
 	}
+}
+
+func validTargetPart(s string) bool {
+	if s == "" || len(s) > 32 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // Build leaves existing outputs alone until every executable is built and
 // verified. Publication is per-file, not atomic for the directory: the runtime
 // pairing guard rejects any mixed bundle after interrupted publication.
 func Build(ctx context.Context, root, output, label string, log io.Writer) error {
+	return BuildFor(ctx, root, output, label, runtime.GOOS, runtime.GOARCH, log)
+}
+
+// BuildFor builds a matching bundle for the specified client OS and architecture
+// alongside both Linux executor binaries.
+func BuildFor(ctx context.Context, root, output, label, clientOS, clientArch string, log io.Writer) error {
+	if clientOS == "" {
+		clientOS = runtime.GOOS
+	}
+	if clientArch == "" {
+		clientArch = runtime.GOARCH
+	}
+	if !validTargetPart(clientOS) || !validTargetPart(clientArch) {
+		return fmt.Errorf("invalid target OS/arch %q/%q", clientOS, clientArch)
+	}
 	if !buildmeta.ValidLabel(label) {
 		return fmt.Errorf("version must be 1–64 ASCII letters, digits, '.', '+', '_', or '-', starting with a letter or digit")
 	}
@@ -89,7 +121,7 @@ func Build(ctx context.Context, root, output, label string, log io.Writer) error
 	if err != nil {
 		return err
 	}
-	outputs := targets()
+	outputs := targetsFor(clientOS, clientArch)
 	for _, target := range outputs {
 		path := filepath.Join(scratch, target.name)
 		cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-buildvcs=false", "-mod=readonly", "-ldflags=-X=github.com/nchapman/vamos/internal/buildmeta.Stamp="+stamp, "-o", path, "./cmd/vamos")
