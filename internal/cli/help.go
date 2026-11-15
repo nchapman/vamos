@@ -72,7 +72,7 @@ func commandHelpArgs(path []string) ([]string, bool) {
 		children = []string{"bind", "remove"}
 	case "secrets":
 		children = []string{"stage", "set", "list"}
-	case "apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "validate", "version":
+	case "apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "validate", "update", "version":
 	default:
 		return nil, false
 	}

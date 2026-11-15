@@ -111,6 +111,9 @@ func artifactForBuild(override, arch, stamp string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if resolved, err := filepath.EvalSymlinks(self); err == nil {
+			self = resolved
+		}
 		filename = filepath.Join(filepath.Dir(self), "vamos-linux-"+arch)
 	}
 	input, err := os.Open(filename)

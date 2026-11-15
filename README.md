@@ -8,17 +8,21 @@ Under the hood, Vamos pairs a local Go CLI with a lightweight coordinator (`vamo
 
 ## Quickstart
 
-### 1. Build the CLI and Linux executors
+### 1. Install Vamos
 
-Vamos builds the client binary alongside the Linux `amd64` and `arm64` executor binaries in `bin/`:
+On macOS or Linux, install the latest release (`vamos` plus the matching Linux `amd64`/`arm64` executor binaries) into `~/.local/bin`:
 
 ```sh
-mise trust
-mise install
-mise run build
+curl -fsSL https://raw.githubusercontent.com/nchapman/vamos/main/install.sh | sh
 ```
 
-(Or add `bin/` to your `PATH`, or invoke `./bin/vamos` directly.)
+Or download an archive from [GitHub Releases](https://github.com/nchapman/vamos/releases) (macOS, Linux, or Windows) and place all three binaries (`vamos`, `vamos-linux-amd64`, and `vamos-linux-arm64`) together in a directory on your `PATH`.
+
+To update later, run:
+
+```sh
+vamos update
+```
 
 ### 2. Inspect and bootstrap a server
 
@@ -26,22 +30,22 @@ Start with a **fresh Ubuntu 24.04+ server** (amd64 or arm64) with root SSH acces
 
 ```sh
 # Read-only compatibility check
-./bin/vamos server inspect root@server.example.com
+vamos server inspect root@server.example.com
 
 # Install Docker, Caddy, and vamos-agent, and register the server locally as "prod"
-./bin/vamos server add --yes --domain apps.example.com prod root@server.example.com
+vamos server add --yes --domain apps.example.com prod root@server.example.com
 ```
 
 Once bootstrapped, `vamos server add` installs a restricted non-root SSH bridge key for `vamos-agent` so day-to-day app commands (`deploy`, `logs`, `exec`, `secrets`, etc.) do not require root SSH.
 
 ### 3. Deploy an app
 
-You can try the included `hello` example right away:
+You can try the included `hello` example right away (from a clone of this repo):
 
 ```sh
-./bin/vamos deploy -f examples/hello/vamos.yaml
-./bin/vamos status -f examples/hello/vamos.yaml
-./bin/vamos logs -f examples/hello/vamos.yaml --tail 100
+vamos deploy -f examples/hello/vamos.yaml
+vamos status -f examples/hello/vamos.yaml
+vamos logs -f examples/hello/vamos.yaml --tail 100
 ```
 
 Or initialize a new app in your own project directory:
@@ -91,6 +95,8 @@ vamos run --service web -- CMD...     # One-off noninteractive container run
 vamos secrets stage NAME              # Prompt (no-echo) and stage a secret
 vamos rollback                        # Preview rollback to a previous operation
 vamos apps                            # List apps and retained resources on the server
+vamos update                          # Update vamos and Linux executors from GitHub Releases
+vamos server upgrade prod             # Upgrade vamos-agent on a managed server
 ```
 
 Run `vamos help` or `vamos <command> --help` for full options and flags.
@@ -120,6 +126,8 @@ The local CLI does not require Docker, systemd, or Linux. Server lifecycle comma
 Prerequisites: [mise](https://mise.jdx.dev/getting-started.html) (pins Go `1.27.1`) and a C toolchain for `-race` tests.
 
 ```sh
+mise trust && mise install # Install pinned Go toolchain
+mise run build             # Build vamos + Linux amd64/arm64 executors into bin/
 mise run check             # Format check, go vet, go test -race ./..., and build bundle
 mise run lint              # Run golangci-lint (if installed)
 mise run fmt               # Format Go source
