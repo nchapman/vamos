@@ -111,11 +111,9 @@ var (
 func (b *build) builderStopped(ctx context.Context) bool {
 	deadline := time.Now().Add(builderRecoveryWindow)
 	for {
-		// Only a failed command can be a restarting daemon; an answer that does
-		// not verify is final.
-		if r, err := b.docker(ctx, "container", "inspect", b.stopID); err == nil {
-			var c containerInfo
-			return decodeInspect(r, &c) == nil && b.validateContainer(c, b.stopID) == nil && !c.State.Running && !c.State.Paused && !c.State.Restarting
+		var c containerInfo
+		if b.inspect(ctx, "container", b.stopID, &c) == nil {
+			return b.validateContainer(c, b.stopID) == nil && !c.State.Running && !c.State.Paused && !c.State.Restarting
 		}
 		if !time.Now().Before(deadline) {
 			return false

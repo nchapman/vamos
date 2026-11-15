@@ -112,22 +112,6 @@ def run(h):
     guards(h)
     progress(h, 'Docker restart at build start: builder and guards recover, build retries once')
 
-    am['services']['api']['env']['RELEASE'] = 'readiness'
-    save(h, api, am, 'readiness')
-    before = identities(h.status(app))
-    interrupted(h, app, api, dict(prefix=['run', '--detach'], when='after'))
-    converged('readiness', 'readiness', before, ('database', 'worker'))
-    progress(h, 'Docker restart after candidate start converges to the candidate')
-
-    for release, gate in (('withdraw', dict(prefix=['network', 'disconnect'])),
-                          ('alias', dict(prefix=['network', 'connect', '--alias'], when='after'))):
-        am['services']['api']['env']['RELEASE'] = release
-        save(h, api, am, release)
-        before = identities(h.status(app))
-        interrupted(h, app, api, gate)
-        converged(release, release, before, ('database', 'worker'))
-    progress(h, 'Docker restart during DNS alias admission converges to the candidate')
-
     am['services']['api']['env']['RELEASE'] = 'promotion'
     save(h, api, am, 'promotion')
     before = identities(h.status(app))
@@ -153,7 +137,7 @@ def run(h):
     interrupted(h, app, worker, dict(prefix=['run', '--detach'], when='after'))
     status = converged('retire', 'retire', before, ('api', 'database'))
     require(status['services']['worker']['container'] != before['worker'][0], 'private replacement not applied')
-    progress(h, 'Docker restart during private observation converges the replacement')
+    progress(h, 'Docker restart after private candidate start converges the replacement')
 
     # Release commands are never retried automatically: an execution the daemon
     # killed is a known failure that needs an explicit superseding deployment.

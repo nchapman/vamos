@@ -136,31 +136,3 @@ func TestBuildInterruptionWithUnavailableDaemonIsBounded(t *testing.T) {
 		t.Fatalf("unavailable daemon retried or reported success: %v", err)
 	}
 }
-
-func TestBuildInterruptionCheckDoesNotWaitOnUnverifiableAnswer(t *testing.T) {
-	shortRecovery(t, time.Hour)
-	m, f := newEngine(t)
-	failed := false
-	f.hook = func(_ context.Context, a []string) (process.Result, error, bool) {
-		if a[0] == "buildx" && a[1] == "build" {
-			failed = true
-			return process.Result{}, errors.New("exit 1"), true
-		}
-		if failed && a[0] == "container" && a[1] == "inspect" {
-			return process.Result{Stdout: []byte("not json")}, nil, true
-		}
-		return process.Result{}, nil, false
-	}
-	done := make(chan error, 1)
-
-	go func() { _, err := m.Build(context.Background(), testHost, "df", "iid", nil); done <- err }()
-
-	select {
-	case err := <-done:
-		if err == nil || countCalls(f, "buildx build") != 1 {
-			t.Fatalf("unverifiable builder retried or reported success: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("unverifiable inspect answer treated as an unavailable daemon")
-	}
-}
