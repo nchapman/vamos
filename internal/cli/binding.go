@@ -176,6 +176,17 @@ func bindProject(dir, app string, server registry.Server) error {
 	return nil
 }
 
+func bindProjectForCommand(dir, app string, server registry.Server, override bool) error {
+	if override {
+		if _, err := os.Lstat(filepath.Join(dir, ".vamos", "server.json")); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return bindProject(dir, app, server)
+}
+
 func selectAppServer(state registry.State, dir, app, override string) (registry.Server, error) {
 	name := override
 	if name == "" && dir != "" {

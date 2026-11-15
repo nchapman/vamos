@@ -91,6 +91,32 @@ func TestDeployCapturesRequestAndBindsDefault(t *testing.T) {
 	}
 }
 
+func TestDeployWithServerFlagBindsUnboundProject(t *testing.T) {
+	path, store, deps := appFixture(t)
+	if err := store.Put(registry.Server{Name: "staging", Target: "root@staging", Domain: "staging.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	var targets []string
+	deps.Run = func(_ context.Context, target string, r deploy.Request, _, _ []byte) (deploy.Response, error) {
+		targets = append(targets, target)
+		return deploy.Response{Version: 1, Status: &deploy.Status{App: r.App, Operation: r.Operation, Phase: "ready", Running: true}}, nil
+	}
+	var out, diagnostic bytes.Buffer
+	if code := appCommand(context.Background(), "deploy", []string{"-f", path, "--server", "staging"}, &out, &diagnostic, deps); code != 0 {
+		t.Fatalf("deploy code=%d error=%s", code, &diagnostic)
+	}
+	bound, err := readBinding(filepath.Dir(path))
+	if err != nil || bound == nil || bound.Server != "staging" || bound.Target != "root@staging" {
+		t.Fatalf("expected unbound project to bind to staging on first deploy, got binding=%+v err=%v", bound, err)
+	}
+	if code := appCommand(context.Background(), "status", []string{"-f", path}, &out, &diagnostic, deps); code != 0 {
+		t.Fatalf("status code=%d error=%s", code, &diagnostic)
+	}
+	if len(targets) != 2 || targets[0] != "root@staging" || targets[1] != "root@staging" {
+		t.Fatalf("expected subsequent command without --server to use bound server root@staging, got %v", targets)
+	}
+}
+
 func TestResumeUsesOnlyCapturedOperation(t *testing.T) {
 	_, _, deps := appFixture(t)
 	deps.Archive = func(string, config.Build) ([]byte, error) { t.Fatal("resume archived current tree"); return nil, nil }

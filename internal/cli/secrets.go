@@ -138,8 +138,8 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 	if err := deploy.ValidateRequest(r); err != nil {
 		return lifecycleError(stderr, err)
 	}
-	if dir != "" && *serverName == "" {
-		if err := bindProject(dir, name, server); err != nil {
+	if dir != "" {
+		if err := bindProjectForCommand(dir, name, server, *serverName != ""); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}

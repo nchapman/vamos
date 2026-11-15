@@ -327,8 +327,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if err := ssh.ValidateTarget(server.Target); err != nil {
 		return usageError(stderr, err.Error())
 	}
-	if dir != "" && *serverFlag == "" && action != "service-bind" {
-		if err := bindProject(dir, name, server); err != nil {
+	if dir != "" && action != "service-bind" {
+		if err := bindProjectForCommand(dir, name, server, *serverFlag != ""); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}

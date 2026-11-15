@@ -181,6 +181,8 @@ def bootstrap(h):
     h.command(['systemctl', 'disable', '--now', 'ssh.socket'], user='root')
     h.command(['systemctl', 'enable', 'ssh'], user='root')
     h.command(['systemctl', 'restart', 'ssh'], user='root')
+    # Match Ubuntu cloud VM /run mount flags in container-backed OrbStack guests.
+    h.command(['mount', '-o', 'remount,noexec', '/run'], user='root')
 
 
 def checks(h):

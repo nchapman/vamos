@@ -57,7 +57,8 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		}
 		return 2
 	}
-	if *timeout <= 0 || flags.NArg() < 1 || flags.NArg() > 2 {
+	allowDefaultServer := operation == "status" || operation == "upgrade"
+	if *timeout <= 0 || (!allowDefaultServer && flags.NArg() < 1) || flags.NArg() > 2 {
 		return usageError(stderr, "provide NAME and optional TARGET, with flags before positional arguments")
 	}
 	if operation != "status" && !*yes {
@@ -69,10 +70,6 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	if (operation != "teardown" && *purge) || (operation != "add" && *domain != "") || (operation != "status" && *asJSON) || (operation != "add" && *deployKey != "") {
 		return usageError(stderr, "option does not apply to this server operation")
 	}
-	name := flags.Arg(0)
-	if err := lifecycle.ValidateConfig(lifecycle.Config{Name: name, Domain: "validation.invalid"}); err != nil {
-		return usageError(stderr, err.Error())
-	}
 	store, err := deps.Registry()
 	if err != nil {
 		return lifecycleError(stderr, err)
@@ -80,6 +77,16 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	local, err := store.Read()
 	if err != nil {
 		return lifecycleError(stderr, err)
+	}
+	name := flags.Arg(0)
+	if name == "" {
+		name = local.Default
+		if name == "" {
+			return usageError(stderr, "no default registered server; run vamos server add first or provide NAME")
+		}
+	}
+	if err := lifecycle.ValidateConfig(lifecycle.Config{Name: name, Domain: "validation.invalid"}); err != nil {
+		return usageError(stderr, err.Error())
 	}
 	server, registered := local.Servers[name]
 	if flags.NArg() == 2 {
