@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import time
 
-from checkpoints import Barrier, Client, install
+from checkpoints import Barrier, Client
 from client_recovery import fresh_client
 from scenarios import identities, require
 
@@ -152,7 +152,6 @@ def build_diagnostics(h, app, base, api, manifest, host):
 
 
 def prepare(h, owner):
-    install(h)
     app = 'recovery-' + secrets.token_hex(4)
     base = h.work / app
     base.mkdir()

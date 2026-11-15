@@ -228,6 +228,9 @@ def main():
             cli_scenarios.run(h)
             import runtime_scenarios
             runtime_scenarios.run(h)
+            # Command gates are installed once for every checkpoint scenario.
+            from checkpoints import install
+            install(h)
             import daemon_restart
             daemon_restart.run(h)
             recovery.prepare(h, args.owner)

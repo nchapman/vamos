@@ -9,7 +9,7 @@ import json
 import secrets
 import time
 
-from checkpoints import Barrier, Client, install
+from checkpoints import Barrier, Client
 from recovery import Worker, docker_state, fixture, progress, save, version
 from scenarios import identities, require
 
@@ -59,7 +59,6 @@ def interrupted(h, app, directory, gate_args):
 
 
 def run(h):
-    install(h)
     app = 'dockerd-' + secrets.token_hex(4)
     base = h.work / app
     base.mkdir()
