@@ -41,12 +41,12 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 			return fmt.Errorf("pre-existing unit %s (load state: %q)", unit, strings.TrimSpace(string(out.Stdout)))
 		}
 	}
-	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/local/bin/vamos", "/etc/vamos", "/etc/ssh/sshd_config.d/vamos.conf", "/etc/systemd/system/" + agentUnit} {
+	for _, path := range []string{"/usr/bin/docker", "/usr/local/bin/docker", "/snap/bin/docker", "/usr/bin/caddy", "/usr/local/bin/caddy", "/usr/local/bin/vamos", "/etc/vamos", "/etc/ssh/sshd_config.d/vamos.conf", "/etc/systemd/system/" + agentUnit} {
 		if _, err := os.Lstat(m.path(path)); !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("pre-existing executable %s", path)
 		}
 	}
-	for _, key := range ownedAccounts {
+	for _, key := range append(append([]string(nil), ownedAccounts...), "passwd:caddy", "group:caddy") {
 		kind, name, _ := strings.Cut(key, ":")
 		value, err := m.account(ctx, kind, name)
 		if err != nil {
@@ -61,7 +61,7 @@ func (m *Manager) preflight(ctx context.Context, receipt bool) error {
 		return err
 	}
 	for name := range inventory {
-		if name == "runc" || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "containerd") || name == "moby-engine" {
+		if name == "caddy" || name == "runc" || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "containerd") || name == "moby-engine" {
 			return fmt.Errorf("pre-existing runtime package %s; refusing adoption", name)
 		}
 	}

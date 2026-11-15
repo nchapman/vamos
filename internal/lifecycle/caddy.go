@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -59,8 +60,11 @@ func caddyRunArgs(hostID string) []string {
 type caddyContainer struct {
 	ID     string `json:"Id"`
 	Config struct {
-		Image  string            `json:"Image"`
-		Labels map[string]string `json:"Labels"`
+		Image      string            `json:"Image"`
+		User       string            `json:"User"`
+		Entrypoint []string          `json:"Entrypoint"`
+		Cmd        []string          `json:"Cmd"`
+		Labels     map[string]string `json:"Labels"`
 	} `json:"Config"`
 	State struct {
 		Running bool `json:"Running"`
@@ -78,6 +82,22 @@ type caddyContainer struct {
 		RestartPolicy struct {
 			Name string `json:"Name"`
 		} `json:"RestartPolicy"`
+		LogConfig struct {
+			Type string `json:"Type"`
+		} `json:"LogConfig"`
+		Privileged     bool              `json:"Privileged"`
+		ReadonlyRootfs bool              `json:"ReadonlyRootfs"`
+		CapAdd         []string          `json:"CapAdd"`
+		CapDrop        []string          `json:"CapDrop"`
+		SecurityOpt    []string          `json:"SecurityOpt"`
+		Tmpfs          map[string]string `json:"Tmpfs"`
+		Binds          []string          `json:"Binds"`
+		Mounts         []struct {
+			Type     string `json:"Type"`
+			Source   string `json:"Source"`
+			Target   string `json:"Target"`
+			ReadOnly bool   `json:"ReadOnly"`
+		} `json:"Mounts"`
 	} `json:"HostConfig"`
 }
 
@@ -136,7 +156,33 @@ func (c *caddyContainer) imageRef() string {
 }
 
 func (c *caddyContainer) current() bool {
-	return c.Config.Image == CaddyImage && c.HostConfig.NetworkMode == caddyNetworking && c.HostConfig.RestartPolicy.Name == caddyRestart
+	if c.Config.Image != CaddyImage || c.Config.User != "0:0" || len(c.Config.Entrypoint) != 0 ||
+		!slices.Equal(c.Config.Cmd, []string{"caddy", "run", "--config", caddyfilePath, "--adapter", "caddyfile"}) {
+		return false
+	}
+	h := c.HostConfig
+	if h.NetworkMode != caddyNetworking || h.RestartPolicy.Name != caddyRestart || h.LogConfig.Type != "local" ||
+		h.Privileged || !h.ReadonlyRootfs || len(h.Binds) != 0 ||
+		!slices.Equal(h.CapDrop, []string{"ALL"}) ||
+		(!slices.Equal(h.CapAdd, []string{"CAP_NET_BIND_SERVICE"}) && !slices.Equal(h.CapAdd, []string{"NET_BIND_SERVICE"})) ||
+		!slices.Equal(h.SecurityOpt, []string{"no-new-privileges"}) ||
+		len(h.Tmpfs) != 1 || h.Tmpfs["/tmp"] != "" || len(h.Mounts) != 3 {
+		return false
+	}
+	want := [3]struct {
+		source, target string
+		readOnly       bool
+	}{
+		{"/etc/caddy", "/etc/caddy", true},
+		{caddyDataDir, "/data", false},
+		{caddyConfigDir, "/config", false},
+	}
+	for i, m := range h.Mounts {
+		if m.Type != "bind" || m.Source != want[i].source || m.Target != want[i].target || m.ReadOnly != want[i].readOnly {
+			return false
+		}
+	}
+	return true
 }
 
 // findCaddy returns the container named vamos-caddy, or nil when a successful

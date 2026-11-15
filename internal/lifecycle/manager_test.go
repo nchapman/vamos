@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -52,11 +53,42 @@ type fakeCaddy struct {
 	Labels  map[string]string
 	Running bool
 	Args    []string
+	Mutate  func(map[string]any)
 }
 
 func (c *fakeCaddy) inspect() string {
-	return fmt.Sprintf(`{"Id":%q,"Config":{"Image":%q,"Labels":{%q:%q},"Hostname":"ignored"},"State":{"Running":%t,"Status":"ignored"},"HostConfig":{"NetworkMode":"host","RestartPolicy":{"Name":"unless-stopped","MaximumRetryCount":0}}}`,
-		c.ID, c.Image, caddyHostLabel, c.Labels[caddyHostLabel], c.Running)
+	doc := map[string]any{
+		"Id": c.ID,
+		"Config": map[string]any{
+			"Image":    c.Image,
+			"User":     "0:0",
+			"Cmd":      []string{"caddy", "run", "--config", caddyfilePath, "--adapter", "caddyfile"},
+			"Labels":   map[string]string{caddyHostLabel: c.Labels[caddyHostLabel]},
+			"Hostname": "ignored",
+		},
+		"State": map[string]any{"Running": c.Running, "Status": "ignored"},
+		"HostConfig": map[string]any{
+			"NetworkMode":    "host",
+			"RestartPolicy":  map[string]any{"Name": "unless-stopped", "MaximumRetryCount": 0},
+			"LogConfig":      map[string]any{"Type": "local", "Config": map[string]any{}},
+			"Privileged":     false,
+			"ReadonlyRootfs": true,
+			"CapDrop":        []string{"ALL"},
+			"CapAdd":         []string{"CAP_NET_BIND_SERVICE"},
+			"SecurityOpt":    []string{"no-new-privileges"},
+			"Tmpfs":          map[string]string{"/tmp": ""},
+			"Mounts": []map[string]any{
+				{"Type": "bind", "Source": "/etc/caddy", "Target": "/etc/caddy", "ReadOnly": true},
+				{"Type": "bind", "Source": caddyDataDir, "Target": "/data"},
+				{"Type": "bind", "Source": caddyConfigDir, "Target": "/config"},
+			},
+		},
+	}
+	if c.Mutate != nil {
+		c.Mutate(doc)
+	}
+	raw, _ := json.Marshal(doc)
+	return string(raw)
 }
 
 func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
@@ -531,7 +563,7 @@ func TestResumedInstallUsesCurrentArchiveWithoutUpgrading(t *testing.T) {
 }
 
 func TestFreshSetupRefusesPreexistingResources(t *testing.T) {
-	for _, kind := range []string{"data", "binary", "package", "state-dir", "account", "unit-mask"} {
+	for _, kind := range []string{"data", "binary", "caddy-binary", "package", "caddy-package", "state-dir", "account", "caddy-account", "unit-mask"} {
 		t.Run(kind, func(t *testing.T) {
 			m, f := newTestManager(t)
 			switch kind {
@@ -539,12 +571,18 @@ func TestFreshSetupRefusesPreexistingResources(t *testing.T) {
 				f.write("/var/lib/docker/existing", "important")
 			case "binary":
 				f.write("/usr/local/bin/docker", "existing")
+			case "caddy-binary":
+				f.write("/usr/bin/caddy", "existing")
 			case "package":
 				f.installed["containerd"] = installedPackage{"installed", "old"}
+			case "caddy-package":
+				f.installed["caddy"] = installedPackage{"installed", "2.6.2"}
 			case "state-dir":
 				f.write("/var/lib/vamos/unmanaged", "important")
 			case "account":
 				f.accounts["group:docker"] = "docker:x:999:someone"
+			case "caddy-account":
+				f.accounts["passwd:caddy"] = "caddy:x:998:998::/var/lib/caddy:/usr/sbin/nologin"
 			case "unit-mask":
 				path := m.path("/etc/systemd/system/docker.service")
 				os.MkdirAll(filepath.Dir(path), 0755)

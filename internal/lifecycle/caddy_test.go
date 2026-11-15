@@ -49,6 +49,38 @@ func TestSetupRunsPinnedHardenedCaddyContainer(t *testing.T) {
 	}
 }
 
+func TestUpgradeReplacesCaddyWithDroppedHardening(t *testing.T) {
+	tests := map[string]func(map[string]any){
+		"writable rootfs": func(d map[string]any) { d["HostConfig"].(map[string]any)["ReadonlyRootfs"] = false },
+		"privileged":      func(d map[string]any) { d["HostConfig"].(map[string]any)["Privileged"] = true },
+		"extra cap":       func(d map[string]any) { d["HostConfig"].(map[string]any)["CapAdd"] = []string{"CAP_NET_ADMIN"} },
+		"writable /etc/caddy": func(d map[string]any) {
+			d["HostConfig"].(map[string]any)["Mounts"].([]map[string]any)[0]["ReadOnly"] = false
+		},
+		"non-root user": func(d map[string]any) { d["Config"].(map[string]any)["User"] = "1000:1000" },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, f := newTestManager(t)
+			if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
+				t.Fatal(err)
+			}
+			oldID := f.caddy.ID
+			f.caddy.Mutate = mutate
+			if _, err := m.Bootstrap(context.Background(), testConfig); err == nil {
+				t.Fatal("repeat setup accepted weakened Caddy container")
+			}
+			s, err := m.Upgrade(context.Background(), testConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s.CaddyContainerID == oldID || f.caddy.ID == oldID {
+				t.Fatal("upgrade did not replace weakened Caddy container")
+			}
+		})
+	}
+}
+
 func TestUpgradeMovesCaddyToPinnedImageAndKeepsRoutes(t *testing.T) {
 	m, f := newTestManager(t)
 	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {

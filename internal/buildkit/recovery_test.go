@@ -87,7 +87,8 @@ func TestReplacementsAndForeignShapeRefused(t *testing.T) {
 		"network IPAM": func(f *fakeEngine) {
 			f.network["IPAM"] = ipam{Driver: "default", Config: []ipamConfig{{Subnet: "172.30.0.0/16", Gateway: "172.30.0.1"}}}
 		},
-		"container env": func(f *fakeEngine) { f.container["Config"].(map[string]any)["Env"] = []string{"HTTP_PROXY=secret"} },
+		"container env":  func(f *fakeEngine) { f.container["Config"].(map[string]any)["Env"] = []string{"HTTP_PROXY=secret"} },
+		"container user": func(f *fakeEngine) { f.container["Config"].(map[string]any)["User"] = "1000:1000" },
 		"container entitlement": func(f *fakeEngine) {
 			f.container["Config"].(map[string]any)["Cmd"] = []string{"--allow-insecure-entitlement=network.host"}
 		},
