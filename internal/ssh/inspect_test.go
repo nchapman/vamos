@@ -3,7 +3,6 @@ package ssh
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -90,7 +89,7 @@ func TestInstalledOpenSSHAcceptsOptions(t *testing.T) {
 	_, err := inspect(ctx, "127.0.0.1", func(ctx context.Context, executable string, args []string, stdin []byte) (process.Result, error) {
 		// -G prints effective configuration without connecting. Ignore user config
 		// so this test cannot invoke their proxy commands or Match exec rules.
-		args = append([]string{"-G", "-F", os.DevNull}, args...)
+		args = append([]string{"-G", "-F", "none"}, args...)
 		result, err := process.Run(ctx, executable, args, nil)
 		if err != nil {
 			t.Fatalf("installed OpenSSH rejected invocation: %v; %s", err, result.Stderr)

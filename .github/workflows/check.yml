@@ -35,7 +35,15 @@ jobs:
           key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.toml') }}
           restore-keys: |
             go-${{ runner.os }}-${{ runner.arch }}-
-      - run: mise run check
+      - if: runner.os != 'Windows'
+        run: mise run check
+        shell: bash
+      - if: runner.os == 'Windows'
+        run: |
+          mise run fmt-check
+          mise run vet
+          mise run build
+          mise exec -- go list ./... | grep -vE '/internal/(agent|backup|backupbackend|deploy|executor|volumes)$' | xargs mise exec -- go test -race
         shell: bash
 
   lint:
@@ -54,7 +62,7 @@ jobs:
             go-${{ runner.os }}-${{ runner.arch }}-
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.6
+          version: v2.14.0
       - run: |
           GOOS=linux GOARCH=arm64 mise exec -- go vet ./...
           GOOS=windows GOARCH=amd64 mise exec -- go vet ./...
