@@ -28,27 +28,22 @@ type Config struct {
 	Domain string `json:"domain"`
 }
 
-type Package struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-}
-
 // State is both the ownership manifest and the resumable operation journal.
 // Arbitrary paths are never loaded from it: all managed paths are fixed in code.
 type State struct {
-	Version             int               `json:"version"`
-	ID                  string            `json:"id"`
-	Config              Config            `json:"config"`
-	Phase               string            `json:"phase"`
-	Step                string            `json:"step"`
-	Packages            []Package         `json:"packages"`
-	Configured          bool              `json:"configured"`
-	ExecutorSHA         string            `json:"executor_sha256,omitempty"`
-	AgentSHA            string            `json:"agent_sha256,omitempty"`
-	PurgeApproved       bool              `json:"purge_approved"`
-	Accounts            map[string]string `json:"accounts,omitempty"`
-	ContainerdConfigSHA string            `json:"containerd_config_sha256,omitempty"`
-	LastError           string            `json:"last_error,omitempty"`
+	Version int    `json:"version"`
+	ID      string `json:"id"`
+	Config  Config `json:"config"`
+	Phase   string `json:"phase"`
+	Step    string `json:"step"`
+	// Packages are owned by name. Ubuntu's unattended upgrades own versions.
+	Packages      []string          `json:"packages"`
+	Configured    bool              `json:"configured"`
+	ExecutorSHA   string            `json:"executor_sha256,omitempty"`
+	AgentSHA      string            `json:"agent_sha256,omitempty"`
+	PurgeApproved bool              `json:"purge_approved"`
+	Accounts      map[string]string `json:"accounts,omitempty"`
+	LastError     string            `json:"last_error,omitempty"`
 }
 
 var (
@@ -163,15 +158,12 @@ func ValidateState(s *State) error {
 			}
 		}
 	}
-	if s.ContainerdConfigSHA != "" && !sha256RE.MatchString(s.ContainerdConfigSHA) {
-		return errors.New("invalid containerd config digest")
-	}
 	seen := map[string]bool{}
-	for _, p := range s.Packages {
-		if !packageRE.MatchString(p.Name) || !versionRE.MatchString(p.Version) || seen[p.Name] {
+	for _, name := range s.Packages {
+		if !packageRE.MatchString(name) || seen[name] {
 			return errors.New("invalid package ownership record")
 		}
-		seen[p.Name] = true
+		seen[name] = true
 	}
 	if len(s.Packages) == 0 {
 		return errors.New("host state has no package ownership record")

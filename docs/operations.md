@@ -233,33 +233,27 @@ access to a surviving installation; it cannot recover a lost host or its data.
 
 ## OS and runtime maintenance boundary
 
-**There is no supported host upgrade or ownership-reconciliation API.** The
-following is a documented **operator procedure**, not an automated or validated
-Vamos in-place upgrade workflow. This gap remains until implemented and tested.
+Ubuntu's unattended upgrades keep the OS and the Docker runtime packages patched
+without operator action; Vamos deliberately does not pin or hold them, and a
+changed package version is not ownership drift. See
+[runtime package updates](host-lifecycle.md#runtime-package-updates). Vamos's own
+binaries are replaced with `vamos server upgrade`.
 
-1. Test the specific distro/runtime/security updates on a disposable equivalent
-   host with representative apps, data, package versions, and the same Vamos bundle.
-   Exercise daemon restart/reboot and application recovery there first.
-2. Ensure independently tested external recovery and artifacts are available;
-   schedule an outage and define recovery/cutover criteria. Do not promise rolling
-   availability on one host. Coordinate writes/jobs as required for consistency.
-3. Prevent concurrent root/Vamos operations, automation, and package-manager work;
-   establish that workers and uncertain executions are settled before maintenance.
-   Vamos's lock is not a general maintenance lock.
-4. Perform reviewed, **operator-controlled distro maintenance** appropriate to the
-   host and security advisory. Do not freeze vulnerable packages to satisfy Vamos's
-   recorded versions. There is no generic safe APT repair/prune recipe here.
-5. Verify daemon restart and runtime invariants: Docker/Caddy functioning, intended
-   containers and restart behavior, resource limits, networks, loopback ports,
-   persistent volume identity/mounts, and no unexpected exposed listeners. Verify
-   durable/live route agreement, public HTTPS, database integrity and read/write
-   behavior, and queue progress. Use Vamos status plus independent checks; do not
-   use add as the maintenance validation command.
-6. Record package/configuration changes and remaining limitations. **Package drift
-   can block setup/teardown even if app operations still work.** Connect does not
-   repair drift or upgrade the executor. Never edit journals, recorded versions,
-   or hashes to bless drift or bypass ownership checks. Successful smoke checks
-   do not create an ownership-reconciliation API.
+What remains an operator responsibility:
+
+1. A Docker package update restarts the daemon and every container with it.
+   Apps return through their `unless-stopped` policy after a brief interruption,
+   and an in-progress deploy may fail and need a retry. If that interruption is
+   unacceptable, schedule the host's unattended-upgrade window accordingly.
+2. Kernel and other reboot-requiring updates are not rebooted automatically by
+   default. Plan reboots, then verify Docker, intended containers and restart
+   behaviour, loopback ports, volume mounts, durable/live route agreement, public
+   HTTPS, and queue progress with Vamos status plus independent checks.
+3. Before major OS release upgrades, test on a disposable equivalent host with
+   representative apps and the same Vamos bundle, and keep independently tested
+   external recovery available. There is no generic safe APT repair/prune recipe.
+4. Never edit journals or hashes to bypass ownership checks. Managed
+   configuration and executor drift still block setup, upgrade, and teardown.
 
 If a supported **fresh-identity host lifecycle** is required, commission a new
 fresh host through bootstrap and migrate applications using a tested external

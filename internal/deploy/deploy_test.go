@@ -34,7 +34,7 @@ func setup(t *testing.T) (*Manager, Request) {
 	}
 	m.Drain = 0
 	m.HealthTimeout = time.Millisecond
-	h := lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "host", Domain: "example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), Packages: []lifecycle.Package{{Name: "docker.io", Version: "1"}}, Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x"}}
+	h := lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "host", Domain: "example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), Packages: []string{"docker.io"}, Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x"}}
 	b, _ := json.Marshal(h)
 	if e := atomic(m.path(lifecycle.StatePath), b, 0600); e != nil {
 		t.Fatal(e)

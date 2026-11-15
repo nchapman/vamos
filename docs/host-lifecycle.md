@@ -15,7 +15,7 @@ Flags precede positional arguments. Setup and connect require both name and targ
 
 `mise run build` bundles `vamos-linux-amd64` and `vamos-linux-arm64` beside the native client. Keep a matching client/Linux bundle; on root lifecycle commands (or when `--executor FILE` overrides artifact selection), the ELF architecture must match the inspected host and its `buildmeta.Stamp` must match the client. Artifacts are built locally, not downloaded from an unsigned release URL. Inspect, host status, and connect do not need an executor artifact. Bootstrap installs `/usr/local/lib/vamos/executor` and `/usr/local/lib/vamos/vamos-agent`, enables `vamos-agent.service`, and provisions the restricted `vamos` SSH bridge user; repeat `server add` verifies recorded digests rather than silently upgrading them. Use `vamos server upgrade --yes NAME` to upgrade the installed binaries cleanly.
 
-See the [whole-system operations checklist](operations.md) for health monitoring, capacity, independent recovery custody, and the **unsupported distro package upgrade / post-bootstrap ACL CLI gaps**.
+See the [whole-system operations checklist](operations.md) for health monitoring, capacity, independent recovery custody, OS maintenance, and the **post-bootstrap ACL CLI gap**.
 
 ## Setup
 
@@ -23,8 +23,8 @@ See the [whole-system operations checklist](operations.md) for health monitoring
 2. Send a fixed-name tar archive containing the Linux executable, checksum, and structured JSON request over strict OpenSSH. Request fields never become shell source.
 3. Start `vamos-host-operation.service`, a transient systemd worker. A fixed unit name rejects concurrent launches; a separate kernel-backed lock at `/run/lock/vamos-host.lock` serializes actual mutations, including direct executor use.
 4. Refuse existing runtime packages/binaries, managed directories, service overrides, service accounts, busy web/admin ports, or unhealthy dpkg state.
-5. Refresh Ubuntu's configured APT indexes and simulate installing `docker.io`, `docker-buildx`, and `caddy` without recommendations. Refuse changes to pre-existing packages. Record every newly installed dependency and exact version **before** installing anything.
-6. Mask the new services so package scripts cannot start an unconfigured default Caddy site. Install the recorded package versions; reject package-plan drift. Installer logs are drained with bounded diagnostic tails, not killed for being verbose.
+5. Refresh Ubuntu's configured APT indexes and simulate installing `docker.io`, `docker-buildx`, and `caddy` without recommendations. Refuse changes to pre-existing packages. Record every newly installed package name **before** installing anything.
+6. Mask the new services so package scripts cannot start an unconfigured default Caddy site. Install the recorded packages from the current archive; a resumed install never upgrades packages that are already present and records any fresh dependency a newer archive introduces before installing it. Installer logs are drained with bounded diagnostic tails, not killed for being verbose.
 7. Write a Caddy configuration with its admin listener on `127.0.0.1:2019` and no app routes. Configure Docker with no shared default bridge and the bounded `local` log driver. Record managed file digests and service-account identities, unmask/enable/start services, and check Docker, Buildx, Caddy, and Caddy's live configuration.
 8. Mark the host ready, then register it locally. The first local registration becomes the default. A local write failure does not undo a successful remote installation; use `server connect` with the same identity once host status confirms ready and no active worker.
 
@@ -72,7 +72,7 @@ Both `--yes` and `--purge` are required. The latter authorizes removal of owned 
 
 - Retained [secret stores](secrets.md), even after app destruction. A new host bootstrap also refuses retained secrets rather than adopting an old identity.
 - Missing ownership evidence, active/incomplete or unexpected Vamos app/state files, symlinked managed paths, or mounts at/under owned data directories (including app receipts).
-- Changed managed configuration/executor, systemd overrides, service-account/group changes, or changed package versions.
+- Changed managed configuration/executor, systemd overrides, or service-account/group changes. Package versions are not ownership evidence: Ubuntu updates them.
 - Docker containers (including stopped ones), images, volumes, custom networks, or build cache.
 - Retained volume registry ownership, even if a recorded volume is missing; purge does not delete app data. See [storage lifecycle](volumes.md).
 - Unmanaged containerd namespaces or containers/images/content in Docker's namespaces.
@@ -102,15 +102,17 @@ bin/vamos server teardown --yes --purge test root@host
 
 Status is read-only and shows the saved phase/step, active-worker flag, and last recorded error; it is not a runtime health check. Unexpected systemd output or a failed system-bus query returns an error rather than falsely reporting an inactive worker (the recognized missing-unit result is distinct). A lost response after successful setup/teardown is recoverable through the receipt. Worker staging directories normally disappear on completion. A hard crash during upload or before worker launch can leave a private `/run/vamos-stage.*` directory until reboot; do not remove a stage belonging to an active worker.
 
-Partial package transactions are not repaired by a broad `apt --fix-broken`, `dpkg --configure -a`, autoremove, or prune command. Retry uses the captured package list; broken dpkg state or unavailable pinned versions may require operator diagnosis. Resolve the exact reported problem before retrying. If a stopped/unhealthy daemon prevents proving that data is unused, restore it and inspect resources rather than bypassing the guard. A deadline during APT can leave pending dpkg work; the receipt is not a promise of transactional OS rollback.
+Partial package transactions are not repaired by a broad `apt --fix-broken`, `dpkg --configure -a`, autoremove, or prune command. Retry uses the captured package names; broken dpkg state may require operator diagnosis. Resolve the exact reported problem before retrying. If a stopped/unhealthy daemon prevents proving that data is unused, restore it and inspect resources rather than bypassing the guard. A deadline during APT can leave pending dpkg work; the receipt is not a promise of transactional OS rollback.
 
 The internal JSON protocol adds `bootstrap` and `teardown` operations with `config`, `confirm`, and `purge` fields. Unauthorized/invalid requests fail before inspection or mutation. Success returns `host_state`; failure returns the versioned error envelope with `lifecycle_failed`. There are no arbitrary remote path or command fields.
 
-## Package maintenance is not a host upgrade API
+## Runtime package updates
 
-There is **no supported in-place host upgrade or ownership-reconciliation API**. Neither add nor connect blesses new package versions, managed file hashes, or an executor replacement. Package drift can block setup/teardown even while app operations still work. Do not edit ownership journals or hashes to make checks pass, and do not freeze vulnerable packages as a workaround.
+Ubuntu owns the Docker runtime packages (`docker.io`, `docker-buildx`, `containerd`, `runc` and their dependencies). Its default unattended upgrades apply security and stable updates without operator action, and Vamos deliberately does not pin or hold them. Ownership is recorded by package **name**: a newer version, or a package-refreshed `/etc/containerd/config.toml`, is not drift and does not block repeat setup, upgrade, or teardown. Vamos relies only on long-stable Docker CLI behaviour so these updates stay compatible.
 
-The [maintenance procedure](operations.md#os-and-runtime-maintenance-boundary) describes operator-controlled distro maintenance: test on a disposable equivalent host, establish independently tested recovery, schedule an outage, exclude concurrent root/Vamos operations, and verify daemon restart, runtime, route, and data invariants afterward. This is an operator procedure, not a supported automated Vamos workflow; the gap remains until implemented and tested. For a supported fresh-identity host lifecycle, commission a new host and use a tested external application migration rather than pretending Vamos restore exists.
+A Docker package update restarts the daemon. Docker live restore stays disabled (the isolated builder depends on that), so containers restart with the daemon: app containers use `unless-stopped` and come back on their own, while the builder stays stopped until the next build. Expect a brief interruption, and an in-progress deploy may fail and need a retry.
+
+Neither add nor connect blesses changed managed file hashes or an executor replacement; use `vamos server upgrade` for Vamos's own binaries. See the [maintenance notes](operations.md#os-and-runtime-maintenance-boundary) for the remaining operator responsibilities.
 
 ## Verification
 

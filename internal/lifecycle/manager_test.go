@@ -17,7 +17,7 @@ import (
 )
 
 var testConfig = Config{Name: "test", Domain: "apps.example.com"}
-var testPackages = []Package{{"caddy", "2.6"}, {"containerd", "2.2"}, {"docker-buildx", "0.30"}, {"docker.io", "29.1"}, {"runc", "1.4"}}
+var testPackages = []string{"caddy", "containerd", "docker-buildx", "docker.io", "runc"}
 
 type fakeExit int
 
@@ -37,6 +37,7 @@ type fakeSystem struct {
 	foreignContainerd bool
 	cache             int
 	unownedRemoval    bool
+	archiveVersion    string
 }
 
 func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
@@ -54,6 +55,13 @@ func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 	m.MountInfo = func() ([]byte, error) { return nil, nil }
 	m.CaddyConfig = func(context.Context) ([]byte, error) { return []byte(`{"admin":{"listen":"127.0.0.1:2019"}}`), nil }
 	return m, f
+}
+
+func (f *fakeSystem) version() string {
+	if f.archiveVersion != "" {
+		return f.archiveVersion
+	}
+	return "1.0"
 }
 
 func (f *fakeSystem) write(path, data string) {
@@ -134,11 +142,16 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			if contains(args, "--simulate") {
 				var b strings.Builder
 				for _, p := range testPackages {
-					if _, ok := f.installed[p.Name]; !ok {
-						fmt.Fprintf(&b, "Inst %s (%s Ubuntu:26.04 [amd64])\n", p.Name, p.Version)
+					if _, ok := f.installed[p]; !ok {
+						fmt.Fprintf(&b, "Inst %s (%s Ubuntu:26.04 [amd64])\n", p, f.version())
 					}
 				}
 				return out(b.String())
+			}
+			for _, arg := range args {
+				if name, version, pinned := strings.Cut(arg, "="); pinned && contains(testPackages, name) && version != f.version() {
+					return process.Result{Stderr: []byte("version not found")}, fakeExit(100)
+				}
 			}
 			for _, unit := range units {
 				dest, err := os.Readlink(f.m.path("/etc/systemd/system/" + unit))
@@ -148,14 +161,14 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			}
 			if f.failInstall {
 				f.failInstall = false
-				f.installed["caddy"] = installedPackage{"installed", "2.6"}
+				f.installed["caddy"] = installedPackage{"installed", f.version()}
 				f.accounts["passwd:caddy"] = "caddy:x:999:999:Caddy:/var/lib/caddy:/usr/sbin/nologin"
 				f.accounts["group:caddy"] = "caddy:x:999:"
 				f.write("/etc/caddy/Caddyfile", "package default")
 				return process.Result{Stderr: []byte("simulated APT failure")}, fakeExit(1)
 			}
 			for _, p := range testPackages {
-				f.installed[p.Name] = installedPackage{"installed", p.Version}
+				f.installed[p] = installedPackage{"installed", f.version()}
 			}
 			f.accounts["passwd:caddy"] = "caddy:x:999:999:Caddy:/var/lib/caddy:/usr/sbin/nologin"
 			f.accounts["group:caddy"] = "caddy:x:999:"
@@ -168,8 +181,8 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			if contains(args, "--simulate") {
 				var b strings.Builder
 				for _, p := range testPackages {
-					if _, ok := f.installed[p.Name]; ok {
-						fmt.Fprintf(&b, "Purg %s [%s]\n", p.Name, p.Version)
+					if installed, ok := f.installed[p]; ok {
+						fmt.Fprintf(&b, "Purg %s [%s]\n", p, installed.Version)
 					}
 				}
 				if f.unownedRemoval {
@@ -178,7 +191,7 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 				return out(b.String())
 			}
 			for _, p := range testPackages {
-				delete(f.installed, p.Name)
+				delete(f.installed, p)
 			}
 			return out("")
 		}
@@ -321,7 +334,7 @@ func TestInterruptedStartResumesWithoutOverwritingConfig(t *testing.T) {
 }
 
 func TestTeardownRefusesUnsafeConditions(t *testing.T) {
-	for _, kind := range []string{"workload", "containerd", "cache", "config", "runtime-route", "mount", "package-version", "unowned-removal", "app-data", "account", "symlink"} {
+	for _, kind := range []string{"workload", "containerd", "cache", "config", "runtime-route", "mount", "unowned-removal", "app-data", "account", "symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			m, f := newTestManager(t)
 			if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
@@ -340,8 +353,6 @@ func TestTeardownRefusesUnsafeConditions(t *testing.T) {
 				m.CaddyConfig = func(context.Context) ([]byte, error) { return []byte(`{"apps":{"http":{}}}`), nil }
 			case "mount":
 				m.MountInfo = func() ([]byte, error) { return []byte("1 2 0:3 / /var/lib/docker/external rw - tmpfs tmpfs rw\n"), nil }
-			case "package-version":
-				f.installed["docker.io"] = installedPackage{"installed", "new-version"}
 			case "unowned-removal":
 				f.unownedRemoval = true
 			case "app-data":
@@ -367,6 +378,51 @@ func TestTeardownRefusesUnsafeConditions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Ubuntu's unattended upgrades own the runtime package versions. Moving Docker
+// forward or refreshing its packaged containerd config is expected, not drift.
+func TestUbuntuRuntimeUpdatesAreNotOwnershipDrift(t *testing.T) {
+	m, f := newTestManager(t)
+	ctx := context.Background()
+	if _, err := m.Bootstrap(ctx, testConfig); err != nil {
+		t.Fatal(err)
+	}
+	f.installed["docker.io"] = installedPackage{"installed", "29.7"}
+	f.installed["containerd"] = installedPackage{"installed", "2.3"}
+	f.write("/etc/containerd/config.toml", "containerd updated default")
+	if _, err := m.Bootstrap(ctx, testConfig); err != nil {
+		t.Fatalf("repeat setup rejected an Ubuntu update: %v", err)
+	}
+	m.Executor = []byte("executor-v2")
+	if _, err := m.Upgrade(ctx, testConfig); err != nil {
+		t.Fatalf("upgrade rejected an Ubuntu update: %v", err)
+	}
+	if _, err := m.Teardown(ctx, testConfig.Name, true); err != nil {
+		t.Fatalf("teardown rejected an Ubuntu update: %v", err)
+	}
+	if len(f.installed) != 1 {
+		t.Fatalf("updated packages were not purged: %+v", f.installed)
+	}
+}
+
+// A resumed install must not upgrade owned packages itself or fail because the
+// archive moved past the version APT planned originally.
+func TestResumedInstallUsesCurrentArchiveWithoutUpgrading(t *testing.T) {
+	m, f := newTestManager(t)
+	f.failInstall = true
+	if _, err := m.Bootstrap(context.Background(), testConfig); err == nil {
+		t.Fatal("wanted APT failure")
+	}
+	f.archiveVersion = "newer"
+	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range f.calls {
+		if strings.HasPrefix(call, "apt-get") && strings.Contains(call, "docker.io=") {
+			t.Fatalf("resume pinned an archive version: %s", call)
+		}
 	}
 }
 

@@ -244,7 +244,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			if err != nil {
 				return nil, err
 			}
-			if err := checkVersions(s, installed, true); err != nil {
+			if err := checkPackages(s, installed, true); err != nil {
 				return nil, err
 			}
 			if err := m.health(ctx); err != nil {
@@ -291,13 +291,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			return nil, err
 		}
 		for _, required := range []string{"docker.io", "docker-buildx", "caddy"} {
-			found := false
-			for _, p := range packages {
-				if p.Name == required {
-					found = true
-				}
-			}
-			if !found {
+			if !contains(packages, required) {
 				return nil, fmt.Errorf("APT did not plan a fresh %s installation", required)
 			}
 		}
@@ -387,12 +381,6 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 				return nil, err
 			}
 			s.Accounts[key] = value
-		}
-		if data, err := os.ReadFile(m.path("/etc/containerd/config.toml")); err == nil {
-			hash := sha256.Sum256(data)
-			s.ContainerdConfigSHA = hex.EncodeToString(hash[:])
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
 		}
 		s.Configured = true
 		if err := m.save(s); err != nil {
@@ -645,29 +633,14 @@ func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
 			return fmt.Errorf("installed %s digest changed; refusing removal or overwrite", filepath.Base(path))
 		}
 	}
-	if err := rejectSymlink(m.path("/etc/containerd/config.toml")); err != nil {
-		return err
-	}
-	data, err := os.ReadFile(m.path("/etc/containerd/config.toml"))
-	if s.ContainerdConfigSHA == "" {
-		if !errors.Is(err, os.ErrNotExist) {
-			return errors.New("unexpected containerd configuration")
-		}
-	} else {
-		if err != nil {
-			return err
-		}
-		hash := sha256.Sum256(data)
-		if hex.EncodeToString(hash[:]) != s.ContainerdConfigSHA {
-			return errors.New("containerd configuration changed; refusing teardown")
-		}
-	}
 	for _, unit := range units {
 		if err := m.checkOverrides(unit); err != nil {
 			return err
 		}
 	}
-	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/containerd": "config.toml", "/etc/vamos": "agent.json authorized_keys principals.json"} {
+	// /etc/containerd belongs to the containerd package: Ubuntu updates may
+	// refresh it, and purge removes it.
+	for dir, allowed := range map[string]string{"/etc/docker": "daemon.json", "/etc/caddy": "Caddyfile", "/etc/vamos": "agent.json authorized_keys principals.json"} {
 		entries, err := os.ReadDir(m.path(dir))
 		if errors.Is(err, os.ErrNotExist) {
 			continue

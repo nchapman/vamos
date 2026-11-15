@@ -64,7 +64,7 @@ func testDaemon(t *testing.T, execute func(context.Context, deploy.Request, []by
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(t.TempDir(), "host.json")
-	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:vamos": "x", "group:vamos": "x"}, Packages: []lifecycle.Package{{Name: "docker.io", Version: "1.0"}}}
+	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:vamos": "x", "group:vamos": "x"}, Packages: []string{"docker.io"}}
 	data, _ := json.Marshal(state)
 	if err := os.WriteFile(statePath, data, 0600); err != nil {
 		t.Fatal(err)
@@ -372,7 +372,7 @@ func TestDaemonPreservesQueuedWorkAcrossRestartBeforeAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(t.TempDir(), "host.json")
-	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:vamos": "x", "group:vamos": "x"}, Packages: []lifecycle.Package{{Name: "docker.io", Version: "1.0"}}}
+	state := &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), Accounts: map[string]string{"passwd:caddy": "x", "group:caddy": "x", "group:docker": "x", "passwd:vamos": "x", "group:vamos": "x"}, Packages: []string{"docker.io"}}
 	data, _ := json.Marshal(state)
 	if err := os.WriteFile(statePath, data, 0600); err != nil {
 		t.Fatal(err)

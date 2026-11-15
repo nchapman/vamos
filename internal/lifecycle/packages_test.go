@@ -26,18 +26,18 @@ func TestInstallPlanRefusesExistingPackagesAndRemovals(t *testing.T) {
 		})
 	}
 	packages, err := parseInstallPlan([]byte("Inst caddy (2.6.2-1ubuntu0.24.04.3 Ubuntu:24.04/noble-updates [amd64])\nConf caddy (2.6.2-1ubuntu0.24.04.3 Ubuntu [amd64])\n"), nil)
-	if err != nil || len(packages) != 1 || packages[0].Name != "caddy" {
+	if err != nil || len(packages) != 1 || packages[0] != "caddy" {
 		t.Fatalf("packages=%+v err=%v", packages, err)
 	}
 }
 
 func TestPurgePlanDoesNotRemoveDependenciesOwnedByOthers(t *testing.T) {
 	for _, plan := range []string{"Purg caddy [2]\nRemv other [1]\n", "Inst other (1 Ubuntu [amd64])\n"} {
-		if err := checkPurgePlan([]byte(plan), []Package{{"caddy", "2"}}); err == nil {
+		if err := checkPurgePlan([]byte(plan), []string{"caddy"}); err == nil {
 			t.Fatal("unsafe purge accepted")
 		}
 	}
-	if err := checkPurgePlan([]byte("Purg caddy [2]\n"), []Package{{"caddy", "2"}}); err != nil {
+	if err := checkPurgePlan([]byte("Purg caddy [2]\n"), []string{"caddy"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -77,7 +77,8 @@ func TestHostStateRejectsCorruptOrUnrecognizedOwnership(t *testing.T) {
 		{"phase", func(s *State) { s.Phase = "unknown" }},
 		{"purge", func(s *State) { s.PurgeApproved = true }},
 		{"no-packages", func(s *State) { s.Packages = nil }},
-		{"invalid-package", func(s *State) { s.Packages = []Package{{"--bad", "1"}} }},
+		{"invalid-package", func(s *State) { s.Packages = []string{"--bad"} }},
+		{"duplicate-package", func(s *State) { s.Packages = []string{"runc", "runc"} }},
 		{"incomplete-config", func(s *State) { s.Configured = true }},
 		{"account", func(s *State) { s.Accounts = map[string]string{"passwd:root": "root"} }},
 	} {
