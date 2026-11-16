@@ -192,6 +192,8 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		upstreams   string
 		unavailable bool
 		waf         bool
+		cache       bool
+		compression bool
 	}
 	routes := map[string]routeEntry{}
 	add := func(app, service string, r *release) error {
@@ -209,12 +211,15 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		if err != nil {
 			return err
 		}
-		waf := r.Config == nil || r.Config.HTTP == nil || r.Config.HTTP.WAFEnabled()
+		httpConfig := config.HTTP{}
+		if r.Config != nil && r.Config.HTTP != nil {
+			httpConfig = *r.Config.HTTP
+		}
 		for _, host := range hosts {
 			if _, exists := routes[host]; exists {
 				return errors.New("duplicate public route")
 			}
-			routes[host] = routeEntry{upstreams: strings.Join(upstreams, " "), waf: waf}
+			routes[host] = routeEntry{upstreams: strings.Join(upstreams, " "), waf: httpConfig.WAFEnabled(), cache: httpConfig.CacheEnabled(), compression: httpConfig.CompressionEnabled()}
 		}
 		return nil
 	}
@@ -287,15 +292,21 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 			out += fmt.Sprintf("\n%s {\n\trespond \"Service unavailable\" 503\n}\n", k)
 			continue
 		}
-		wafDirective := ""
+		directives := ""
 		if entry.waf {
-			wafDirective = corazaBlock
+			directives += corazaBlock
+		}
+		if entry.cache {
+			directives += "\tcache\n"
+		}
+		if entry.compression {
+			directives += "\tencode zstd gzip\n"
 		}
 		if strings.Contains(entry.upstreams, " ") {
-			out += fmt.Sprintf("\n%s {\n%s\tcache\n\tencode zstd gzip\n\treverse_proxy %s {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}\n", k, wafDirective, entry.upstreams)
+			out += fmt.Sprintf("\n%s {\n%s\treverse_proxy %s {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}\n", k, directives, entry.upstreams)
 			continue
 		}
-		out += fmt.Sprintf("\n%s {\n%s\tcache\n\tencode zstd gzip\n\treverse_proxy %s\n}\n", k, wafDirective, entry.upstreams)
+		out += fmt.Sprintf("\n%s {\n%s\treverse_proxy %s\n}\n", k, directives, entry.upstreams)
 	}
 	return out, nil
 }

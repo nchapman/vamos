@@ -58,7 +58,7 @@ func (s *Service) NormalizeReplicas() {
 		s.Replicas = nil
 	}
 	if s.HTTP != nil {
-		s.HTTP.NormalizeWAF()
+		s.HTTP.NormalizeFeatures()
 	}
 }
 
@@ -137,10 +137,12 @@ func (b *Build) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type HTTP struct {
-	Port    int      `yaml:"port"`
-	Health  string   `yaml:"health"`
-	Domains []string `yaml:"domains,omitempty"`
-	WAF     *bool    `yaml:"waf,omitempty" json:"WAF,omitempty"`
+	Port        int      `yaml:"port"`
+	Health      string   `yaml:"health"`
+	Domains     []string `yaml:"domains,omitempty"`
+	WAF         *bool    `yaml:"waf,omitempty" json:"WAF,omitempty"`
+	Cache       *bool    `yaml:"cache,omitempty" json:"Cache,omitempty"`
+	Compression *bool    `yaml:"compression,omitempty" json:"Compression,omitempty"`
 }
 
 // WAFEnabled reports whether the OWASP Coraza WAF is enabled; omission is true.
@@ -151,10 +153,25 @@ func (h HTTP) WAFEnabled() bool {
 	return *h.WAF
 }
 
-// NormalizeWAF keeps explicit true equivalent to omission.
-func (h *HTTP) NormalizeWAF() {
-	if h != nil && h.WAF != nil && *h.WAF {
-		h.WAF = nil
+// CacheEnabled reports whether the HTTP cache is enabled; omission is true.
+func (h HTTP) CacheEnabled() bool {
+	return h.Cache == nil || *h.Cache
+}
+
+// CompressionEnabled reports whether Zstandard/Gzip encoding is enabled; omission is true.
+func (h HTTP) CompressionEnabled() bool {
+	return h.Compression == nil || *h.Compression
+}
+
+// NormalizeFeatures keeps explicit true equivalent to omission.
+func (h *HTTP) NormalizeFeatures() {
+	if h == nil {
+		return
+	}
+	for _, feature := range []**bool{&h.WAF, &h.Cache, &h.Compression} {
+		if *feature != nil && **feature {
+			*feature = nil
+		}
 	}
 }
 
@@ -162,14 +179,16 @@ func (h *HTTP) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: http must be a mapping", value.Line)
 	}
-	if err := checkMappingKeys(value, "config.HTTP", "port", "health", "domains", "waf"); err != nil {
+	if err := checkMappingKeys(value, "config.HTTP", "port", "health", "domains", "waf", "cache", "compression"); err != nil {
 		return err
 	}
 	var raw struct {
-		Port    int      `yaml:"port"`
-		Health  *string  `yaml:"health"`
-		Domains []string `yaml:"domains,omitempty"`
-		WAF     *bool    `yaml:"waf,omitempty"`
+		Port        int      `yaml:"port"`
+		Health      *string  `yaml:"health"`
+		Domains     []string `yaml:"domains,omitempty"`
+		WAF         *bool    `yaml:"waf,omitempty"`
+		Cache       *bool    `yaml:"cache,omitempty"`
+		Compression *bool    `yaml:"compression,omitempty"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
@@ -181,7 +200,9 @@ func (h *HTTP) UnmarshalYAML(value *yaml.Node) error {
 	}
 	h.Domains = raw.Domains
 	h.WAF = raw.WAF
-	h.NormalizeWAF()
+	h.Cache = raw.Cache
+	h.Compression = raw.Compression
+	h.NormalizeFeatures()
 	return nil
 }
 

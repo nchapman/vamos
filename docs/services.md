@@ -5,6 +5,30 @@ See the live acceptance below; older verification records cover the versions
 tested then. Use a matching current client/executor and inspect the
 resolved target before applying changes.
 
+## HTTP ingress features
+
+Public HTTP services enable the Coraza OWASP WAF, HTTP caching, and
+Zstandard/Gzip compression by default. Each feature can be disabled independently:
+
+```yaml
+app: website
+services:
+  web:
+    build: .
+    http:
+      port: 8080
+      waf: false
+      cache: false
+      compression: false
+```
+
+Omit these options (or set them to `true`) to keep the defaults. `cache: true`
+lets upstream cache-control headers govern caching; it does not force responses
+to be cached. `cache: false` bypasses the ingress cache. `compression: false`
+disables ingress encoding, not compression performed by the application.
+These switches apply to the service's generated hostname and custom domains.
+Replica load balancing and failover remain managed by Vamos.
+
 ## One app, several source folders
 
 Independent folders can each contain a `vamos.yaml` with the **same app name** and
