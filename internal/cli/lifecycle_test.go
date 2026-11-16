@@ -223,3 +223,40 @@ func TestDiscoverDeployKeyFallsBackToPrivateKeyWithoutPubFile(t *testing.T) {
 		t.Fatalf("unexpected discovered key %q", got)
 	}
 }
+
+func TestServerAddDerivesDefaultTryVamosDomainFromIPv4Target(t *testing.T) {
+	store := registry.New(t.TempDir())
+	var gotRequest executor.Request
+	deps := lifecycleDeps{
+		Registry:  func() (*registry.Store, error) { return store, nil },
+		DeployKey: func() (string, error) { return testDeployKey, nil },
+		Inspect: func(context.Context, string) (*host.Report, error) {
+			return &host.Report{Supported: true, Root: true, Architecture: "amd64"}, nil
+		},
+		Artifact: func(string, string) ([]byte, error) { return []byte("binary"), nil },
+		Run: func(_ context.Context, target string, r executor.Request, _ []byte) (*lifecycle.State, error) {
+			gotRequest = r
+			return &lifecycle.State{Phase: "ready", ID: "installation", Config: *r.Config}, nil
+		},
+	}
+	var out, diag bytes.Buffer
+	code := serverLifecycle(context.Background(), "add", []string{"--yes", "example", "root@138.68.227.119"}, &out, &diag, deps)
+	if code != 0 {
+		t.Fatalf("code=%d diag=%s", code, &diag)
+	}
+	wantDomain := "8a44e377.tryvamos.dev"
+	if gotRequest.Config == nil || gotRequest.Config.Domain != wantDomain {
+		t.Fatalf("got request config %+v, want domain %q", gotRequest.Config, wantDomain)
+	}
+	reg, err := store.Read()
+	if err != nil || reg.Servers["example"].Domain != wantDomain {
+		t.Fatalf("registry=%+v err=%v", reg, err)
+	}
+	for _, nonPublic := range []string{"root@127.0.0.1", "root@10.0.0.5", "root@192.168.1.10", "root@100.64.1.2", "root@2001:db8::1"} {
+		out.Reset()
+		diag.Reset()
+		if code := serverLifecycle(context.Background(), "add", []string{"--yes", "local", nonPublic}, &out, &diag, deps); code != 2 {
+			t.Fatalf("target=%s expected usage error 2, got %d: %s", nonPublic, code, &diag)
+		}
+	}
+}

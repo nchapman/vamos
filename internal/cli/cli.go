@@ -38,7 +38,7 @@ Usage:
   vamos server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
   vamos server upgrade [flags] --yes [NAME [TARGET]]
                                       Upgrade the coordinator and executor on a server
-  vamos server connect --domain DOMAIN NAME TARGET
+  vamos server connect [--domain DOMAIN] NAME TARGET
                                       Register an existing host without remote changes
   vamos server status [NAME [TARGET]]   Read the host lifecycle journal
   vamos server teardown [flags] NAME    Remove an unused owned installation

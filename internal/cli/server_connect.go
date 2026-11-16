@@ -18,7 +18,7 @@ import (
 func serverConnect(ctx context.Context, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {
 	flags := flag.NewFlagSet("server connect", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	domain := flags.String("domain", "", "expected installed base domain")
+	domain := flags.String("domain", "", "expected installed base domain (default: verified host domain)")
 	timeout := flags.Duration("timeout", 15*time.Second, "read-only verification deadline")
 	flags.Usage = func() { writeServerHelp(flags.Output(), "connect", flags) }
 	if err := parseFlags(flags, args, stdout, stderr); err != nil {
@@ -28,10 +28,14 @@ func serverConnect(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return 2
 	}
 	if flags.NArg() != 2 || *timeout <= 0 {
-		return usageError(stderr, "connect requires --domain DOMAIN NAME TARGET and a positive timeout")
+		return usageError(stderr, "connect requires [--domain DOMAIN] NAME TARGET and a positive timeout")
 	}
-	expected := lifecycle.Config{Name: flags.Arg(0), Domain: *domain}
-	if err := lifecycle.ValidateConfig(expected); err != nil {
+	name := flags.Arg(0)
+	checkDomain := *domain
+	if checkDomain == "" {
+		checkDomain = "validation.invalid"
+	}
+	if err := lifecycle.ValidateConfig(lifecycle.Config{Name: name, Domain: checkDomain}); err != nil {
 		return usageError(stderr, err.Error())
 	}
 	target := flags.Arg(1)
@@ -46,12 +50,11 @@ func serverConnect(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
-	server := registry.Server{Name: expected.Name, Target: target, Domain: expected.Domain}
-	if previous, ok := local.Servers[server.Name]; ok && previous != server {
+	if previous, ok := local.Servers[name]; ok && (previous.Target != target || (*domain != "" && previous.Domain != *domain)) {
 		return usageError(stderr, "server name is already registered with a different target or domain")
 	}
-	for name, previous := range local.Servers {
-		if name != server.Name && previous.Target == target {
+	for other, previous := range local.Servers {
+		if other != name && previous.Target == target {
 			return usageError(stderr, "target is already registered under another name")
 		}
 	}
@@ -75,9 +78,13 @@ func serverConnect(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err := lifecycle.ValidateState(state); err != nil {
 		return lifecycleError(stderr, errors.New("host has no valid ownership manifest; refusing registration"))
 	}
-	if state.Phase != "ready" || state.Config != expected {
+	if state.Phase != "ready" || state.Config.Name != name || (*domain != "" && state.Config.Domain != *domain) {
 		return lifecycleError(stderr, errors.New("host must be ready with the requested name and domain; refusing registration"))
 	}
+	if previous, ok := local.Servers[name]; ok && previous.Domain != state.Config.Domain {
+		return lifecycleError(stderr, errors.New("server name is already registered with a different domain"))
+	}
+	server := registry.Server{Name: name, Target: target, Domain: state.Config.Domain}
 	if err := store.Put(server); err != nil {
 		return lifecycleError(stderr, fmt.Errorf("host verified but local registration failed: %w; rerun connect with the same identity", err))
 	}

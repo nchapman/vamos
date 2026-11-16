@@ -60,6 +60,31 @@ func TestConnectExistingHostRegistersWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestConnectExistingHostAdoptsInstalledDomainWhenFlagOmitted(t *testing.T) {
+	store := registry.New(t.TempDir())
+	deps := lifecycleDeps{
+		Registry: func() (*registry.Store, error) { return store, nil },
+		Inspect: func(context.Context, string) (*host.Report, error) {
+			return &host.Report{Root: true, Supported: true}, nil
+		},
+		Status: func(context.Context, string) (*ssh.Status, error) {
+			return &ssh.Status{State: connectState()}, nil
+		},
+	}
+	var out, diagnostic bytes.Buffer
+	if code := serverLifecycle(context.Background(), "connect", []string{"home", "root@home"}, &out, &diagnostic, deps); code != 0 {
+		t.Fatalf("code=%d: %s", code, &diagnostic)
+	}
+	got, err := store.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := registry.Server{Name: "home", Target: "root@home", Domain: "apps.example.com"}
+	if got.Servers["home"] != want {
+		t.Fatalf("unexpected registration: %+v", got)
+	}
+}
+
 func TestConnectExistingHostRefusesUnverifiedState(t *testing.T) {
 	for _, kind := range []string{"missing", "active", "wrong-name", "wrong-domain", "installing", "removed", "invalid-id", "invalid-version", "incomplete", "unconfigured", "missing-ownership", "status-failure", "non-root", "unsupported"} {
 		t.Run(kind, func(t *testing.T) {

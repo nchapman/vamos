@@ -15,16 +15,16 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		notes = "Inspect a host read-only, without provisioning or registering it."
 		names = append(names, "json")
 	case "add":
-		usage = "vamos server add [OPTIONS] --yes --domain DOMAIN NAME TARGET"
-		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDNS is configured separately. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH."
+		usage = "vamos server add [OPTIONS] --yes [--domain DOMAIN] NAME TARGET"
+		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDefaults to <hex-ip>.tryvamos.dev when --domain is omitted. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH."
 		names = append(names, "yes", "domain", "executor", "deploy-key")
 	case "upgrade":
 		usage = "vamos server upgrade [OPTIONS] --yes [NAME [TARGET]]"
 		notes = "Upgrade the installed coordinator and executor bundle as root. Requires explicit --yes.\nNAME defaults to the registered default server; TARGET is optional for registered names.\nStarted mutations survive client disconnection."
 		names = append(names, "yes", "executor")
 	case "connect":
-		usage = "vamos server connect [OPTIONS] --domain DOMAIN NAME TARGET"
-		notes = "Verify an existing ready installation and register it locally. Requires root SSH.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME and DOMAIN must match the installed identity; SSH host keys must already be trusted."
+		usage = "vamos server connect [OPTIONS] [--domain DOMAIN] NAME TARGET"
+		notes = "Verify an existing ready installation and register it locally. Requires root SSH.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME (and optional DOMAIN) must match the installed identity; SSH host keys must already be trusted."
 		names = append(names, "domain")
 	case "status":
 		usage = "vamos server status [OPTIONS] [NAME [TARGET]]"

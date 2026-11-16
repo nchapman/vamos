@@ -16,9 +16,9 @@ import (
 
 const serverHelp = `Usage:
   vamos server inspect [--json] [--timeout 15s] TARGET
-  vamos server add --yes --domain DOMAIN [--executor FILE] NAME TARGET
+  vamos server add --yes [--domain DOMAIN] [--executor FILE] NAME TARGET
   vamos server upgrade --yes [--executor FILE] [NAME [TARGET]]
-  vamos server connect --domain DOMAIN NAME TARGET
+  vamos server connect [--domain DOMAIN] NAME TARGET
   vamos server status [--json] [NAME [TARGET]]
   vamos server teardown --yes --purge [--executor FILE] NAME [TARGET]
 

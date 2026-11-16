@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,16 +23,17 @@ import (
 )
 
 type lifecycleDeps struct {
-	Registry  func() (*registry.Store, error)
-	Inspect   func(context.Context, string) (*host.Report, error)
-	Artifact  func(string, string) ([]byte, error)
-	Run       func(context.Context, string, executor.Request, []byte) (*lifecycle.State, error)
-	Status    func(context.Context, string) (*ssh.Status, error)
-	DeployKey func() (string, error)
+	Registry      func() (*registry.Store, error)
+	Inspect       func(context.Context, string) (*host.Report, error)
+	Artifact      func(string, string) ([]byte, error)
+	Run           func(context.Context, string, executor.Request, []byte) (*lifecycle.State, error)
+	Status        func(context.Context, string) (*ssh.Status, error)
+	DeployKey     func() (string, error)
+	ResolveDomain func(context.Context, string) (string, error)
 }
 
 func defaultLifecycleDeps() lifecycleDeps {
-	return lifecycleDeps{Registry: registry.Default, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey}
+	return lifecycleDeps{Registry: registry.Default, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey, ResolveDomain: defaultServerDomain}
 }
 
 func serverLifecycle(ctx context.Context, operation string, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {
@@ -41,7 +44,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	flags.SetOutput(stderr)
 	yes := flags.Bool("yes", false, "authorize host changes")
 	purge := flags.Bool("purge", false, "authorize removal of owned runtime data and certificates")
-	domain := flags.String("domain", "", "base domain (DNS is configured separately)")
+	domain := flags.String("domain", "", "base domain (default: <hex-ip>.tryvamos.dev)")
 	artifact := flags.String("executor", "", "Linux executor artifact override")
 	deployKey := flags.String("deploy-key", "", "public key file installed for the restricted deploy bridge (default: SSH agent or ~/.ssh key)")
 	asJSON := flags.Bool("json", false, "print status as JSON")
@@ -104,13 +107,21 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		return usageError(stderr, err.Error())
 	}
 	if operation == "add" {
-		if flags.NArg() != 2 || *domain == "" {
-			return usageError(stderr, "add requires --domain DOMAIN NAME TARGET")
+		if flags.NArg() != 2 {
+			return usageError(stderr, "add requires NAME TARGET")
 		}
-		if registered && server.Domain != *domain {
+		resolvedDomain := *domain
+		if resolvedDomain == "" {
+			derived, deriveErr := deriveServerDomain(ctx, server.Target, deps.ResolveDomain)
+			if deriveErr != nil {
+				return usageError(stderr, deriveErr.Error())
+			}
+			resolvedDomain = derived
+		}
+		if registered && server.Domain != resolvedDomain {
 			return usageError(stderr, "server name is already registered with a different domain")
 		}
-		server.Domain = *domain
+		server.Domain = resolvedDomain
 		if err := lifecycle.ValidateConfig(lifecycle.Config{Name: name, Domain: server.Domain}); err != nil {
 			return usageError(stderr, err.Error())
 		}
@@ -226,6 +237,9 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		message = "Owned installation removed. A small host receipt and the runtime lock are retained for safe retries."
 	case "add":
 		message = "Docker/Buildx and Caddy verified. No app routes or certificates configured; set DNS separately."
+		if strings.HasSuffix(server.Domain, ".tryvamos.dev") {
+			message = fmt.Sprintf("Docker/Buildx and Caddy verified. Apps will be served under *.%s with automatic HTTPS.", server.Domain)
+		}
 	}
 	if err := writeServerMutationResult(stdout, name, state, message); err != nil {
 		return lifecycleError(stderr, err)
@@ -310,4 +324,73 @@ func discoverDeployKey() (string, error) {
 		}
 	}
 	return "", errors.New("no SSH public key found for the restricted deploy bridge; pass --deploy-key PATH")
+}
+
+func targetHost(target string) string {
+	if at := strings.LastIndex(target, "@"); at >= 0 {
+		return target[at+1:]
+	}
+	return target
+}
+
+func isPublicIPv4(addr netip.Addr) bool {
+	if !addr.IsValid() || !addr.Is4() || !addr.IsGlobalUnicast() || addr.IsPrivate() {
+		return false
+	}
+	b := addr.As4()
+	// Exclude RFC 6598 shared/CGNAT space (100.64.0.0/10, e.g. Tailscale).
+	if b[0] == 100 && b[1]&0xc0 == 64 {
+		return false
+	}
+	return true
+}
+
+func formatTryVamosDomain(addr netip.Addr) string {
+	b := addr.As4()
+	return fmt.Sprintf("%02x%02x%02x%02x.tryvamos.dev", b[0], b[1], b[2], b[3])
+}
+
+func deriveServerDomain(ctx context.Context, target string, resolve func(context.Context, string) (string, error)) (string, error) {
+	host := targetHost(target)
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if !isPublicIPv4(addr) {
+			return "", errors.New("cannot derive a default tryvamos.dev domain from a non-public or IPv6 target; pass --domain DOMAIN")
+		}
+		return formatTryVamosDomain(addr), nil
+	}
+	if resolve == nil {
+		return "", errors.New("add requires --domain DOMAIN when TARGET is not a public IPv4 address")
+	}
+	return resolve(ctx, target)
+}
+
+func defaultServerDomain(ctx context.Context, target string) (string, error) {
+	host := targetHost(target)
+	sshCtx, cancelSSH := context.WithTimeout(ctx, 2*time.Second)
+	if result, err := process.Run(sshCtx, "ssh", []string{"-G", "--", target}, nil); err == nil && len(result.Stdout) != 0 {
+		for _, line := range strings.Split(string(result.Stdout), "\n") {
+			if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "hostname "); ok && strings.TrimSpace(rest) != "" {
+				host = strings.TrimSpace(rest)
+				break
+			}
+		}
+	}
+	cancelSSH()
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if !isPublicIPv4(addr) {
+			return "", errors.New("cannot derive a default tryvamos.dev domain from a non-public or IPv6 target; pass --domain DOMAIN")
+		}
+		return formatTryVamosDomain(addr), nil
+	}
+	lookupCtx, cancelLookup := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelLookup()
+	addrs, err := net.DefaultResolver.LookupNetIP(lookupCtx, "ip4", host)
+	if err == nil {
+		for _, addr := range addrs {
+			if isPublicIPv4(addr) {
+				return formatTryVamosDomain(addr), nil
+			}
+		}
+	}
+	return "", errors.New("cannot derive a default tryvamos.dev domain from TARGET; pass --domain DOMAIN")
 }
