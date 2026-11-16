@@ -86,7 +86,8 @@ func TestMultiRoutesPreviewAndMixedLegacy(t *testing.T) {
 	if strings.Count(old, "reverse_proxy") != 2 || strings.Contains(old, "worker") {
 		t.Fatal(old)
 	}
-	if !strings.Contains(next, "notes-api.example.com {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:12002\n}") || !strings.Contains(next, "notes.example.com {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:12001\n}") || strings.Contains(next, "lb_policy") {
+	const wantWAF = "\tcoraza_waf {\n\t\tload_owasp_crs\n\t\tdirectives `\n\t\t\tInclude @coraza.conf-recommended\n\t\t\tInclude @crs-setup.conf.example\n\t\t\tInclude @owasp_crs/*.conf\n\t\t\tSecRuleEngine On\n\t\t`\n\t}\n\tcache\n\tencode zstd gzip\n"
+	if !strings.Contains(next, "notes-api.example.com {\n"+wantWAF+"\treverse_proxy 127.0.0.1:12002\n}") || !strings.Contains(next, "notes.example.com {\n"+wantWAF+"\treverse_proxy 127.0.0.1:12001\n}") || strings.Contains(next, "lb_policy") {
 		t.Fatal(next)
 	}
 	after, _ := json.Marshal(j)
@@ -107,9 +108,24 @@ func TestMultiRoutesPreviewAndMixedLegacy(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if strings.Count(next, "reverse_proxy") != 3 || !strings.Contains(next, "legacy.example.com {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:13001\n}") {
+	if strings.Count(next, "reverse_proxy") != 3 || !strings.Contains(next, "legacy.example.com {\n"+wantWAF+"\treverse_proxy 127.0.0.1:13001\n}") {
 		t.Fatal(next)
 	}
+	wafOff := false
+	origAPICfg := j.ServiceStates["api"].Candidate.Config
+	apiCfg := *origAPICfg
+	apiHTTP := *apiCfg.HTTP
+	apiHTTP.WAF = &wafOff
+	apiCfg.HTTP = &apiHTTP
+	j.ServiceStates["api"].Candidate.Config = &apiCfg
+	noWAF, e := m.routes(j, true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if !strings.Contains(noWAF, "notes-api.example.com {\n\tcache\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:12002\n}") || !strings.Contains(noWAF, "notes.example.com {\n"+wantWAF+"\treverse_proxy 127.0.0.1:12001\n}") {
+		t.Fatal(noWAF)
+	}
+	j.ServiceStates["api"].Candidate.Config = origAPICfg
 	// Maintenance removes every own slot, not just the active service.
 	clone := *j
 	clone.ServiceStates = nil

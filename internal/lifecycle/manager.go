@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	BaseCaddyfile = "{\n\tadmin 127.0.0.1:2019\n}\n"
+	BaseCaddyfile = "{\n\tadmin 127.0.0.1:2019\n\torder coraza_waf first\n\torder cache before rewrite\n\tcache {\n\t\tdefault_cache_control no-store\n\t\tsimplefs {\n\t\t\tconfiguration {\n\t\t\t\tpath /data/cache\n\t\t\t\tsize 1000\n\t\t\t}\n\t\t}\n\t}\n}\n"
 	caddyConfig   = BaseCaddyfile
 	// Applications get explicit private networks; no shared default bridge.
 	DockerDaemonPath   = "/etc/docker/daemon.json"

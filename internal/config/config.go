@@ -57,6 +57,9 @@ func (s *Service) NormalizeReplicas() {
 	if s.Replicas != nil && *s.Replicas == 1 {
 		s.Replicas = nil
 	}
+	if s.HTTP != nil {
+		s.HTTP.NormalizeWAF()
+	}
 }
 
 type Service struct {
@@ -137,19 +140,36 @@ type HTTP struct {
 	Port    int      `yaml:"port"`
 	Health  string   `yaml:"health"`
 	Domains []string `yaml:"domains,omitempty"`
+	WAF     *bool    `yaml:"waf,omitempty" json:"WAF,omitempty"`
+}
+
+// WAFEnabled reports whether the OWASP Coraza WAF is enabled; omission is true.
+func (h HTTP) WAFEnabled() bool {
+	if h.WAF == nil {
+		return true
+	}
+	return *h.WAF
+}
+
+// NormalizeWAF keeps explicit true equivalent to omission.
+func (h *HTTP) NormalizeWAF() {
+	if h != nil && h.WAF != nil && *h.WAF {
+		h.WAF = nil
+	}
 }
 
 func (h *HTTP) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: http must be a mapping", value.Line)
 	}
-	if err := checkMappingKeys(value, "config.HTTP", "port", "health", "domains"); err != nil {
+	if err := checkMappingKeys(value, "config.HTTP", "port", "health", "domains", "waf"); err != nil {
 		return err
 	}
 	var raw struct {
 		Port    int      `yaml:"port"`
 		Health  *string  `yaml:"health"`
 		Domains []string `yaml:"domains,omitempty"`
+		WAF     *bool    `yaml:"waf,omitempty"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
@@ -160,6 +180,8 @@ func (h *HTTP) UnmarshalYAML(value *yaml.Node) error {
 		h.Health = *raw.Health
 	}
 	h.Domains = raw.Domains
+	h.WAF = raw.WAF
+	h.NormalizeWAF()
 	return nil
 }
 

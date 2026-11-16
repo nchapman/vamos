@@ -14,11 +14,11 @@ import (
 // the ingress version independently of the distribution's archive. Upgrading
 // Vamos is how Caddy is upgraded.
 const (
-	caddyDigest = "sha256:4e2425f6009577e7c651010f16679c28f7d12df3e7b1914f941a7a3370746b3c"
+	caddyDigest = "sha256:1dddaa9c22513a986aa77b5da388aa0016d6a2eda97f592da6008d968bae823e"
 	// CaddyImage keeps the tag for readability; Docker resolves the digest.
-	CaddyImage = "caddy:2.11.9@" + caddyDigest
+	CaddyImage = "ghcr.io/nchapman/vamos/caddy:2.11.9@" + caddyDigest
 	// caddyImageRef is the form Docker's image inventory and removal accept.
-	caddyImageRef  = "caddy@" + caddyDigest
+	caddyImageRef  = "ghcr.io/nchapman/vamos/caddy@" + caddyDigest
 	CaddyContainer = "vamos-caddy"
 	caddyHostLabel = "org.vamos.caddy.host"
 	// Host paths and loopback admin endpoint shared with app deployments.
@@ -128,7 +128,7 @@ func (c *caddyContainer) ownsContainerd(resource, item string) bool {
 		return item == c.ID
 	case "images":
 		name, digest, ok := strings.Cut(item, "@")
-		if !ok || (name != "docker.io/library/caddy" && !strings.HasPrefix(name, "docker.io/library/caddy:")) {
+		if !ok || (name != "ghcr.io/nchapman/vamos/caddy" && !strings.HasPrefix(name, "ghcr.io/nchapman/vamos/caddy:") && name != "docker.io/library/caddy" && !strings.HasPrefix(name, "docker.io/library/caddy:")) {
 			return false
 		}
 		for _, ref := range c.imageRefs() {

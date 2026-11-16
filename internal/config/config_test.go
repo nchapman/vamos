@@ -69,9 +69,13 @@ services:
       context: ./api
     http:
       port: 8081
+      waf: false
   worker:
     build:
       dockerfile: Dockerfile.worker
+    http:
+      port: 8082
+      waf: true
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +84,7 @@ services:
 	if web.Build == nil || web.Build.Context != "." || web.Build.Dockerfile != "Dockerfile" {
 		t.Fatalf("unexpected web build: %+v", web.Build)
 	}
-	if web.HTTP == nil || web.HTTP.Port != 8080 || web.HTTP.Health != "/" {
+	if web.HTTP == nil || web.HTTP.Port != 8080 || web.HTTP.Health != "/" || !web.HTTP.WAFEnabled() || web.HTTP.WAF != nil {
 		t.Fatalf("unexpected web http: %+v", web.HTTP)
 	}
 	if web.Volume == nil || web.Volume.Name != "data" || web.Volume.Mount != "/data" {
@@ -90,9 +94,15 @@ services:
 	if api.Build == nil || api.Build.Context != "./api" || api.Build.Dockerfile != "Dockerfile" {
 		t.Fatalf("unexpected api build: %+v", api.Build)
 	}
+	if api.HTTP == nil || api.HTTP.WAFEnabled() || api.HTTP.WAF == nil || *api.HTTP.WAF {
+		t.Fatalf("expected api WAF disabled: %+v", api.HTTP)
+	}
 	worker := app.Services["worker"]
 	if worker.Build == nil || worker.Build.Context != "." || worker.Build.Dockerfile != "Dockerfile.worker" {
 		t.Fatalf("unexpected worker build: %+v", worker.Build)
+	}
+	if worker.HTTP == nil || !worker.HTTP.WAFEnabled() || worker.HTTP.WAF != nil {
+		t.Fatalf("expected explicit waf: true to normalize to nil: %+v", worker.HTTP)
 	}
 }
 

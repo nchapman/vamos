@@ -160,8 +160,9 @@ func TestReplicaScopedRollbackUsesServiceHistoryAndAllCustomUpstreams(t *testing
 		}
 		upstreams = append(upstreams, "127.0.0.1:"+*ref.Port)
 	}
+	const wantWAF = "\tcoraza_waf {\n\t\tload_owasp_crs\n\t\tdirectives `\n\t\t\tInclude @coraza.conf-recommended\n\t\t\tInclude @crs-setup.conf.example\n\t\t\tInclude @owasp_crs/*.conf\n\t\t\tSecRuleEngine On\n\t\t`\n\t}\n\tcache\n\tencode zstd gzip\n"
 	for _, host := range []string{"notes.example.com", "www.notes.example.net"} {
-		want := host + " {\n\tencode zstd gzip\n\treverse_proxy " + strings.Join(upstreams, " ") + " {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}"
+		want := host + " {\n" + wantWAF + "\treverse_proxy " + strings.Join(upstreams, " ") + " {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}"
 		if !strings.Contains(routes, want) {
 			t.Fatalf("missing full ordered upstream set for %s: %s", host, routes)
 		}

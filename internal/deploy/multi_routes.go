@@ -188,7 +188,12 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 	if e = reserveJournalHostnames(all, domain); e != nil {
 		return "", e
 	}
-	routes := map[string]string{}
+	type routeEntry struct {
+		upstreams   string
+		unavailable bool
+		waf         bool
+	}
+	routes := map[string]routeEntry{}
 	add := func(app, service string, r *release) error {
 		if r == nil {
 			return nil
@@ -204,11 +209,12 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		if err != nil {
 			return err
 		}
+		waf := r.Config == nil || r.Config.HTTP == nil || r.Config.HTTP.WAFEnabled()
 		for _, host := range hosts {
 			if _, exists := routes[host]; exists {
 				return errors.New("duplicate public route")
 			}
-			routes[host] = strings.Join(upstreams, " ")
+			routes[host] = routeEntry{upstreams: strings.Join(upstreams, " "), waf: waf}
 		}
 		return nil
 	}
@@ -250,7 +256,7 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 					if _, exists := routes[host]; exists {
 						return "", errors.New("duplicate unavailable route")
 					}
-					routes[host] = "unavailable"
+					routes[host] = routeEntry{unavailable: true}
 				}
 				continue
 			}
@@ -273,17 +279,23 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	const corazaBlock = "\tcoraza_waf {\n\t\tload_owasp_crs\n\t\tdirectives `\n\t\t\tInclude @coraza.conf-recommended\n\t\t\tInclude @crs-setup.conf.example\n\t\t\tInclude @owasp_crs/*.conf\n\t\t\tSecRuleEngine On\n\t\t`\n\t}\n"
 	out := baseCaddy
 	for _, k := range keys {
-		if routes[k] == "unavailable" {
+		entry := routes[k]
+		if entry.unavailable {
 			out += fmt.Sprintf("\n%s {\n\trespond \"Service unavailable\" 503\n}\n", k)
 			continue
 		}
-		if strings.Contains(routes[k], " ") {
-			out += fmt.Sprintf("\n%s {\n\tencode zstd gzip\n\treverse_proxy %s {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}\n", k, routes[k])
+		wafDirective := ""
+		if entry.waf {
+			wafDirective = corazaBlock
+		}
+		if strings.Contains(entry.upstreams, " ") {
+			out += fmt.Sprintf("\n%s {\n%s\tcache\n\tencode zstd gzip\n\treverse_proxy %s {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}\n", k, wafDirective, entry.upstreams)
 			continue
 		}
-		out += fmt.Sprintf("\n%s {\n\tencode zstd gzip\n\treverse_proxy %s\n}\n", k, routes[k])
+		out += fmt.Sprintf("\n%s {\n%s\tcache\n\tencode zstd gzip\n\treverse_proxy %s\n}\n", k, wafDirective, entry.upstreams)
 	}
 	return out, nil
 }

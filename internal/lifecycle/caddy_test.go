@@ -271,11 +271,11 @@ func TestIngressContainerdAllowlistIsExact(t *testing.T) {
 	}{
 		{"containers", c.ID, true},
 		{"containers", strings.Repeat("b", 64), false},
-		{"images", "docker.io/library/" + caddyImageRef, true},
-		{"images", "docker.io/library/caddy:2.11.9@" + caddyDigest, true},
-		{"images", "docker.io/library/caddy@sha256:" + strings.Repeat("0", 64), false},
+		{"images", caddyImageRef, true},
+		{"images", CaddyImage, true},
+		{"images", "ghcr.io/nchapman/vamos/caddy@sha256:" + strings.Repeat("0", 64), false},
 		{"images", "docker.io/evil/caddy@" + caddyDigest, false},
-		{"images", "docker.io/library/caddyx@" + caddyDigest, false},
+		{"images", "ghcr.io/nchapman/vamos/caddyx@" + caddyDigest, false},
 		{"content", caddyDigest, false},
 	} {
 		if got := c.ownsContainerd(tc.resource, tc.item); got != tc.owned {

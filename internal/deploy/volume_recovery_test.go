@@ -176,7 +176,7 @@ func TestVolumeSettledUnavailableRouteSurvivesOtherApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(routes, "notes.example.com {\n\trespond") || !strings.Contains(routes, "neighbor.example.com {\n\tencode zstd gzip\n\treverse_proxy") {
+	if !strings.Contains(routes, "notes.example.com {\n\trespond") || !strings.Contains(routes, "neighbor.example.com {\n\tcoraza_waf {\n") {
 		t.Fatal("other promotion lost unavailable route", routes)
 	}
 }

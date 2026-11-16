@@ -278,7 +278,10 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			}
 		case "images":
 			for ref := range f.caddyImages {
-				items = append(items, "docker.io/library/"+ref)
+				if !strings.Contains(ref, "/") {
+					ref = "docker.io/library/" + ref
+				}
+				items = append(items, ref)
 			}
 		case "content":
 			if len(f.caddyImages) != 0 {
@@ -348,7 +351,8 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 				var ids []string
 				for ref := range f.caddyImages {
 					if ref == args[len(args)-1] || !strings.Contains(args[len(args)-1], "@") {
-						ids = append(ids, "sha256:"+strings.TrimPrefix(ref, "caddy@sha256:"))
+						_, digest, _ := strings.Cut(ref, "@")
+						ids = append(ids, digest)
 					}
 				}
 				sort.Strings(ids)
