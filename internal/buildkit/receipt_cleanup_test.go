@@ -104,3 +104,24 @@ func TestReceiptCleanupReconcilesFinalEmptyDirectory(t *testing.T) {
 		t.Fatal("empty directory reconciliation touched Docker")
 	}
 }
+
+func TestRemoveResourcesCleansOwnedBuilderBeforeReceiptRemoval(t *testing.T) {
+	m, f := newEngine(t)
+	runBuild(t, m)
+	owned, err := m.InspectReceipt(testHost)
+	if err != nil || owned == nil || owned.ContainerID != containerID || owned.ImageID != imageID {
+		t.Fatalf("unexpected owned resources: %+v %v", owned, err)
+	}
+	origCreated := f.volume["CreatedAt"]
+	f.volume["CreatedAt"] = "2099-01-01T00:00:00Z"
+	if err := m.RemoveResources(context.Background(), testHost); err == nil {
+		t.Fatal("RemoveResources removed a replaced volume with mismatched CreatedAt")
+	}
+	f.volume["CreatedAt"] = origCreated
+	if err := m.RemoveResources(context.Background(), testHost); err != nil {
+		t.Fatalf("RemoveResources failed: %v", err)
+	}
+	if err := m.RemoveReceipt(context.Background(), testHost); err != nil {
+		t.Fatalf("RemoveReceipt failed after RemoveResources: %v", err)
+	}
+}

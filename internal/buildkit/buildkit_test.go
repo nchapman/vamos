@@ -159,6 +159,28 @@ func (f *fakeEngine) run(ctx context.Context, exe string, args []string, stdin [
 		f.container["State"] = map[string]any{"Running": false}
 		f.network["Containers"] = map[string]any{}
 		return process.Result{}, nil
+	case "container rm":
+		if f.container == nil || a[len(a)-1] != f.container["Id"] {
+			return process.Result{}, errors.New("not found")
+		}
+		f.container = nil
+		return process.Result{}, nil
+	case "network rm":
+		if f.network == nil || a[len(a)-1] != f.network["Id"] {
+			return process.Result{}, errors.New("not found")
+		}
+		f.network = nil
+		return process.Result{}, nil
+	case "volume rm":
+		if f.volume == nil || a[len(a)-1] != f.volume["Name"] {
+			return process.Result{}, errors.New("not found")
+		}
+		f.volume = nil
+		return process.Result{}, nil
+	case "image ls":
+		return process.Result{Stdout: []byte(imageID + "\n")}, nil
+	case "image rm":
+		return process.Result{}, nil
 	case "buildx create":
 		s := f.state()
 		want := []string{"buildx", "create", "--name", s.Builder, "--node", s.Builder + "0", "--driver", "remote", "docker-container://" + s.Container}

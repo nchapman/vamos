@@ -145,7 +145,11 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 			return nil, statErr
 		}
 		if len(entries) > 0 {
-			if err := m.workloads(ctx, caddy); err != nil {
+			builder, err := m.buildService().InspectReceipt(s.ID)
+			if err != nil {
+				return nil, err
+			}
+			if err := m.workloads(ctx, caddy, builder); err != nil {
 				return nil, err
 			}
 		}
@@ -171,7 +175,10 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 		if err := m.removeCaddy(ctx, s); err != nil {
 			return nil, err
 		}
-		if err := m.workloads(ctx, nil); err != nil {
+		if err := m.buildService().RemoveResources(ctx, s.ID); err != nil {
+			return nil, err
+		}
+		if err := m.workloads(ctx, nil, nil); err != nil {
 			return nil, err
 		}
 	}

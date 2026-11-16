@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nchapman/vamos/internal/buildkit"
 )
 
 func (m *Manager) preflight(ctx context.Context, receipt bool) error {
@@ -115,7 +117,7 @@ func (m *Manager) account(ctx context.Context, kind, name string) (string, error
 // are allowed by identity. containerd content blobs cannot be attributed to an
 // image without walking manifests, so content is checked only once the owned
 // ingress has been removed.
-func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
+func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer, builder *buildkit.OwnedResources) error {
 	allowed := map[string]bool{}
 	if caddy != nil {
 		allowed[caddy.ID] = true
@@ -127,6 +129,17 @@ func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
 			for _, id := range images {
 				allowed[id] = true
 			}
+		}
+	}
+	if builder != nil {
+		if builder.ContainerID != "" {
+			allowed[builder.ContainerID] = true
+		}
+		if builder.ImageID != "" {
+			allowed[builder.ImageID] = true
+		}
+		if builder.Volume != "" {
+			allowed[builder.Volume] = true
 		}
 	}
 	for _, args := range [][]string{{"container", "ls", "-aq", "--no-trunc"}, {"image", "ls", "-aq", "--no-trunc"}, {"volume", "ls", "-q"}} {
@@ -145,7 +158,7 @@ func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
 		return err
 	}
 	for _, network := range strings.Fields(string(out)) {
-		if network != "bridge" && network != "host" && network != "none" {
+		if network != "bridge" && network != "host" && network != "none" && (builder == nil || network != builder.Network) {
 			return fmt.Errorf("Docker has custom network %q; refusing teardown", network)
 		}
 	}
@@ -167,7 +180,7 @@ func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
 			return fmt.Errorf("containerd has unmanaged namespace %q; refusing teardown", namespace)
 		}
 		for _, resource := range []string{"containers", "images", "content"} {
-			if caddy != nil && resource == "content" {
+			if (caddy != nil || builder != nil) && resource == "content" {
 				continue
 			}
 			out, err := m.command(ctx, "ctr", "--namespace", namespace, resource, "ls", "-q")
@@ -175,7 +188,8 @@ func (m *Manager) workloads(ctx context.Context, caddy *caddyContainer) error {
 				return err
 			}
 			for _, item := range strings.Fields(string(out)) {
-				if caddy == nil || namespace != "moby" || !caddy.ownsContainerd(resource, item) {
+				owned := namespace == "moby" && ((caddy != nil && caddy.ownsContainerd(resource, item)) || (builder != nil && builder.OwnsContainerd(resource, item)))
+				if !owned {
 					return fmt.Errorf("containerd has %s in %s; refusing teardown", resource, namespace)
 				}
 			}
@@ -216,7 +230,7 @@ func (m *Manager) checkStateDirectory(ctx context.Context) error {
 					continue
 				}
 			}
-			if err := m.buildService().ReceiptGone(ctx, s.ID); err != nil {
+			if _, err := m.buildService().InspectReceipt(s.ID); err != nil {
 				return err
 			}
 		default:
