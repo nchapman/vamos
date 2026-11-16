@@ -38,18 +38,28 @@ def run(h):
         h.log("scenario passed: " + name)
         (h.artifacts / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
 
+    from build_network import configure_native, run as build_network
+    configure_native(h)
+
     def bootstrap():
         h.cli("server", "add", "--yes", "--domain", "vamos.localhost", "local", "root@127.0.0.1")
-        report = json.loads(h.cli("server", "status", "--json", "local").stdout)
+        report = json.loads(h.cli("server", "status", "--json").stdout)
         require(not report["active"] and report["state"]["phase"] == "ready", "host did not settle")
 
     bootstrap()
-    # Prove successful host removal before introducing intentionally retained data.
+    # Exercise a real Dockerfile build, deploy, default-server binding, and app
+    # destroy before proving host teardown cleans up BuildKit, Caddy, and receipts.
+    hello = h.work / "hello"
+    shutil.copytree(h.root / "examples" / "hello", hello)
+    h.command(["chown", "-R", "vamostest:vamostest", hello], user="root")
+    h.hosts(["hello.vamos.localhost"])
+    h.cli("deploy", cwd=hello)
+    require((hello / ".vamos" / "server.json").is_file(), "deploy did not bind unbound project")
+    require(b"ok" in h.https("hello.vamos.localhost", "/healthz").stdout, "hello healthz did not respond")
+    h.cli("destroy", "--yes", cwd=hello)
     h.cli("server", "teardown", "--yes", "--purge", "local")
     bootstrap()
-    done("fresh host bootstrap/status, successful teardown and rebootstrap")
-    from build_network import configure_native, run as build_network
-    configure_native(h)
+    done("fresh host bootstrap/status, stateless app deploy/destroy, successful teardown and rebootstrap")
     build_network(h)
     done("isolated build service blocks host/app access and insecure entitlements")
     from secrets_set import run as secrets_set
