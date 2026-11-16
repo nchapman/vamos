@@ -63,6 +63,15 @@ func TestBuildProducesMatchingBundle(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.HasPrefix(target.name, "vamos-linux-") {
+			if runtime.GOOS != "windows" {
+				info, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm()&0111 != 0 {
+					t.Fatalf("%s should not be executable locally (got mode %o)", target.name, info.Mode().Perm())
+				}
+			}
 			binary, err := elf.Open(path)
 			if err != nil {
 				t.Fatal(err)

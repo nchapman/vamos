@@ -115,7 +115,11 @@ for bin in vamos-linux-amd64 vamos-linux-arm64 vamos; do
     echo "error: archive missing regular file $bin" >&2
     exit 1
   fi
-  install -m 0755 "$src" "$INSTALL_DIR/${stage_prefix}.${bin}"
+  mode=0644
+  if [ "$bin" = "vamos" ]; then
+    mode=0755
+  fi
+  install -m "$mode" "$src" "$INSTALL_DIR/${stage_prefix}.${bin}"
 done
 
 for bin in vamos-linux-amd64 vamos-linux-arm64 vamos; do

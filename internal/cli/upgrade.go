@@ -385,7 +385,11 @@ func commitStagedBinaries(installDir string, orderedNames []string, binaries map
 
 	for _, name := range orderedNames {
 		dest := filepath.Join(installDir, name)
-		tmpPath, err := stageTempBinary(installDir, binaries[name])
+		mode := os.FileMode(0o755)
+		if strings.HasPrefix(name, "vamos-linux-") {
+			mode = 0o644
+		}
+		tmpPath, err := stageTempBinary(installDir, binaries[name], mode)
 		if err != nil {
 			return fmt.Errorf("stage %s: %w", dest, err)
 		}
@@ -435,7 +439,7 @@ func commitStagedBinaries(installDir string, orderedNames []string, binaries map
 	return nil
 }
 
-func stageTempBinary(dir string, content []byte) (string, error) {
+func stageTempBinary(dir string, content []byte, mode os.FileMode) (string, error) {
 	tmp, err := os.CreateTemp(dir, ".vamos-update-*")
 	if err != nil {
 		return "", err
@@ -452,7 +456,7 @@ func stageTempBinary(dir string, content []byte) (string, error) {
 		_ = tmp.Close()
 		return "", err
 	}
-	if err := tmp.Chmod(0o755); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return "", err
 	}

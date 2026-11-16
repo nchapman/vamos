@@ -142,12 +142,24 @@ func TestUpgradeInstallsTarGzBundleAndResolvesSymlink(t *testing.T) {
 		"vamos-linux-amd64": "new-amd64",
 		"vamos-linux-arm64": "new-arm64",
 	} {
-		got, err := os.ReadFile(filepath.Join(installDir, name))
+		path := filepath.Join(installDir, name)
+		got, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
 		}
 		if string(got) != want {
 			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+		if runtime.GOOS != "windows" {
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatalf("stat %s: %v", name, err)
+			}
+			execBit := info.Mode().Perm()&0o111 != 0
+			wantExec := name == "vamos"
+			if execBit != wantExec {
+				t.Fatalf("%s mode=%o executable=%v, want %v", name, info.Mode().Perm(), execBit, wantExec)
+			}
 		}
 	}
 	if _, err := os.Stat(filepath.Join(installDir, "README.md")); !os.IsNotExist(err) {

@@ -13,15 +13,22 @@ def mismatched_executor(data):
 
 
 def run(h, executor):
+    if executor.stat().st_mode & 0o111:
+        raise AssertionError('executor payload should not have local execute permission')
+    raw = executor.read_bytes()
+    matches = list(re.finditer(rb'vamos-bundle-v1:([a-f0-9]{64}):([A-Za-z0-9][A-Za-z0-9.+_-]{0,63}):end-vamos-bundle', raw))
+    if len(matches) != 1:
+        raise AssertionError('expected one executor build marker')
+    build_id, label = matches[0].group(1), matches[0].group(2)
     client_version = h.cli('version').stdout
-    executor_version = h.command([executor, 'version']).stdout
+    executor_version = b'vamos ' + label + b' (build ' + build_id + b')\n'
     if client_version != executor_version or b'(build ' not in client_version:
         raise AssertionError('client/executor build identities do not match')
     owned_paths = [Path('/var/lib/vamos/host.json'), Path('/usr/local/lib/vamos/executor')]
     if any(path.exists() for path in owned_paths):
         raise AssertionError('version check must precede Vamos bootstrap')
     stale = h.work / 'mismatched-executor'
-    stale.write_bytes(mismatched_executor(executor.read_bytes()))
+    stale.write_bytes(mismatched_executor(raw))
     try:
         h.cli('server', 'add', '--yes', '--domain', 'versioncheck.vamos.localhost',
               '--executor', str(stale), 'versioncheck', 'root@127.0.0.1',

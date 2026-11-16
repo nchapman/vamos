@@ -153,7 +153,11 @@ func BuildFor(ctx context.Context, root, output, label, clientOS, clientArch str
 	// Copy into the output filesystem before renaming; scratch may be on another
 	// volume. Do not truncate an executable another process could be reading.
 	for _, target := range outputs {
-		if err = publish(filepath.Join(scratch, target.name), filepath.Join(output, target.name)); err != nil {
+		mode := os.FileMode(0755)
+		if strings.HasPrefix(target.name, "vamos-linux-") {
+			mode = 0644
+		}
+		if err = publish(filepath.Join(scratch, target.name), filepath.Join(output, target.name), mode); err != nil {
 			return err
 		}
 	}
@@ -268,7 +272,7 @@ func buildEnvironment(in []string) []string {
 	return out
 }
 
-func publish(source, dest string) error {
+func publish(source, dest string, mode os.FileMode) error {
 	data, err := os.ReadFile(source)
 	if err != nil {
 		return err
@@ -282,7 +286,7 @@ func publish(source, dest string) error {
 		_ = temp.Close()
 		return err
 	}
-	if err = temp.Chmod(0755); err != nil {
+	if err = temp.Chmod(mode); err != nil {
 		_ = temp.Close()
 		return err
 	}
