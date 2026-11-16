@@ -43,7 +43,7 @@ func TestMainHelpPresentation(t *testing.T) {
 					t.Errorf("missing %q in:\n%s", want, text)
 				}
 			}
-			for _, command := range []string{"apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "service bind|remove", "secrets stage|set|list", "validate", "server inspect", "server add", "server connect", "server status", "server teardown", "version", "help"} {
+			for _, command := range []string{"apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "service bind|remove", "secrets stage|set|list", "validate", "server inspect", "server add", "server upgrade", "server connect", "server status", "server teardown", "upgrade", "version", "help"} {
 				if !strings.Contains(text, "vamos "+command) {
 					t.Errorf("missing command %q", command)
 				}

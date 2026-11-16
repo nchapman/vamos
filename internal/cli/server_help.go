@@ -19,16 +19,16 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDNS is configured separately. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH."
 		names = append(names, "yes", "domain", "executor", "deploy-key")
 	case "upgrade":
-		usage = "vamos server upgrade [OPTIONS] --yes NAME [TARGET]"
-		notes = "Upgrade the installed coordinator and executor bundle as root. Requires explicit --yes.\nTARGET is optional for registered names. Started mutations survive client disconnection."
+		usage = "vamos server upgrade [OPTIONS] --yes [NAME [TARGET]]"
+		notes = "Upgrade the installed coordinator and executor bundle as root. Requires explicit --yes.\nNAME defaults to the registered default server; TARGET is optional for registered names.\nStarted mutations survive client disconnection."
 		names = append(names, "yes", "executor")
 	case "connect":
 		usage = "vamos server connect [OPTIONS] --domain DOMAIN NAME TARGET"
 		notes = "Verify an existing ready installation and register it locally. Requires root SSH.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME and DOMAIN must match the installed identity; SSH host keys must already be trusted."
 		names = append(names, "domain")
 	case "status":
-		usage = "vamos server status [OPTIONS] NAME [TARGET]"
-		notes = "Read the host lifecycle journal. TARGET is optional for registered names;\nprovide it to recover an unregistered host."
+		usage = "vamos server status [OPTIONS] [NAME [TARGET]]"
+		notes = "Read the host lifecycle journal. NAME defaults to the registered default server;\nTARGET is optional for registered names; provide it to recover an unregistered host."
 		names = append(names, "json")
 	case "teardown":
 		usage = "vamos server teardown [OPTIONS] --yes --purge NAME [TARGET]"

@@ -68,7 +68,7 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 	names := append([]string{"f", "server", "executor", "timeout"}, strings.Fields(h.flags)...)
 	printFlagDefaults(w, parsed, names...)
 	fmt.Fprintf(w, "\nExample:\n  %s\n\n", h.example)
-	fmt.Fprintln(w, "A project uses its saved server binding, or binds to the registered default on first contact.\n--server overrides only this invocation; it never changes the project binding.")
+	fmt.Fprintln(w, "A project uses its saved server binding, or binds to the selected server (defaulting to the registered default) on first contact.\nOnce bound, --server overrides only this invocation without changing the project binding.")
 	if slices.Contains(names, "app") {
 		fmt.Fprintln(w, "--app requires --server and avoids loading local configuration.")
 	}

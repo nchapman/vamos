@@ -7,7 +7,7 @@ import (
 )
 
 const serviceHelp = `Usage:
-  vamos service bind NAME --app APP --server SERVER [flags]
+  vamos service bind NAME [flags]
   vamos service remove NAME [flags]
 Bind a service locally or preview/remove a service from the selected app.
 Run vamos service bind --help or vamos service remove --help for options.
@@ -19,7 +19,7 @@ func serviceCommand(ctx context.Context, args []string, stdout, stderr io.Writer
 		return 0
 	}
 	if len(args) < 2 || (args[0] != "bind" && args[0] != "remove") {
-		return usageError(stderr, "usage: vamos service bind|remove NAME --app APP --server SERVER [--yes] [--allow-protected]")
+		return usageError(stderr, "usage: vamos service bind|remove NAME [flags]")
 	}
 	// Accept the documented name-first syntax; appCommand retains flags-first parsing.
 	rest := args[1:]

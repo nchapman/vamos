@@ -98,6 +98,10 @@ func TestServiceBindOnlyReadsStatus(t *testing.T) {
 	if err != nil || got["web"].Incarnation != "inc" {
 		t.Fatalf("%v %v", got, err)
 	}
+	bound, err := readBinding(filepath.Dir(path))
+	if err != nil || bound == nil || bound.Server != "home" || bound.App != "hello" {
+		t.Fatalf("expected service bind with manifest to bind unbound project, got %+v %v", bound, err)
+	}
 }
 func TestReAddRequiresScopedApproval(t *testing.T) {
 	for _, args := range [][]string{{"--re-add"}, {"--re-add", "--service", "web"}, {"--re-add", "--yes"}} {

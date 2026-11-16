@@ -36,11 +36,11 @@ Usage:
   vamos validate [-f vamos.yaml]           Validate local app configuration
   vamos server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   vamos server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
-  vamos server upgrade [flags] --yes NAME [TARGET]
+  vamos server upgrade [flags] --yes [NAME [TARGET]]
                                       Upgrade the coordinator and executor on a server
   vamos server connect --domain DOMAIN NAME TARGET
                                       Register an existing host without remote changes
-  vamos server status NAME [TARGET]     Read the host lifecycle journal
+  vamos server status [NAME [TARGET]]   Read the host lifecycle journal
   vamos server teardown [flags] NAME    Remove an unused owned installation
   vamos backup repository [COMMAND]      Register and inspect backup repositories
   vamos upgrade [--check] [--version VER]

@@ -82,11 +82,13 @@ func (p *presentation) renderMainHelp() string {
 		{"Manage a server", []command{
 			{"server inspect", "Inspect a host over SSH without provisioning"},
 			{"server add", "Bootstrap a dedicated Ubuntu host"},
+			{"server upgrade", "Upgrade the coordinator and executor on a server"},
 			{"server connect", "Register an existing ready host without remote changes"},
 			{"server status", "Read the host lifecycle journal"},
 			{"server teardown", "Remove an unused owned installation"},
 		}},
 		{"Reference", []command{
+			{"upgrade", "Upgrade the CLI and Linux executor binaries"},
 			{"version", "Print the build version"},
 			{"help", "Show general or command-specific help"},
 		}},
