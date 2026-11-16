@@ -18,8 +18,8 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 			"vamos deploy -f api/vamos.yaml --server home --service web",
 		},
 		"run": {
-			"vamos run [OPTIONS] --service NAME -- COMMAND [ARG...]", "service",
-			"Run captured code noninteractively: no stdin, TTY, implicit shell, or automatic retry.\nThe remote worker has a 20-minute deadline. Inspect an unknown outcome with status --run, not rerun.",
+			"vamos run [OPTIONS] [--service NAME] -- COMMAND [ARG...]", "service",
+			"Run captured code noninteractively: no stdin, TTY, implicit shell, or automatic retry.\nDefaults to the sole service when the app defines one; multi-service apps require --service.\nThe remote worker has a 20-minute deadline. Inspect an unknown outcome with status --run, not rerun.",
 			"vamos run --service web -- python migrate.py",
 		},
 		"status": {

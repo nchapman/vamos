@@ -4,19 +4,26 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nchapman/vamos/internal/deploy"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nchapman/vamos/internal/deploy"
 )
 
 func TestWorkflowInvalidOptions(t *testing.T) {
+	multiPath := filepath.Join(t.TempDir(), "vamos.yaml")
+	if err := os.WriteFile(multiPath, []byte("app: hello\nservices:\n  web:\n    image: nginx:1\n    http:\n      port: 80\n      health: /\n  worker:\n    image: nginx:1\n    command: [\"nginx\"]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		action string
 		args   []string
 	}{
 		{"deploy", []string{"--yes"}}, {"run", []string{"--service", "web"}},
-		{"run", []string{"--", "echo"}}, {"run", []string{"--service", "web", "--app", "hello", "--server", "home", "--", "echo"}},
+		{"run", []string{"-f", multiPath, "--", "echo"}}, {"run", []string{"--service", "web", "--app", "hello", "--server", "home", "--", "echo"}},
 		{"deploy", []string{"--run", "abc"}}, {"status", []string{"--run", "abc", "--service", "web"}},
 		{"logs", []string{"--run", "abc", "--candidate=false"}}, {"status", []string{"--run="}},
 	} {
@@ -40,7 +47,7 @@ func TestRunExactArgvAndExit(t *testing.T) {
 		code := 23
 		return deploy.Response{Version: 1, Run: &deploy.RunResult{Operation: r.Operation, ExitCode: &code, Output: "100% done\n"}}, nil
 	}
-	args := append([]string{"-f", path, "--service", "web", "--"}, command...)
+	args := append([]string{"-f", path, "--"}, command...)
 	if code := appCommand(context.Background(), "run", args, &out, &diagnostic, deps); code != 23 {
 		t.Fatalf("code=%d %s", code, &diagnostic)
 	}

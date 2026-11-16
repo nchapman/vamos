@@ -179,8 +179,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if runProvided && (*runOperation == "" || (action != "status" && action != "logs") || serviceProvided || candidateProvided) {
 		return usageError(stderr, "--run is status/logs only and cannot be combined with --service or --candidate")
 	}
-	if action == "run" && (*service == "" || flags.NArg() == 0) {
-		return usageError(stderr, "run requires --service and a nonempty command after --")
+	if action == "run" && flags.NArg() == 0 {
+		return usageError(stderr, "run requires a nonempty command after --")
 	}
 	if allowDowntimeProvided && action != "rollback" {
 		return usageError(stderr, "--allow-downtime is rollback only")
@@ -234,6 +234,14 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if action == "deploy" || action == "run" {
 		if err := deploy.ValidateApp(app); err != nil {
 			return lifecycleError(stderr, err)
+		}
+		if action == "run" && *service == "" {
+			if len(app.Services) != 1 {
+				return usageError(stderr, "run requires --service when the app defines multiple services")
+			}
+			for serviceName := range app.Services {
+				*service = serviceName
+			}
 		}
 	}
 	store, err := deps.Registry()
