@@ -259,4 +259,22 @@ func TestServerAddDerivesDefaultTryVamosDomainFromIPv4Target(t *testing.T) {
 			t.Fatalf("target=%s expected usage error 2, got %d: %s", nonPublic, code, &diag)
 		}
 	}
+
+	// Alias targets delegate to ResolveDomain when --domain is omitted.
+	deps.ResolveDomain = func(_ context.Context, target string) (string, error) {
+		if target == "root@alias-ok" {
+			return "8a44e377.tryvamos.dev", nil
+		}
+		return "", errors.New("lookup alias-fail: no such host; pass --domain DOMAIN")
+	}
+	out.Reset()
+	diag.Reset()
+	if code := serverLifecycle(context.Background(), "add", []string{"--yes", "aliased", "root@alias-ok"}, &out, &diag, deps); code != 0 {
+		t.Fatalf("alias add failed: code=%d diag=%s", code, &diag)
+	}
+	out.Reset()
+	diag.Reset()
+	if code := serverLifecycle(context.Background(), "add", []string{"--yes", "aliasbad", "root@alias-fail"}, &out, &diag, deps); code != 2 || !strings.Contains(diag.String(), "no such host") {
+		t.Fatalf("alias failure expected usage error 2 with lookup detail, got code=%d diag=%s", code, &diag)
+	}
 }

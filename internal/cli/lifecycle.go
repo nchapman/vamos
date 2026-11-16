@@ -385,11 +385,12 @@ func defaultServerDomain(ctx context.Context, target string) (string, error) {
 	lookupCtx, cancelLookup := context.WithTimeout(ctx, 5*time.Second)
 	defer cancelLookup()
 	addrs, err := net.DefaultResolver.LookupNetIP(lookupCtx, "ip4", host)
-	if err == nil {
-		for _, addr := range addrs {
-			if isPublicIPv4(addr) {
-				return formatTryVamosDomain(addr), nil
-			}
+	if err != nil {
+		return "", fmt.Errorf("cannot derive a default tryvamos.dev domain from TARGET (%w); pass --domain DOMAIN", err)
+	}
+	for _, addr := range addrs {
+		if isPublicIPv4(addr) {
+			return formatTryVamosDomain(addr), nil
 		}
 	}
 	return "", errors.New("cannot derive a default tryvamos.dev domain from TARGET; pass --domain DOMAIN")
