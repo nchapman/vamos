@@ -55,7 +55,7 @@ def run(h):
     h.hosts(["hello.vamos.localhost"])
     h.cli("deploy", cwd=hello)
     require((hello / ".vamos" / "server.json").is_file(), "deploy did not bind unbound project")
-    require(b"ok" in h.https("hello.vamos.localhost", "/healthz").stdout, "hello healthz did not respond")
+    require(b"ok" in h.https("hello.vamos.localhost", "/healthz"), "hello healthz did not respond")
     h.cli("destroy", "--yes", cwd=hello)
     h.cli("server", "teardown", "--yes", "--purge", "local")
     bootstrap()
