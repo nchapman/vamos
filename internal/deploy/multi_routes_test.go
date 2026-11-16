@@ -86,7 +86,7 @@ func TestMultiRoutesPreviewAndMixedLegacy(t *testing.T) {
 	if strings.Count(old, "reverse_proxy") != 2 || strings.Contains(old, "worker") {
 		t.Fatal(old)
 	}
-	if !strings.Contains(next, "notes-api.example.com {\n\treverse_proxy 127.0.0.1:12002") || !strings.Contains(next, "notes.example.com {\n\treverse_proxy 127.0.0.1:12001") {
+	if !strings.Contains(next, "notes-api.example.com {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:12002\n}") || !strings.Contains(next, "notes.example.com {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:12001\n}") || strings.Contains(next, "lb_policy") {
 		t.Fatal(next)
 	}
 	after, _ := json.Marshal(j)
@@ -107,7 +107,7 @@ func TestMultiRoutesPreviewAndMixedLegacy(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if strings.Count(next, "reverse_proxy") != 3 || !strings.Contains(next, "legacy.example.com {\n\treverse_proxy 127.0.0.1:13001") {
+	if strings.Count(next, "reverse_proxy") != 3 || !strings.Contains(next, "legacy.example.com {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:13001\n}") {
 		t.Fatal(next)
 	}
 	// Maintenance removes every own slot, not just the active service.

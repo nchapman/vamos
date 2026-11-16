@@ -279,7 +279,11 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 			out += fmt.Sprintf("\n%s {\n\trespond \"Service unavailable\" 503\n}\n", k)
 			continue
 		}
-		out += fmt.Sprintf("\n%s {\n\treverse_proxy %s\n}\n", k, routes[k])
+		if strings.Contains(routes[k], " ") {
+			out += fmt.Sprintf("\n%s {\n\tencode zstd gzip\n\treverse_proxy %s {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}\n", k, routes[k])
+			continue
+		}
+		out += fmt.Sprintf("\n%s {\n\tencode zstd gzip\n\treverse_proxy %s\n}\n", k, routes[k])
 	}
 	return out, nil
 }

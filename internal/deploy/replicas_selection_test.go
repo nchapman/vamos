@@ -161,7 +161,7 @@ func TestReplicaScopedRollbackUsesServiceHistoryAndAllCustomUpstreams(t *testing
 		upstreams = append(upstreams, "127.0.0.1:"+*ref.Port)
 	}
 	for _, host := range []string{"notes.example.com", "www.notes.example.net"} {
-		want := host + " {\n\treverse_proxy " + strings.Join(upstreams, " ") + "\n}"
+		want := host + " {\n\tencode zstd gzip\n\treverse_proxy " + strings.Join(upstreams, " ") + " {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}"
 		if !strings.Contains(routes, want) {
 			t.Fatalf("missing full ordered upstream set for %s: %s", host, routes)
 		}
