@@ -55,6 +55,47 @@ services:
 	}
 }
 
+func TestDecodeShorthandsAndDefaults(t *testing.T) {
+	app, err := config.Decode(strings.NewReader(`
+app: notes
+services:
+  web:
+    build: .
+    http:
+      port: 8080
+    volume: data:/data
+  api:
+    build:
+      context: ./api
+    http:
+      port: 8081
+  worker:
+    build:
+      dockerfile: Dockerfile.worker
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	web := app.Services["web"]
+	if web.Build == nil || web.Build.Context != "." || web.Build.Dockerfile != "Dockerfile" {
+		t.Fatalf("unexpected web build: %+v", web.Build)
+	}
+	if web.HTTP == nil || web.HTTP.Port != 8080 || web.HTTP.Health != "/" {
+		t.Fatalf("unexpected web http: %+v", web.HTTP)
+	}
+	if web.Volume == nil || web.Volume.Name != "data" || web.Volume.Mount != "/data" {
+		t.Fatalf("unexpected web volume: %+v", web.Volume)
+	}
+	api := app.Services["api"]
+	if api.Build == nil || api.Build.Context != "./api" || api.Build.Dockerfile != "Dockerfile" {
+		t.Fatalf("unexpected api build: %+v", api.Build)
+	}
+	worker := app.Services["worker"]
+	if worker.Build == nil || worker.Build.Context != "." || worker.Build.Dockerfile != "Dockerfile.worker" {
+		t.Fatalf("unexpected worker build: %+v", worker.Build)
+	}
+}
+
 func TestDecodeRejectsInvalidDocuments(t *testing.T) {
 	tests := []struct {
 		name, input, want string
@@ -86,29 +127,33 @@ func TestDecodeRejectsInvalidServices(t *testing.T) {
 		{"both sources", "image: app:v1\n    build: {context: ., dockerfile: Dockerfile}", "exactly one"},
 		{"unknown field", "image: app:v1\n    lifecycle: persistent", "lifecycle"},
 		{"unknown nested field", "build: {context: ., dockerfile: Dockerfile, typo: true}", "typo"},
-		{"missing build context", "build: {dockerfile: Dockerfile}", "build.context"},
+		{"empty build context", "build: {context: '', dockerfile: Dockerfile}", "build.context"},
+		{"empty build string", "build: ''", "build.context"},
 		{"absolute build context", "build: {context: /tmp/app, dockerfile: Dockerfile}", "build.context"},
-		{"missing Dockerfile", "build: {context: .}", "build.dockerfile"},
+		{"empty Dockerfile", "build: {context: ., dockerfile: ''}", "build.dockerfile"},
 		{"escaping Dockerfile", "build: {context: ., dockerfile: ../Dockerfile}", "build.dockerfile"},
 		{"absolute Dockerfile", "build: {context: ., dockerfile: /Dockerfile}", "build.dockerfile"},
 		{"invalid image whitespace", "image: ' app:v1'", "image must"},
+		{"invalid image reference", "image: UPPERCASE:v1", "invalid image reference"},
 		{"invalid update policy", "image: app:v1\n    update: automatic", "update must"},
-		{"string command", "image: app:v1\n    command: echo hi", "decode YAML"},
+		{"string command", "image: app:v1\n    command: echo hi", "must be a YAML list of arguments"},
 		{"empty command", "image: app:v1\n    command: []", "nonempty executable"},
 		{"empty executable", "image: app:v1\n    command: ['', argument]", "nonempty executable"},
 		{"NUL argument", "image: app:v1\n    command: [\"app\\0\"]", "command must not contain NUL"},
 		{"invalid env name", "image: app:v1\n    env: {BAD-NAME: value}", "environment variable name"},
 		{"NUL env value", "image: app:v1\n    env: {TOKEN: \"value\\0\"}", "must not contain NUL"},
-		{"invalid secret name", "image: app:v1\n    secrets: {TOKEN: BAD_NAME}", "DNS-label secret name"},
+		{"invalid secret name", "image: app:v1\n    secrets: {TOKEN: BAD_NAME}", "bad-name"},
 		{"invalid secret env name", "image: app:v1\n    secrets: {BAD-NAME: token}", "environment variable name"},
 		{"env secret collision", "image: app:v1\n    env: {TOKEN: literal}\n    secrets: {TOKEN: token}", "both env and secrets"},
 		{"zero HTTP port", "image: app:v1\n    http: {port: 0, health: /ready}", "http.port"},
 		{"large HTTP port", "image: app:v1\n    http: {port: 65536, health: /ready}", "http.port"},
-		{"missing health path", "image: app:v1\n    http: {port: 80}", "http.health"},
+		{"empty health path", "image: app:v1\n    http: {port: 80, health: ''}", "http.health"},
 		{"absolute health URL", "image: app:v1\n    http: {port: 80, health: 'https://example.com/'}", "http.health"},
 		{"network health URL", "image: app:v1\n    http: {port: 80, health: '//example.com/'}", "http.health"},
 		{"health fragment", "image: app:v1\n    http: {port: 80, health: '/ready#fragment'}", "http.health"},
 		{"relative volume", "image: app:v1\n    volume: {name: data, mount: data}", "absolute container directory"},
+		{"relative volume shorthand", "image: app:v1\n    volume: data:data", "absolute container directory"},
+		{"missing colon volume shorthand", "image: app:v1\n    volume: data", "NAME:/container/path"},
 		{"root volume", "image: app:v1\n    volume: {name: data, mount: /}", "absolute container directory"},
 		{"unclean volume", "image: app:v1\n    volume: {name: data, mount: /data/../other}", "absolute container directory"},
 		{"invalid volume name", "image: app:v1\n    volume: {name: /host/path, mount: /data}", "volume name"},

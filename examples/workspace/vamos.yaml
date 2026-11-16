@@ -1,9 +1,7 @@
 app: workspace
 services:
   web:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    build: ./frontend
     env:
       API_ORIGIN: https://api.workspace.example.com
     http:
@@ -13,9 +11,7 @@ services:
         - workspace.example.com
         - www.workspace.example.com
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    build: ./api
     env:
       RENDER_URL: http://renderer:8080
     http:
@@ -24,6 +20,4 @@ services:
       domains:
         - api.workspace.example.com
   renderer:
-    build:
-      context: ./renderer
-      dockerfile: Dockerfile
+    build: ./renderer

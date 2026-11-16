@@ -246,30 +246,11 @@ func ValidateApp(a *config.App) error {
 	if a == nil {
 		return errors.New("config required")
 	}
-	if err := a.Validate(); err != nil {
-		return err
-	}
-	if len(a.Services) > MaxServices {
-		return fmt.Errorf("at most %d services are supported", MaxServices)
-	}
-	mappings := 0
 	for name, s := range a.Services {
 		s.NormalizeReplicas()
 		a.Services[name] = s
-		if s.Image != "" {
-			if err := validImageReference(s.Image); err != nil {
-				return fmt.Errorf("service %s: %w", name, err)
-			}
-		}
-		if s.HTTP != nil && name != "web" && len(a.Name+"-"+name) > 63 {
-			return fmt.Errorf("service %s: generated hostname label exceeds 63 bytes", name)
-		}
-		mappings += len(s.Secrets)
 	}
-	if mappings > secrets.MaxNames {
-		return errors.New("at most 64 secret environment mappings across the app are supported")
-	}
-	return nil
+	return a.Validate()
 }
 
 func validateLegacyApp(a *config.App) error {

@@ -9,6 +9,9 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+
+	"github.com/distribution/reference"
 )
 
 var (
@@ -29,8 +32,12 @@ func (a App) Validate() error {
 	if len(a.Services) == 0 {
 		add("services must contain at least one service")
 	}
+	if len(a.Services) > MaxServices {
+		add("at most %d services are supported", MaxServices)
+	}
 
 	totalReplicas := 0
+	totalSecrets := 0
 	domains := make(map[string]string)
 	volumes := make(map[string]string)
 	for _, name := range sortedKeys(a.Services) {
@@ -63,6 +70,8 @@ func (a App) Validate() error {
 		}
 		if strings.ContainsAny(s.Image, " \t\r\n\x00") {
 			add("%s.image must not contain whitespace or NUL", prefix)
+		} else if s.Image != "" && !ValidImageReference(s.Image) {
+			add("%s.image: invalid image reference", prefix)
 		}
 		if s.Update != UpdateAuto && s.Update != UpdateManual {
 			add("%s.update must be auto or manual", prefix)
@@ -84,18 +93,22 @@ func (a App) Validate() error {
 				add("%s.env.%s must not contain NUL", prefix, key)
 			}
 		}
+		totalSecrets += len(s.Secrets)
 		for _, key := range sortedKeys(s.Secrets) {
 			if !envPattern.MatchString(key) {
 				add("%s.secrets: invalid environment variable name %q", prefix, key)
 			}
 			if !validLabel(s.Secrets[key]) {
-				add("%s.secrets.%s must reference a lowercase DNS-label secret name", prefix, key)
+				add("%s.secrets.%s: secret name %q must reference a lowercase DNS-label secret name (e.g. %q)", prefix, key, s.Secrets[key], suggestSecretName(s.Secrets[key]))
 			}
 			if _, exists := s.Env[key]; exists {
 				add("%s: %s cannot appear in both env and secrets", prefix, key)
 			}
 		}
 		if s.HTTP != nil {
+			if name != "web" && len(a.Name+"-"+name) > 63 {
+				add("%s: generated hostname label exceeds 63 bytes", prefix)
+			}
 			if len(s.HTTP.Domains) > 8 {
 				add("%s.http.domains: at most 8 aliases per service are supported", prefix)
 			}
@@ -155,10 +168,44 @@ func (a App) Validate() error {
 	if totalReplicas > MaxAppReplicas {
 		add("at most %d replicas per app are supported", MaxAppReplicas)
 	}
+	if totalSecrets > MaxSecretMappings {
+		add("at most %d secret environment mappings across the app are supported", MaxSecretMappings)
+	}
 	if len(domains) > 32 {
 		add("at most 32 custom domains per app are supported")
 	}
 	return errors.Join(issues...)
+}
+
+// ValidImageReference reports whether ref is a valid normalized Docker image reference.
+func ValidImageReference(ref string) bool {
+	if len(ref) == 0 || len(ref) > 1024 || strings.HasPrefix(ref, "-") || strings.Contains(ref, "://") || strings.ContainsFunc(ref, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+		return false
+	}
+	_, err := reference.ParseNormalizedNamed(ref)
+	return err == nil
+}
+
+func suggestSecretName(raw string) string {
+	var b strings.Builder
+	lastHyphen := false
+	for _, r := range strings.ToLower(raw) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastHyphen = false
+		} else if !lastHyphen && b.Len() > 0 {
+			b.WriteByte('-')
+			lastHyphen = true
+		}
+	}
+	out := strings.TrimRight(b.String(), "-")
+	if out == "" {
+		return "my-secret"
+	}
+	if len(out) > 63 {
+		out = strings.TrimRight(out[:63], "-")
+	}
+	return out
 }
 
 func validLabel(value string) bool {

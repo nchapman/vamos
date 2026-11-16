@@ -59,7 +59,7 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 	health := flags.String("health", "/", "HTTP health path")
 	private := flags.Bool("private", false, "private service without HTTP")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: vamos init APP --port PORT [-f vamos.yaml] [--server NAME] [--service NAME] [--health PATH]\n       vamos init APP --private [-f vamos.yaml] [--server NAME] [--service NAME]")
+		fmt.Fprintln(flags.Output(), "Usage: vamos init [APP] --port PORT [-f vamos.yaml] [--server NAME] [--service NAME] [--health PATH]\n       vamos init [APP] --private [-f vamos.yaml] [--server NAME] [--service NAME]")
 	}
 	normalized, err := initArguments(args)
 	if err != nil {
@@ -73,21 +73,39 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 	}
 	provided := map[string]bool{}
 	flags.Visit(func(f *flag.Flag) { provided[f.Name] = true })
-	if flags.NArg() != 1 || *filename == "" || (provided["server"] && *serverName == "") {
-		return usageError(stderr, "init requires one APP and nonempty output/server options")
+	if flags.NArg() > 1 || *filename == "" || (provided["server"] && *serverName == "") {
+		return usageError(stderr, "init accepts at most one APP and nonempty output/server options")
 	}
-	if (*private && (provided["port"] || provided["health"])) || (!*private && !provided["port"]) {
-		return usageError(stderr, "public init requires --port; --private cannot be combined with --port or --health")
+	if *private && (provided["port"] || provided["health"]) {
+		return usageError(stderr, "--private cannot be combined with --port or --health")
+	}
+	if !*private && !provided["port"] {
+		return usageError(stderr, "specify --port PORT for a public HTTP service, or --private for an internal service")
+	}
+	path, err := filepath.Abs(*filename)
+	if err != nil {
+		return lifecycleError(stderr, err)
+	}
+	dir := filepath.Dir(path)
+	appName := flags.Arg(0)
+	if flags.NArg() == 0 {
+		appName = strings.ToLower(filepath.Base(dir))
 	}
 	svc := config.Service{Build: &config.Build{Context: ".", Dockerfile: "Dockerfile"}}
 	if !*private {
 		svc.HTTP = &config.HTTP{Port: *port, Health: *health}
 	}
-	app := &config.App{Name: flags.Arg(0), Services: map[string]config.Service{*service: svc}}
-	data, err := yaml.Marshal(app)
-	if err != nil {
+	app := &config.App{Name: appName, Services: map[string]config.Service{*service: svc}}
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(app); err != nil {
 		return lifecycleError(stderr, err)
 	}
+	if err := enc.Close(); err != nil {
+		return lifecycleError(stderr, err)
+	}
+	data := buf.Bytes()
 	validated, err := config.Decode(bytes.NewReader(data))
 	if err != nil {
 		return usageError(stderr, err.Error())
@@ -95,11 +113,6 @@ func initCommand(args []string, stdout, stderr io.Writer, registryFn func() (*re
 	if err := deploy.ValidateApp(validated); err != nil {
 		return usageError(stderr, err.Error())
 	}
-	path, err := filepath.Abs(*filename)
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
-	dir := filepath.Dir(path)
 	if filepath.Base(path) == ".vamos" {
 		return lifecycleError(stderr, errors.New("output conflicts with .vamos metadata"))
 	}

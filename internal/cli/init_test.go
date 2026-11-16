@@ -115,6 +115,9 @@ func TestInitGenerationAndBindings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if !strings.Contains(string(before), "\n  "+name+":\n") {
+				t.Fatalf("expected 2-space YAML indentation, got:\n%s", before)
+			}
 			if initCommand(args, &out, &diagnostic, reg) == 0 {
 				t.Fatal("overwrote config")
 			}
@@ -126,14 +129,25 @@ func TestInitGenerationAndBindings(t *testing.T) {
 	}
 }
 func TestInitFlagHandlingAndValidation(t *testing.T) {
-	for _, args := range [][]string{{"notes", "--port", "80"}, {"--port", "80", "notes"}, {"--port=80", "notes", "--service=api"}, {"--service", "api", "notes", "--port", "80"}, {"--port", "80", "--", "notes"}} {
+	for _, args := range [][]string{{"notes", "--port", "80"}, {"--port", "80"}, {"--port", "80", "notes"}, {"--port=80", "notes", "--service=api"}, {"--service", "api", "notes", "--port", "80"}, {"--port", "80", "--", "notes"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			dir, _, reg := initFixture(t)
+			base, _, reg := initFixture(t)
+			dir := filepath.Join(base, "my-app")
+			if err := os.Mkdir(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
 			var out, diag bytes.Buffer
 			// Put the output option before --, if present.
-			args = append([]string{"-f", filepath.Join(dir, "vamos.yaml")}, args...)
+			path := filepath.Join(dir, "vamos.yaml")
+			args = append([]string{"-f", path}, args...)
 			if code := initCommand(args, &out, &diag, reg); code != 0 {
 				t.Fatalf("%d %s", code, &diag)
+			}
+			if len(args) == 4 { // ["-f", path, "--port", "80"]
+				loaded, err := config.Load(path)
+				if err != nil || loaded.Name != "my-app" {
+					t.Fatalf("expected inferred app name my-app, got %+v err=%v", loaded, err)
+				}
 			}
 		})
 	}

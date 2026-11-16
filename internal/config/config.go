@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -34,8 +36,12 @@ type Release struct {
 	Command []string `yaml:"command"`
 }
 
-const MaxReplicas = 8
-const MaxAppReplicas = 32
+const (
+	MaxServices       = 8
+	MaxReplicas       = 8
+	MaxAppReplicas    = 32
+	MaxSecretMappings = 64
+)
 
 // ReplicaCount returns the effective per-service count; omission is one.
 func (s Service) ReplicaCount() int {
@@ -98,15 +104,102 @@ type Build struct {
 	Dockerfile string `yaml:"dockerfile"`
 }
 
+func (b *Build) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode && value.ShortTag() == "!!str" {
+		*b = Build{Context: value.Value, Dockerfile: "Dockerfile"}
+		return nil
+	}
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("line %d: build must be a context path string or a {context, dockerfile} mapping", value.Line)
+	}
+	if err := checkMappingKeys(value, "config.Build", "context", "dockerfile"); err != nil {
+		return err
+	}
+	var raw struct {
+		Context    *string `yaml:"context"`
+		Dockerfile *string `yaml:"dockerfile"`
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	b.Context = "."
+	if raw.Context != nil {
+		b.Context = *raw.Context
+	}
+	b.Dockerfile = "Dockerfile"
+	if raw.Dockerfile != nil {
+		b.Dockerfile = *raw.Dockerfile
+	}
+	return nil
+}
+
 type HTTP struct {
 	Port    int      `yaml:"port"`
 	Health  string   `yaml:"health"`
 	Domains []string `yaml:"domains,omitempty"`
 }
 
+func (h *HTTP) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("line %d: http must be a mapping", value.Line)
+	}
+	if err := checkMappingKeys(value, "config.HTTP", "port", "health", "domains"); err != nil {
+		return err
+	}
+	var raw struct {
+		Port    int      `yaml:"port"`
+		Health  *string  `yaml:"health"`
+		Domains []string `yaml:"domains,omitempty"`
+	}
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	h.Port = raw.Port
+	h.Health = "/"
+	if raw.Health != nil {
+		h.Health = *raw.Health
+	}
+	h.Domains = raw.Domains
+	return nil
+}
+
 type Volume struct {
 	Name  string `yaml:"name"`
 	Mount string `yaml:"mount"`
+}
+
+func (v *Volume) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode && value.ShortTag() == "!!str" {
+		name, mount, ok := strings.Cut(value.Value, ":")
+		if !ok {
+			return fmt.Errorf("line %d: volume shorthand must be NAME:/container/path", value.Line)
+		}
+		*v = Volume{Name: name, Mount: mount}
+		return nil
+	}
+	if value.Kind != yaml.MappingNode {
+		return fmt.Errorf("line %d: volume must be NAME:/container/path or a {name, mount} mapping", value.Line)
+	}
+	if err := checkMappingKeys(value, "config.Volume", "name", "mount"); err != nil {
+		return err
+	}
+	type volumeYAML Volume
+	var raw volumeYAML
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*v = Volume(raw)
+	return nil
+}
+
+func checkMappingKeys(node *yaml.Node, typeName string, allowed ...string) error {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if !slices.Contains(allowed, key.Value) {
+			return fmt.Errorf("line %d: field %s not found in type %s", key.Line, key.Value, typeName)
+		}
+	}
+	return nil
 }
 
 const maxConfigBytes = 1 << 20
@@ -153,6 +246,9 @@ func Decode(r io.Reader) (*App, error) {
 		if errors.Is(err, io.EOF) {
 			return nil, errors.New("configuration is empty")
 		}
+		if hint := commandListHint(data); hint != "" {
+			return nil, fmt.Errorf("decode YAML: %s", hint)
+		}
 		return nil, fmt.Errorf("decode YAML: %w", err)
 	}
 	var extra any
@@ -174,4 +270,44 @@ func Decode(r io.Reader) (*App, error) {
 		return nil, err
 	}
 	return &app, nil
+}
+
+func commandListHint(data []byte) string {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc.Content) == 0 {
+		return ""
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return ""
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		k, v := root.Content[i], root.Content[i+1]
+		if k.Value == "release" && v.Kind == yaml.MappingNode {
+			if cmd := lookupMappingValue(v, "command"); cmd != nil && cmd.Kind == yaml.ScalarNode && cmd.ShortTag() == "!!str" {
+				return fmt.Sprintf("line %d: release.command must be a YAML list of arguments (e.g. [\"bin/release\"]), not a shell string", cmd.Line)
+			}
+		}
+		if k.Value == "services" && v.Kind == yaml.MappingNode {
+			for j := 0; j+1 < len(v.Content); j += 2 {
+				svcName, svcNode := v.Content[j], v.Content[j+1]
+				if cmd := lookupMappingValue(svcNode, "command"); cmd != nil && cmd.Kind == yaml.ScalarNode && cmd.ShortTag() == "!!str" {
+					return fmt.Sprintf("line %d: services.%s.command must be a YAML list of arguments (e.g. [\"bundle\", \"exec\", \"puma\"]), not a shell string", cmd.Line, svcName.Value)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func lookupMappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
 }

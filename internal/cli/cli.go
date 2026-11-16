@@ -18,7 +18,7 @@ const help = `Vamos — a small app platform for one server
 
 Usage:
   vamos apps [--server NAME] [--json]      List app deployment and retained state
-  vamos init APP --port PORT              Write a minimal configuration without overwriting
+  vamos init [APP] --port PORT            Write a minimal configuration without overwriting
   vamos exec [--service NAME] [-i] [-t] -- COMMAND
                                         Run a command inside an existing service
   vamos console [--service NAME]          Open an interactive shell in an existing service
