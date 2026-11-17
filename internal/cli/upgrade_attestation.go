@@ -174,11 +174,11 @@ func verifyReleaseAttestation(ctx context.Context, deps upgradeDeps, currentVers
 
 	var lastErr error
 	for _, entry := range parsed.Attestations {
-		if err := verifyAttestationBundle(entry.Bundle, version, archiveName, sumsHash, archiveHash, roots, intermediates); err == nil {
+		err := verifyAttestationBundle(entry.Bundle, version, archiveName, sumsHash, archiveHash, roots, intermediates)
+		if err == nil {
 			return nil
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 	}
 	return fmt.Errorf("build provenance verification failed: %w", lastErr)
 }
