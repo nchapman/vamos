@@ -1,5 +1,5 @@
 [tools]
-go = "1.27.1"
+go = "1.27.4"
 
 [env]
 # Keep Go's automatic toolchain downloader from overriding the mise pin.

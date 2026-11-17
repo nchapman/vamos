@@ -128,7 +128,7 @@ The local CLI does not require Docker, systemd, or Linux. Server lifecycle comma
 
 ## Development
 
-Prerequisites: [mise](https://mise.jdx.dev/getting-started.html) (pins Go `1.27.1`) and a C toolchain for `-race` tests.
+Prerequisites: [mise](https://mise.jdx.dev/getting-started.html) (pins Go `1.27.4`) and a C toolchain for `-race` tests.
 
 ```sh
 mise trust && mise install # Install pinned Go toolchain

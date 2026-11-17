@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"net"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -53,8 +54,12 @@ func ValidateConfig(c Config) error {
 		return errConfig
 	}
 	host := u.Hostname()
-	if net.ParseIP(host) == nil {
-		if len(host) > 253 {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if !validEndpointAddr(ip) {
+			return errConfig
+		}
+	} else {
+		if len(host) > 253 || strings.Contains(host, ":") {
 			return errConfig
 		}
 		for _, label := range strings.Split(host, ".") {
@@ -89,6 +94,11 @@ func ValidateConfig(c Config) error {
 		}
 	}
 	return nil
+}
+
+func validEndpointAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return ip.IsValid() && !ip.IsUnspecified() && !ip.IsMulticast() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
 }
 func ValidateCredentials(c Credentials) error {
 	for i, v := range []string{c.AccessKeyID, c.SecretAccessKey, c.SessionToken} {

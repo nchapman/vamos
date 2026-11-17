@@ -27,6 +27,11 @@ func TestHTTPFeaturesAreIndependentPerRoute(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			for _, setting := range []string{"default_cache_control no-store", "max_cacheable_body_bytes 10485760", "headers Authorization", "hide"} {
+				if !strings.Contains(routes, setting) {
+					t.Fatalf("missing global cache setting %q in rendered Caddyfile: %s", setting, routes)
+				}
+			}
 			api := strings.Split(strings.Split(routes, "\nnotes-api.example.com {\n")[1], "\n}\n")[0]
 			web := strings.Split(strings.Split(routes, "\nnotes.example.com {\n")[1], "\n}\n")[0]
 			for name, directive := range map[string]string{"waf": "\tcoraza_waf {", "cache": "\tcache\n", "compression": "\tencode zstd gzip\n"} {

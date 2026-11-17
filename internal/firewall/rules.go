@@ -24,13 +24,13 @@ func (p plan) rules(family string) []string {
 	}
 	r := []string{in + "-m conntrack --ctstate INVALID -j DROP", in + "! -i lo -d " + loopback + " -j DROP", in + "-i lo -j ACCEPT", in + "-m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT"}
 	if family == "iptables" {
-		r = append(r, in+"-p icmp -j ACCEPT", in+"-p udp --sport 67 --dport 68 -j ACCEPT")
+		r = append(r, in+"-d 169.254.0.0/16 -j DROP", in+"-p icmp -j ACCEPT", in+"-p udp --sport 67 --dport 68 -j ACCEPT")
 	} else {
 		// ICMPv6 includes PMTU and neighbor/router discovery required by IPv6.
 		r = append(r, in+"-p ipv6-icmp -j ACCEPT", in+"-s fe80::/10 -p udp --sport 547 --dport 546 -j ACCEPT")
 	}
 	for _, port := range p.SSHPorts {
-		r = append(r, fmt.Sprintf("%s-p tcp --dport %d -j ACCEPT", in, port))
+		r = append(r, fmt.Sprintf("%s! -i br-+ -p tcp --dport %d -j ACCEPT", in, port))
 	}
 	r = append(r, in+"-p tcp --dport 80 -j ACCEPT", in+"-p tcp --dport 443 -j ACCEPT", in+"-p udp --dport 443 -j ACCEPT", in+"-j DROP")
 	r = append(r, fw+"-m conntrack --ctstate INVALID -j DROP")
@@ -40,7 +40,7 @@ func (p plan) rules(family string) []string {
 	}
 	r = append(r, fw+"-m conntrack --ctstate RELATED,ESTABLISHED -j RETURN")
 	for _, b := range p.Bridges {
-		r = append(r, fw+"-i "+b+" -j RETURN")
+		r = append(r, fw+"-i "+b+" -d 169.254.0.0/16 -j DROP", fw+"-i "+b+" -j RETURN")
 	}
 	for _, b := range p.Bridges {
 		for _, protocol := range []string{"tcp", "udp"} {

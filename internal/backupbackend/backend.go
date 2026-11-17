@@ -7,12 +7,15 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -42,7 +45,17 @@ func (b *Backend) CheckEmpty(ctx context.Context, c Config, k Credentials) error
 	if k.CACertificate != "" {
 		roots.AppendCertsFromPEM([]byte(k.CACertificate))
 	}
-	tr := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}, ResponseHeaderTimeout: 10 * time.Second}
+	dialer := &net.Dialer{
+		Timeout: 10 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			addrPort, err := netip.ParseAddrPort(address)
+			if err != nil || !validEndpointAddr(addrPort.Addr()) {
+				return errConfig
+			}
+			return nil
+		},
+	}
+	tr := &http.Transport{DialContext: dialer.DialContext, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}, ResponseHeaderTimeout: 10 * time.Second}
 	defer tr.CloseIdleConnections()
 	client := &http.Client{Transport: boundedTransport{tr}, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errBackend }}
 	svc := s3.New(s3.Options{Region: c.Region, BaseEndpoint: aws.String(c.Endpoint), UsePathStyle: c.Lookup == "path", Credentials: credentials.NewStaticCredentialsProvider(k.AccessKeyID, k.SecretAccessKey, k.SessionToken), HTTPClient: client, RetryMaxAttempts: 1})

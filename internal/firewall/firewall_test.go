@@ -11,16 +11,19 @@ func TestRulesBoundaries(t *testing.T) {
 	for _, family := range []string{"iptables", "ip6tables"} {
 		rules := p.rules(family)
 		text := strings.Join(rules, "\n")
-		for _, want := range []string{"--dport 2222", "--dport 443", "-j DROP"} {
+		for _, want := range []string{"! -i br-+ -p tcp --dport 2222 -j ACCEPT", "--dport 443", "-j DROP"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s missing %s", family, want)
 			}
 		}
 		if family == "iptables" {
-			for _, want := range []string{"-i br-+ -j RETURN", "-i vamos-build0 -j RETURN", "--ctstate DNAT --ctdir ORIGINAL", "-p tcp", "-p udp"} {
+			for _, want := range []string{"-A VAMOS-FW-IN -d 169.254.0.0/16 -j DROP", "-A VAMOS-FW-FWD -i br-+ -d 169.254.0.0/16 -j DROP", "-i br-+ -j RETURN", "-i vamos-build0 -j RETURN", "--ctstate DNAT --ctdir ORIGINAL", "-p tcp", "-p udp"} {
 				if !strings.Contains(text, want) {
 					t.Fatal(want)
 				}
+			}
+			if strings.Index(text, "-i br-+ -d 169.254.0.0/16 -j DROP") > strings.Index(text, "-i br-+ -j RETURN") {
+				t.Fatal("link-local metadata drop must precede bridge RETURN")
 			}
 		} else if strings.Contains(text, "-j RETURN") {
 			t.Fatal("IPv6 forwarding allowed")

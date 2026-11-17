@@ -23,7 +23,7 @@ func TestValidation(t *testing.T) {
 	if ValidateConfig(config()) != nil || ValidateCredentials(creds()) != nil {
 		t.Fatal("valid input")
 	}
-	for _, v := range []string{"http://host", "https://user@host", "https://host/", "https://host?", "https://host#fragment", "https://host/a", "https://host\\x"} {
+	for _, v := range []string{"http://host", "https://user@host", "https://host/", "https://host?", "https://host#fragment", "https://host/a", "https://host\\x", "https://169.254.169.254", "https://[fe80::1]", "https://[::ffff:169.254.169.254]", "https://0.0.0.0", "https://[::]", "https://224.0.0.1"} {
 		c := config()
 		c.Endpoint = v
 		if ValidateConfig(c) == nil {
