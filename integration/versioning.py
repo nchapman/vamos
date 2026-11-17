@@ -30,7 +30,7 @@ def run(h, executor):
     stale = h.work / 'mismatched-executor'
     stale.write_bytes(mismatched_executor(raw))
     try:
-        h.cli('server', 'add', '--yes', '--domain', 'versioncheck.vamos.localhost',
+        h.cli('server', 'add', '--yes', '--firewall=false', '--domain', 'versioncheck.vamos.localhost',
               '--executor', str(stale), 'versioncheck', 'root@127.0.0.1',
               expect_error='does not match client build')
         if any(path.exists() for path in owned_paths):

@@ -448,6 +448,9 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	if err := m.verifyFilesFor(s, true); err != nil {
 		return nil, err
 	}
+	if err := m.checkFirewall(ctx, s.ID); err != nil {
+		return nil, err
+	}
 	if err := m.verifyQueueIdle(); err != nil {
 		return nil, err
 	}
@@ -544,7 +547,10 @@ func (m *Manager) health(ctx context.Context, s *State) error {
 	if _, err := m.command(ctx, name, args...); err != nil {
 		return err
 	}
-	return m.checkCaddyRuntime(ctx)
+	if err := m.checkCaddyRuntime(ctx); err != nil {
+		return err
+	}
+	return m.checkFirewall(ctx, s.ID)
 }
 
 func (m *Manager) mask(ctx context.Context) error {

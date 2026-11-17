@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/nchapman/vamos/internal/host"
@@ -16,10 +17,12 @@ import (
 
 const serverHelp = `Usage:
   vamos server inspect [--json] [--timeout 15s] TARGET
-  vamos server add --yes [--domain DOMAIN] [--executor FILE] NAME TARGET
+  vamos server add --yes --firewall=true|false [--domain DOMAIN] [--executor FILE] NAME TARGET
   vamos server upgrade --yes [--executor FILE] [NAME [TARGET]]
   vamos server connect [--domain DOMAIN] NAME TARGET
   vamos server status [--json] [NAME [TARGET]]
+  vamos server firewall enable|disable --yes [NAME]
+  vamos server firewall status [--json] [NAME]
   vamos server teardown --yes --purge [--executor FILE] NAME [TARGET]
 
 TARGET is an SSH alias or [user@]host (unbracketed IPv6 is supported).
@@ -27,12 +30,21 @@ Use SSH config for ports, identities, and jump hosts. Flags precede TARGET.
 Requires an already trusted host key and noninteractive key/agent authentication.
 Inspect is read-only. Connect verifies an existing ready host and registers it locally;
 it requires root but makes no remote changes. Add and teardown require root and explicit --yes.
+Add prompts for a firewall choice on interactive stdin; scripts must pass --firewall=true|false.
+Managed firewall is opt-in dedicated-host protection with automatic Docker public publishing.
+Disable removes protection only; unsupported existing firewall configurations are refused.
 Upgrade replaces only the matching installed coordinator/executor bundle after ownership checks.
 Teardown refuses workloads and changed managed resources; --purge deletes owned data.
 TARGET is optional for registered names; provide it to recover an unregistered host.
 `
 
 func server(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	return serverWithInput(ctx, args, os.Stdin, stdout, stderr)
+}
+
+func serverWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	deps := defaultLifecycleDeps()
+	deps.Input = stdin
 	if len(args) == 0 || (len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help")) {
 		_ = writeHelpText(stdout, serverHelp)
 		return 0
@@ -40,8 +52,10 @@ func server(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "inspect":
 		return inspectServer(ctx, args[1:], stdout, stderr, ssh.Inspect)
+	case "firewall":
+		return serverFirewall(ctx, args[1:], stdout, stderr, deps)
 	case "add", "upgrade", "connect", "status", "teardown":
-		return serverLifecycle(ctx, args[0], args[1:], stdout, stderr, defaultLifecycleDeps())
+		return serverLifecycle(ctx, args[0], args[1:], stdout, stderr, deps)
 	default:
 		return usageError(stderr, "unknown server command")
 	}

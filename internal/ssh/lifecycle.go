@@ -153,16 +153,7 @@ func RunLifecycle(ctx context.Context, target string, request executor.Request, 
 }
 
 func runLifecycle(ctx context.Context, target string, request executor.Request, binary []byte, run runProcess) (*lifecycle.State, error) {
-	if err := ValidateTarget(target); err != nil {
-		return nil, err
-	}
-	payload, err := archiveRequest(request, binary)
-	if err != nil {
-		return nil, err
-	}
-	// This command is assembled only from an embedded constant, never request fields.
-	command := "/bin/sh -c '" + strings.ReplaceAll(bootstrapScript, "'", "'\\''") + "'"
-	result, runErr := run(ctx, "ssh", arguments(target, command), payload)
+	result, runErr := runStagedRequest(ctx, target, request, binary, run)
 	var response executor.Response
 	parseErr := decodeJSON(result.Stdout, &response)
 	if parseErr == nil && response.Version == executor.Version && response.Error != nil {
@@ -223,4 +214,18 @@ func decodeJSON(data []byte, value any) error {
 		return errors.New("expected exactly one JSON response")
 	}
 	return nil
+}
+
+// runStagedRequest opens a new, non-multiplexed SSH connection for each call.
+func runStagedRequest(ctx context.Context, target string, request executor.Request, binary []byte, run runProcess) (process.Result, error) {
+	if err := ValidateTarget(target); err != nil {
+		return process.Result{}, err
+	}
+	payload, err := archiveRequest(request, binary)
+	if err != nil {
+		return process.Result{}, err
+	}
+	// This command is assembled only from an embedded constant, never request fields.
+	command := "/bin/sh -c '" + strings.ReplaceAll(bootstrapScript, "'", "'\\''") + "'"
+	return run(ctx, "ssh", arguments(target, command), payload)
 }

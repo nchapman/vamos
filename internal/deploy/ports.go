@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/firewall"
 )
 
 type portBinding = struct{ HostIP, HostPort string }
@@ -173,7 +174,7 @@ func (m *Manager) reservePorts(ctx context.Context, j *journal) error {
 	if err != nil {
 		return err
 	}
-	return reserveJournalPorts(all)
+	return m.reserveManagedPorts(all, j.HostID)
 }
 
 // Publish claims atomically under the existing host-wide ingress lock. Other
@@ -192,10 +193,36 @@ func (m *Manager) savePortClaims(ctx context.Context, j *journal) error {
 	if err != nil {
 		return err
 	}
-	if err = reserveJournalPorts(all); err != nil {
+	if err = m.reserveManagedPorts(all, j.HostID); err != nil {
 		return err
 	}
 	return m.save(j)
+}
+
+func (m *Manager) reserveManagedPorts(all []*journal, hostID string) error {
+	sshPorts, err := firewall.SSHAllowances(m.Root, hostID)
+	if err != nil {
+		return err
+	}
+	for _, j := range all {
+		if j.Phase == "destroyed" {
+			continue
+		}
+		for name, cfg := range j.Config.Services {
+			for _, value := range cfg.Ports {
+				binding, err := config.ParsePort(value)
+				if err != nil {
+					return err
+				}
+				for _, port := range sshPorts {
+					if binding.Overlaps(config.PortMapping{Host: port, Count: 1, Protocol: "tcp"}) {
+						return fmt.Errorf("%s/%s: host port %d/tcp is reserved for management SSH", j.App, name, port)
+					}
+				}
+			}
+		}
+	}
+	return reserveJournalPorts(all)
 }
 
 // Removing ports also uses stop-first, including recovery from an unavailable

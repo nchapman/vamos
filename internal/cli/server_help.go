@@ -15,9 +15,9 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		notes = "Inspect a host read-only, without provisioning or registering it."
 		names = append(names, "json")
 	case "add":
-		usage = "vamos server add [OPTIONS] --yes [--domain DOMAIN] NAME TARGET"
-		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDefaults to <hex-ip>.tryvamos.dev when --domain is omitted. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH."
-		names = append(names, "yes", "domain", "executor", "deploy-key")
+		usage = "vamos server add [OPTIONS] --yes [--firewall=true|false] [--domain DOMAIN] NAME TARGET"
+		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDefaults to <hex-ip>.tryvamos.dev when --domain is omitted. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH.\nChoose --firewall=true|false explicitly in scripts; interactive stdin prompts if omitted.\nManaged firewall is opt-in automatic dedicated-host protection, including Docker public publishing.\nFalse leaves rules untouched. Unsupported existing firewall configurations are refused."
+		names = append(names, "yes", "domain", "executor", "deploy-key", "firewall")
 	case "upgrade":
 		usage = "vamos server upgrade [OPTIONS] --yes [NAME [TARGET]]"
 		notes = "Upgrade the installed coordinator and executor bundle as root. Requires explicit --yes.\nNAME defaults to the registered default server; TARGET is optional for registered names.\nStarted mutations survive client disconnection."

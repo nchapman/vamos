@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nchapman/vamos/internal/executor"
+	"github.com/nchapman/vamos/internal/firewall"
 	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/process"
@@ -23,6 +24,9 @@ import (
 )
 
 type lifecycleDeps struct {
+	Input         io.Reader
+	IsTerminal    func(io.Reader) bool
+	Firewall      func(context.Context, string, executor.Request, []byte) (*firewall.Status, error)
 	Registry      func() (*registry.Store, error)
 	Inspect       func(context.Context, string) (*host.Report, error)
 	Artifact      func(string, string) ([]byte, error)
@@ -33,7 +37,7 @@ type lifecycleDeps struct {
 }
 
 func defaultLifecycleDeps() lifecycleDeps {
-	return lifecycleDeps{Registry: registry.Default, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey, ResolveDomain: defaultServerDomain}
+	return lifecycleDeps{Input: os.Stdin, IsTerminal: firewallTerminalInput, Firewall: ssh.RunFirewall, Registry: registry.Default, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey, ResolveDomain: defaultServerDomain}
 }
 
 func serverLifecycle(ctx context.Context, operation string, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {
@@ -42,6 +46,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	}
 	flags := flag.NewFlagSet("server "+operation, flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	firewallChoice := flags.String("firewall", "", "managed dedicated-host firewall: true or false (required noninteractively for add)")
 	yes := flags.Bool("yes", false, "authorize host changes")
 	purge := flags.Bool("purge", false, "authorize removal of owned runtime data and certificates")
 	domain := flags.String("domain", "", "base domain (default: <hex-ip>.tryvamos.dev)")
@@ -72,6 +77,24 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	}
 	if (operation != "teardown" && *purge) || (operation != "add" && *domain != "") || (operation != "status" && *asJSON) || (operation != "add" && *deployKey != "") {
 		return usageError(stderr, "option does not apply to this server operation")
+	}
+
+	var firewallProvided bool
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "firewall" {
+			firewallProvided = true
+		}
+	})
+	if firewallProvided && operation != "add" {
+		return usageError(stderr, "--firewall only applies to server add")
+	}
+	enableFirewall := false
+	if operation == "add" {
+		var choiceErr error
+		enableFirewall, choiceErr = chooseFirewall(*firewallChoice, firewallProvided, deps, stderr)
+		if choiceErr != nil {
+			return usageError(stderr, choiceErr.Error())
+		}
 	}
 	store, err := deps.Registry()
 	if err != nil {
@@ -222,6 +245,15 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		}
 		if err := store.Put(server); err != nil {
 			return lifecycleError(stderr, fmt.Errorf("host is ready but local registration failed: %w; rerun server connect with the same identity", err))
+		}
+
+		if enableFirewall {
+			if _, err := enableAndConfirmFirewall(ctx, server.Target, request.Config, binary, deps.Firewall); err != nil {
+				return lifecycleError(stderr, fmt.Errorf("host registered, but firewall setup was not confirmed: %w", err))
+			}
+			if _, err := fmt.Fprintln(stdout, "Managed firewall enabled and confirmed through a fresh SSH connection."); err != nil {
+				return lifecycleError(stderr, err)
+			}
 		}
 	case "teardown":
 		if state.Phase != "removed" {

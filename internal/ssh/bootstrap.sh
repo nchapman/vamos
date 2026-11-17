@@ -14,6 +14,7 @@ chmod 700 "$execdir/executor"
 trap - EXIT HUP INT TERM
 set +e
 systemd-run --quiet --collect --wait --pipe --unit=vamos-host-operation \
+  --setenv="SSH_CONNECTION=${SSH_CONNECTION:-}" \
   --property=RuntimeMaxSec=21min --property=KillMode=control-group \
   /bin/sh -c 'stage=$1; execdir=$2; trap '\''rm -rf "$stage" "$execdir"'\'' EXIT; "$execdir/executor" internal-executor < "$stage/request.json"' sh "$stage" "$execdir"
 status=$?

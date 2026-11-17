@@ -33,8 +33,12 @@ Start with a **fresh Ubuntu 24.04+ server** (amd64 or arm64) with root SSH acces
 vamos server inspect root@server.example.com
 
 # Install Docker, Caddy, and vamos-agent, and register the server locally as "prod"
-vamos server add --yes --domain apps.example.com prod root@server.example.com
+vamos server add --yes --firewall=true --domain apps.example.com prod root@server.example.com
 ```
+
+Use `--firewall=true` for automatic firewall management, or `--firewall=false`
+to manage it yourself. Interactive setup asks when the option is omitted. See
+[managed firewall](docs/firewall.md) for the policy and safety checks.
 
 Once bootstrapped, `vamos server add` installs a restricted non-root SSH bridge key for `vamos-agent` so day-to-day app commands (`deploy`, `logs`, `exec`, `secrets`, etc.) do not require root SSH.
 

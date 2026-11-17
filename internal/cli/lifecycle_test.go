@@ -27,10 +27,10 @@ func TestLifecycleRefusals(t *testing.T) {
 	}{
 		{"add", []string{"--domain", "example.com", "home", "root@home"}},
 		{"teardown", []string{"--yes", "home", "root@home"}},
-		{"add", []string{"--yes", "--purge", "home", "root@home"}},
-		{"add", []string{"--yes", "--domain", "https://example.com", "home", "root@home"}},
-		{"add", []string{"--yes", "--domain", "example.com", "BAD", "root@home"}},
-		{"add", []string{"--yes", "--domain", "example.com", "home", "host;id"}},
+		{"add", []string{"--yes", "--firewall=false", "--purge", "home", "root@home"}},
+		{"add", []string{"--yes", "--firewall=false", "--domain", "https://example.com", "home", "root@home"}},
+		{"add", []string{"--yes", "--firewall=false", "--domain", "example.com", "BAD", "root@home"}},
+		{"add", []string{"--yes", "--firewall=false", "--domain", "example.com", "home", "host;id"}},
 		{"status", []string{"--timeout=0", "home"}},
 	} {
 		t.Run(tt.op+"/"+stringArgs(tt.args), func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestLifecycleFooterWriteFailure(t *testing.T) {
 			}
 			args := []string{"--yes"}
 			if op == "add" {
-				args = append(args, "--domain", "example.com")
+				args = append(args, "--firewall=false", "--domain", "example.com")
 			} else {
 				args = append(args, "--purge")
 			}
@@ -155,7 +155,7 @@ func TestLifecycleRegistration(t *testing.T) {
 				}
 				args := []string{"--yes", "--executor", "artifact"}
 				if op == "add" {
-					args = append(args, "--domain", server.Domain)
+					args = append(args, "--firewall=false", "--domain", server.Domain)
 				} else {
 					args = append(args, "--purge")
 				}
@@ -240,7 +240,7 @@ func TestServerAddDerivesDefaultTryVamosDomainFromIPv4Target(t *testing.T) {
 		},
 	}
 	var out, diag bytes.Buffer
-	code := serverLifecycle(context.Background(), "add", []string{"--yes", "example", "root@138.68.227.119"}, &out, &diag, deps)
+	code := serverLifecycle(context.Background(), "add", []string{"--yes", "--firewall=false", "example", "root@138.68.227.119"}, &out, &diag, deps)
 	if code != 0 {
 		t.Fatalf("code=%d diag=%s", code, &diag)
 	}
@@ -255,7 +255,7 @@ func TestServerAddDerivesDefaultTryVamosDomainFromIPv4Target(t *testing.T) {
 	for _, nonPublic := range []string{"root@127.0.0.1", "root@10.0.0.5", "root@192.168.1.10", "root@100.64.1.2", "root@2001:db8::1"} {
 		out.Reset()
 		diag.Reset()
-		if code := serverLifecycle(context.Background(), "add", []string{"--yes", "local", nonPublic}, &out, &diag, deps); code != 2 {
+		if code := serverLifecycle(context.Background(), "add", []string{"--yes", "--firewall=false", "local", nonPublic}, &out, &diag, deps); code != 2 {
 			t.Fatalf("target=%s expected usage error 2, got %d: %s", nonPublic, code, &diag)
 		}
 	}
@@ -269,12 +269,12 @@ func TestServerAddDerivesDefaultTryVamosDomainFromIPv4Target(t *testing.T) {
 	}
 	out.Reset()
 	diag.Reset()
-	if code := serverLifecycle(context.Background(), "add", []string{"--yes", "aliased", "root@alias-ok"}, &out, &diag, deps); code != 0 {
+	if code := serverLifecycle(context.Background(), "add", []string{"--yes", "--firewall=false", "aliased", "root@alias-ok"}, &out, &diag, deps); code != 0 {
 		t.Fatalf("alias add failed: code=%d diag=%s", code, &diag)
 	}
 	out.Reset()
 	diag.Reset()
-	if code := serverLifecycle(context.Background(), "add", []string{"--yes", "aliasbad", "root@alias-fail"}, &out, &diag, deps); code != 2 || !strings.Contains(diag.String(), "no such host") {
+	if code := serverLifecycle(context.Background(), "add", []string{"--yes", "--firewall=false", "aliasbad", "root@alias-fail"}, &out, &diag, deps); code != 2 || !strings.Contains(diag.String(), "no such host") {
 		t.Fatalf("alias failure expected usage error 2 with lookup detail, got code=%d diag=%s", code, &diag)
 	}
 }

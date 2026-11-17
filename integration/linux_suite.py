@@ -210,6 +210,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--owner', required=True)
     parser.add_argument('--phase', choices=('prepare', 'verify-restart'), default='prepare')
+    parser.add_argument('--scenario', choices=('all', 'firewall'), default='all')
     args = parser.parse_args()
     require_guest(args.owner)
     h = Harness()
@@ -221,6 +222,19 @@ def main():
     result['phase'] = args.phase
     try:
         import recovery
+        if args.scenario == 'firewall':
+            import firewall_scenarios
+            if args.phase == 'prepare':
+                bootstrap(h)
+                h.command(['go', 'run', './cmd/build'])
+                firewall_scenarios.prepare(h)
+                result['prepare_passed'] = True
+                result['restart_required'] = True
+            else:
+                firewall_scenarios.verify_restart(h)
+                result['restart_required'] = False
+                result['passed'] = True
+            return
         if args.phase == 'prepare':
             bootstrap(h)
             checks(h)

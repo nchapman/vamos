@@ -61,13 +61,19 @@ func commandHelpArgs(path []string) ([]string, bool) {
 		}
 		return append(append([]string{}, path...), "--help"), true
 	}
+	if len(path) >= 2 && path[0] == "server" && path[1] == "firewall" {
+		if len(path) == 3 && !slices.Contains([]string{"enable", "disable", "status"}, path[2]) {
+			return nil, false
+		}
+		return append(append([]string{}, path...), "--help"), true
+	}
 	if len(path) > 2 {
 		return nil, false
 	}
 	var children []string
 	switch path[0] {
 	case "server":
-		children = []string{"inspect", "add", "upgrade", "connect", "status", "teardown"}
+		children = []string{"inspect", "add", "upgrade", "connect", "status", "teardown", "firewall"}
 	case "service":
 		children = []string{"bind", "remove"}
 	case "secrets":

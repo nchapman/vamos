@@ -199,6 +199,15 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 			}
 		}
 	}
+	// Remove only our firewall while its tools still exist. Workloads are gone
+	// and teardown has already been authorized; never flush administrator rules.
+	if owned, err := m.hasFirewallReceipt(); err != nil {
+		return nil, err
+	} else if owned {
+		if _, err := m.firewallManager().Disable(ctx, s.ID); err != nil {
+			return nil, err
+		}
+	}
 	if err := m.step(s, "purge-packages"); err != nil {
 		return nil, err
 	}

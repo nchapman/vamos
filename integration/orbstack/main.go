@@ -72,6 +72,7 @@ type manifest struct {
 }
 type options struct {
 	root, artifacts, name, token, arch, ubuntu string
+	scenario                                   string
 	keep                                       bool
 }
 type runner struct {
@@ -228,7 +229,11 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 		return err
 	}
 	fmt.Fprintln(r.out, "Guest prepare phase")
-	if err := call(nil, "python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token); err != nil {
+	prepareArgs := []string{"python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token}
+	if o.scenario == "firewall" {
+		prepareArgs = append(prepareArgs, "--scenario", o.scenario)
+	}
+	if err := call(nil, prepareArgs...); err != nil {
 		return fmt.Errorf("guest prepare: %w", err)
 	}
 	// Prepare exit zero certifies the private guest checkpoint is ready. Always
@@ -272,8 +277,15 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	verifyCtx, cancelVerify := context.WithTimeout(ctx, verifyTimeout)
 	defer cancelVerify()
 	fmt.Fprintln(r.out, "Guest verify-restart phase")
-	if err := r.exec.Run(verifyCtx, runArgs(m.ID, "python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token, "--phase", "verify-restart"), nil, r.out, r.stderr); err != nil {
+	verifyArgs := []string{"python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token, "--phase", "verify-restart"}
+	if o.scenario == "firewall" {
+		verifyArgs = append(verifyArgs, "--scenario", o.scenario)
+	}
+	if err := r.exec.Run(verifyCtx, runArgs(m.ID, verifyArgs...), nil, r.out, r.stderr); err != nil {
 		return fmt.Errorf("guest verify-restart: %w", err)
+	}
+	if o.scenario == "firewall" {
+		return nil
 	}
 	// Run after all Docker ownership/teardown and reboot checks. Repository
 	// records intentionally remain until deletion of this exact owned VM.
@@ -371,8 +383,9 @@ func entry() error {
 	keep := flag.Bool("keep-on-failure", false, "retain owned VM on failure")
 	arch := flag.String("arch", "native", "native, arm64, or amd64")
 	ubuntu := flag.String("ubuntu", "24.04", "24.04 or 26.04")
+	scenario := flag.String("scenario", "all", "all or firewall (focused packet-path and restart checks)")
 	flag.Parse()
-	if flag.NArg() != 0 || (*arch != "native" && *arch != "arm64" && *arch != "amd64") || (*ubuntu != "24.04" && *ubuntu != "26.04") {
+	if (*scenario != "all" && *scenario != "firewall") || flag.NArg() != 0 || (*arch != "native" && *arch != "arm64" && *arch != "amd64") || (*ubuntu != "24.04" && *ubuntu != "26.04") {
 		return errors.New("invalid arguments")
 	}
 	if runtime.GOOS != "darwin" {
@@ -406,5 +419,5 @@ func entry() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	r := runner{exec: commandExecutor{}, out: io.MultiWriter(os.Stdout, log), stderr: io.MultiWriter(os.Stderr, log)}
-	return r.run(ctx, options{root: root, artifacts: dir, name: name, token: token, arch: *arch, ubuntu: *ubuntu, keep: *keep})
+	return r.run(ctx, options{root: root, artifacts: dir, name: name, token: token, arch: *arch, ubuntu: *ubuntu, keep: *keep, scenario: *scenario})
 }

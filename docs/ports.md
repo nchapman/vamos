@@ -18,7 +18,7 @@ services:
 Each quoted string is `HOST:CONTAINER[/tcp|udp]`. Both sides may be inclusive,
 ascending ranges of **equal size**. Ports must be **1–65535**. Only TCP and UDP
 are supported. There is no host-IP syntax, automatic host-port assignment, host
-networking option, or firewall automation.
+networking option, or per-application firewall rule configuration.
 
 Vamos passes these bindings to Docker as `--publish 0.0.0.0:…` on the existing
 app bridge network. **These are public IPv4 bindings on every host interface,
@@ -30,8 +30,10 @@ and encryption in the service itself. If a container port is also served by
 
 You must deliberately allow the required protocols/ports in your cloud/network
 firewall. Docker manages its own publish/NAT rules; do not assume a host firewall
-front end such as UFW blocks published container ports. Vamos does not change
-firewall policy for this feature.
+front end such as UFW blocks published container ports. The optional
+[managed host firewall](firewall.md) automatically allows intentional Docker public
+publishing; it does not make these bindings private. Without that opt-in policy,
+Vamos does not change host firewall policy for published ports.
 
 ## Validation and ownership
 

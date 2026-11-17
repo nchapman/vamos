@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/nchapman/vamos/internal/firewall"
 	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/process"
@@ -26,6 +27,7 @@ type Request struct {
 	Operation string            `json:"operation"`
 	Config    *lifecycle.Config `json:"config,omitempty"`
 	Confirm   bool              `json:"confirm,omitempty"`
+	Token     string            `json:"token,omitempty"`
 	Purge     bool              `json:"purge,omitempty"`
 	// DeployKey is one SSH public key line provisioned as the initial
 	// restricted bridge key during bootstrap. It is never used by upgrade or
@@ -34,6 +36,7 @@ type Request struct {
 }
 
 type Response struct {
+	Firewall  *firewall.Status `json:"firewall,omitempty"`
 	Version   int              `json:"version"`
 	Result    *host.Report     `json:"result,omitempty"`
 	HostState *lifecycle.State `json:"host_state,omitempty"`
@@ -62,14 +65,18 @@ func serve(ctx context.Context, stdin io.Reader, stdout io.Writer, collect host.
 	if request.Version != Version {
 		return failure(stdout, "unsupported_version", "supported protocol version is 1", 2)
 	}
+	if isFirewallOperation(request.Operation) {
+		cancelRead()
+		return runFirewall(ctx, request, stdout, collect)
+	}
 	if request.Operation == "bootstrap" || request.Operation == "upgrade" || request.Operation == "teardown" {
 		cancelRead()
 		return runLifecycle(ctx, request, stdout, collect)
 	}
 	if request.Operation != "inspect" {
-		return failure(stdout, "unsupported_operation", "supported operations are inspect, bootstrap, upgrade, and teardown", 2)
+		return failure(stdout, "unsupported_operation", "supported operations are inspect, bootstrap, upgrade, teardown, firewall-enable, firewall-confirm, firewall-disable, and firewall-status", 2)
 	}
-	if request.Config != nil || request.Confirm || request.Purge {
+	if request.Config != nil || request.Confirm || request.Purge || request.Token != "" || request.DeployKey != "" {
 		return failure(stdout, "invalid_request", "inspect does not accept mutation options", 2)
 	}
 	report, err := host.Inspect(readCtx, collect)
@@ -83,6 +90,9 @@ func serve(ctx context.Context, stdin io.Reader, stdout io.Writer, collect host.
 }
 
 func runLifecycle(ctx context.Context, request Request, stdout io.Writer, collect host.Collect) int {
+	if request.Token != "" {
+		return failure(stdout, "invalid_request", "only firewall-confirm accepts a token", 2)
+	}
 	if !request.Confirm || request.Config == nil {
 		return failure(stdout, "invalid_request", "mutation requires explicit confirmation and server configuration", 2)
 	}

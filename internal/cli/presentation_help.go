@@ -84,6 +84,7 @@ func (p *presentation) renderMainHelp() string {
 			{"server add", "Bootstrap a dedicated Ubuntu host"},
 			{"server upgrade", "Upgrade the coordinator and executor on a server"},
 			{"server connect", "Register an existing ready host without remote changes"},
+			{"server firewall", "Manage opt-in dedicated-host firewall protection"},
 			{"server status", "Read the host lifecycle journal"},
 			{"server teardown", "Remove an unused owned installation"},
 		}},

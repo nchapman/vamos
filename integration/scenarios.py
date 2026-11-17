@@ -42,7 +42,7 @@ def run(h):
     configure_native(h)
 
     def bootstrap():
-        h.cli("server", "add", "--yes", "--domain", "vamos.localhost", "local", "root@127.0.0.1")
+        h.cli("server", "add", "--yes", "--firewall=false", "--domain", "vamos.localhost", "local", "root@127.0.0.1")
         report = json.loads(h.cli("server", "status", "--json").stdout)
         require(not report["active"] and report["state"]["phase"] == "ready", "host did not settle")
 

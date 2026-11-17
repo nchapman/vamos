@@ -93,7 +93,19 @@ func (m *Manager) checkOverrides(unit string) error {
 		if target, err := os.Readlink(actual); err == nil && target == "/dev/null" && strings.HasPrefix(path, "/etc/") && !strings.HasSuffix(path, ".d") {
 			continue
 		}
-		if _, err := os.Lstat(actual); !errors.Is(err, os.ErrNotExist) {
+		if info, err := os.Lstat(actual); !errors.Is(err, os.ErrNotExist) {
+			if err == nil && info.IsDir() && strings.HasSuffix(path, ".d") {
+				entries, readErr := os.ReadDir(actual)
+				if readErr == nil && len(entries) == 0 {
+					continue
+				}
+				if readErr == nil && path == "/etc/systemd/system/docker.service.d" && len(entries) == 1 && entries[0].Name() == "50-vamos-firewall.conf" {
+					s, stateErr := ReadState(m.path(StatePath))
+					if stateErr == nil && s != nil && m.firewallManager().CheckOwnership(s.ID) == nil {
+						continue
+					}
+				}
+			}
 			return fmt.Errorf("unexpected service override at %s", path)
 		}
 	}
@@ -213,6 +225,10 @@ func (m *Manager) checkStateDirectory(ctx context.Context) error {
 	for _, entry := range entries {
 		switch entry.Name() {
 		case "host.json":
+		case "firewall.json", "firewall.retired.json", "firewall.confirmed":
+			if err := m.checkFirewall(ctx, s.ID); err != nil {
+				return err
+			}
 		case "apps":
 			if _, err := m.appReceipts(s); err != nil {
 				return err

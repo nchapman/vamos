@@ -41,6 +41,7 @@ Usage:
   vamos server connect [--domain DOMAIN] NAME TARGET
                                       Register an existing host without remote changes
   vamos server status [NAME [TARGET]]   Read the host lifecycle journal
+  vamos server firewall enable|disable|status [flags]  Manage opt-in host firewall
   vamos server teardown [flags] NAME    Remove an unused owned installation
   vamos backup repository [COMMAND]      Register and inspect backup repositories
   vamos upgrade [--check] [--version VER]
@@ -109,7 +110,7 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 	case "secrets":
 		return secretsCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "server":
-		return server(ctx, args[1:], stdout, stderr)
+		return serverWithInput(ctx, args[1:], stdin, stdout, stderr)
 	case "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy":
 		return appCommand(ctx, args[0], args[1:], stdout, stderr, defaultAppDeps())
 	case "internal-app-executor":

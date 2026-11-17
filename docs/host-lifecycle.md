@@ -6,7 +6,7 @@ Root SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm
 
 ```sh
 mise run build
-bin/vamos server add --yes --domain apps.example.com test root@host
+bin/vamos server add --yes --firewall=false --domain apps.example.com test root@host
 bin/vamos server status --json test
 bin/vamos server teardown --yes --purge test
 ```
@@ -94,7 +94,7 @@ The client defaults to a 25-minute wait, while the executor has a 20-minute oper
 bin/vamos server status test root@host
 # If active=true, let the worker settle. For an incomplete bootstrap only,
 # retry the SAME captured identity with the original matching executor bundle.
-bin/vamos server add --yes --domain apps.example.com test root@host
+bin/vamos server add --yes --firewall=false --domain apps.example.com test root@host
 # If setup instead reached ready, recover local registration with connect:
 bin/vamos server connect --domain apps.example.com test root@host
 # Alternatively, explicitly remove a partial installation after diagnosis:
@@ -152,3 +152,14 @@ The subsequent [OrbStack integration suite](testing.md) verified Ubuntu 24.04.5
 on native arm64, the Linux client checks, and real host bootstrap/teardown inside
 a disposable isolated machine. This does not establish cloud-kernel equivalence,
 native Windows execution, or reboot/APT-interruption recovery.
+
+## Opt-in managed firewall
+
+Server add requires an explicit `--firewall=true|false` in scripts, or prompts on
+interactive stdin. `--yes` continues to authorize bootstrap independently. True
+enables the dedicated-host policy after registration and confirms it through a
+fresh SSH connection; false leaves rules untouched. See [managed firewall](firewall.md)
+for automatic Docker public publishing, rollback, root/artifact requirements,
+status and disable commands. Firewall status, unlike host status, needs the matching
+installed executor artifact. Disabling removes protection only. Unsupported existing
+firewall configurations are refused.

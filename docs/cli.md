@@ -275,3 +275,11 @@ PTY, including shell interruption, resize and terminal restoration. See
 [testing](testing.md) for completed-run evidence and platform limits. Cross-compilation
 is not proof of native Windows terminal behavior, and guest Linux PTY tests are not
 claims of native macOS/Windows interactive acceptance.
+
+## Managed server firewall
+
+Use `vamos server firewall enable --yes [NAME]`, `disable --yes [NAME]`, or
+`status [--json] [NAME]`. NAME defaults to the registered server. The automatic
+dedicated-host policy is opt-in, permits intentional Docker public publishing,
+and refuses unsupported existing firewalls. Disable removes protection only.
+See [managed firewall](firewall.md) for fresh-SSH confirmation and rollback.
