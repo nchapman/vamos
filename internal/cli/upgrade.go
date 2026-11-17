@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -34,13 +35,15 @@ const (
 )
 
 type upgradeDeps struct {
-	httpClient   *http.Client
-	apiBase      string
-	downloadBase string
-	goos         string
-	goarch       string
-	executable   func() (string, error)
-	openRegistry func() (*registry.Store, error)
+	httpClient          *http.Client
+	apiBase             string
+	downloadBase        string
+	goos                string
+	goarch              string
+	executable          func() (string, error)
+	openRegistry        func() (*registry.Store, error)
+	fulcioRoots         *x509.CertPool
+	fulcioIntermediates *x509.CertPool
 }
 
 func defaultUpgradeDeps() upgradeDeps {
@@ -220,8 +223,12 @@ func installReleaseBundle(ctx context.Context, deps upgradeDeps, currentVersion,
 		return fmt.Errorf("download %s: %w", archiveName, err)
 	}
 	actualSum := sha256.Sum256(archiveBytes)
-	if !strings.EqualFold(hex.EncodeToString(actualSum[:]), expectedHash) {
+	actualHash := hex.EncodeToString(actualSum[:])
+	if !strings.EqualFold(actualHash, expectedHash) {
 		return fmt.Errorf("checksum mismatch for %s", archiveName)
+	}
+	if err := verifyReleaseAttestation(ctx, deps, currentVersion, version, archiveName, sha256Hex(sumsBytes), actualHash); err != nil {
+		return err
 	}
 
 	cliName := "vamos"
