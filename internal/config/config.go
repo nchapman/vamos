@@ -63,6 +63,7 @@ func (s *Service) NormalizeReplicas() {
 }
 
 type Service struct {
+	Ports     []string          `yaml:"ports,omitempty" json:"Ports,omitempty"`
 	Replicas  *int              `yaml:"replicas,omitempty" json:"Replicas,omitempty"`
 	Build     *Build            `yaml:"build,omitempty"`
 	Image     string            `yaml:"image,omitempty"`

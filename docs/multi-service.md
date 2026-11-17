@@ -2,7 +2,7 @@
 
 See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
-Vamos supports **1–8 services per app**, each built from a Dockerfile or pulled from a registry image reference. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing. No database/storage semantics are implied.
+Vamos supports **1–8 services per app**, each built from a Dockerfile or pulled from a registry image reference. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing; [`ports`](ports.md) publishes TCP/UDP directly through Docker. No database/storage semantics are implied.
 
 The runnable [private-backend example](../examples/private-backend/vamos.yaml) uses one shared build for public `web` and private `backend`. No local Docker daemon or registry is needed.
 
@@ -22,7 +22,7 @@ services:
     command: [python, app.py, backend]
 ```
 
-Public `web` gets `https://<app>.<base-domain>`; other public services get `https://<app>-<service>.<base-domain>`. Generated hostnames are reserved globally, including pending deployments. For example, `foo/bar` conflicts with `foo-bar/web`. Oversized DNS labels/hostnames fail before mutation. Private services have no generated public route or host port bindings, even if their image declares `EXPOSE`.
+Public `web` gets `https://<app>.<base-domain>`; other public services get `https://<app>-<service>.<base-domain>`. Generated hostnames are reserved globally, including pending deployments. For example, `foo/bar` conflicts with `foo-bar/web`. Oversized DNS labels/hostnames fail before mutation. Services without `http` have no generated public route. They have no host port bindings unless `ports` is explicitly configured; an image's `EXPOSE` alone does not publish anything.
 
 ```sh
 vamos deploy
@@ -43,19 +43,19 @@ See the [PostgreSQL workflow](postgres.md) for image services, protected updates
 Set `replicas: 2` on a service to run two instances of one captured release.
 Omission and `replicas: 1` are equivalent. Counts are bounded to **1–8 per
 service and 32 desired instances across the merged app**; these are accounting
-bounds, not host-capacity reservations. Volume-backed services require one
+bounds, not host-capacity reservations. Volume-backed services and services with `ports` require one
 instance. Zero does not stop or remove a service. Count changes respect scoped
 selection and manual-service protection like other configuration changes.
 
 All instances share one immutable image, configuration and secret-version set.
-A public, volume-free replacement starts and readiness-checks the entire new
+A public replacement without volumes or fixed ports starts and readiness-checks the entire new
 group, admits aliases and rechecks readiness, then switches the generated and
 custom hostnames to the complete ordered upstream set. Only afterward does it
 drain and retire every old member. Budget host capacity for both groups during
 replacement. Private replacements stop and prove **all** old instances stopped
 before starting any new instance; new private workers may run concurrently and
-the application must support that concurrency. Volume-backed replacements retain
-their existing singleton stop/start and durable public 503 behavior.
+the application must support that concurrency. Volume-backed and fixed-port replacements use
+singleton stop/start and durable public 503 behavior.
 
 Partial creation, alias admission and retirement retain exact member identities
 and port intents for resume. Rollback restores captured counts through normal
@@ -93,7 +93,7 @@ results below describe the earlier singleton milestone.
 1. Validate all configuration, transitions, secrets, hostname ownership, and supported daemon policy. Capture immutable secret references before superseding anything.
 2. Capture selected distinct normalized build specifications once in a checksummed bundle. Build or pull sequentially and inspect every immutable image before runtime changes. An image-declared volume is allowed only when it exactly matches the service's owned named mount; extra or anonymous volumes are refused. Runtime command/env/secrets do not split shared builds.
 3. Create missing private services first, alphabetically, with service-name DNS. Observe each process for two seconds without a restart. This is **startup observation, not functional readiness**.
-4. Update public services alphabetically: start a candidate without its service alias, check HTTP readiness, admit its DNS alias, recheck readiness, switch its Caddy route, drain for two seconds, then disable old restart and stop it.
+4. Update public services alphabetically (volume-backed and fixed-port services instead use stop-first replacement with HTTP 503 routing): start a candidate without its service alias, check HTTP readiness, admit its DNS alias, recheck readiness, switch its Caddy route, drain for two seconds, then disable old restart and stop it.
 5. Replace changed existing private services alphabetically. Record retirement intent, disable the old restart policy, stop with a 30-second grace period, and prove it stopped **before** starting its replacement. Private clients experience downtime and must retry.
 6. Check that selected containers are running, then record the completed app snapshot including the actual unchanged versions of skipped services. Skipped service health is reported separately. A no-op does not evict the previous meaningful completed snapshot.
 

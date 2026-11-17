@@ -160,6 +160,9 @@ func (m *Manager) executeSecrets(ctx context.Context, r Request, input []byte, o
 			if err = m.verifyMultiHost(); err != nil {
 				return resp, err
 			}
+			if err = m.reservePorts(ctx, next); err != nil {
+				return resp, err
+			}
 			if err = m.reserveHostnames(ctx, next); err != nil {
 				return resp, err
 			}
@@ -213,7 +216,7 @@ func (m *Manager) executeSecrets(ctx context.Context, r Request, input []byte, o
 			return resp, err
 		}
 	}
-	if err = m.save(next); err != nil {
+	if err = m.savePortClaims(ctx, next); err != nil {
 		return resp, err
 	}
 	resumed := r

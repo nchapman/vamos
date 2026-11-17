@@ -356,7 +356,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	if action == "deploy" && *service == "" {
-		if _, err := fmt.Fprintln(stdout, "Declared-service deploy: private services use stop/start replacement; a brief interruption is expected."); err != nil {
+		if _, err := fmt.Fprintln(stdout, "Declared-service deploy: private services and services with ports use stop/start replacement; a brief interruption is expected."); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}
@@ -615,10 +615,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 		names := make([]string, 0, len(s.Services))
-		hasPublic := false
+		hasPublic, hasPorts := false, false
 		for name, service := range s.Services {
 			names = append(names, name)
 			hasPublic = hasPublic || service.Kind == "public"
+			hasPorts = hasPorts || service.Kind == "ports"
 		}
 		sort.Strings(names)
 		for _, serviceName := range names {
@@ -658,6 +659,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		if mutation {
 			message := "Private-only app: no public route is configured."
+			if hasPorts {
+				message = "Direct IPv4 ports configured; no public HTTP route. Protocol readiness and firewall reachability are not implied by deployment success."
+			}
 			if hasPublic {
 				message = "Routes configured. Public DNS and certificate readiness are not implied by deployment success."
 			}

@@ -144,7 +144,7 @@ func deploymentPreview(r Request, old *journal) *DeploymentPreview {
 	if desired == "" {
 		desired = "captured Dockerfile build"
 	}
-	return &DeploymentPreview{Service: r.Service, CurrentImage: current.Image, DesiredImage: desired, Downtime: cfg.HTTP == nil || cfg.Volume != nil, NeedsConfirmation: !r.Apply}
+	return &DeploymentPreview{Service: r.Service, CurrentImage: current.Image, DesiredImage: desired, Downtime: cfg.HTTP == nil || cfg.StopFirst() || len(prior.Ports) != 0, NeedsConfirmation: !r.Apply}
 }
 
 // selectedServices captures the local manifest before host-side merging.

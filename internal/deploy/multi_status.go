@@ -99,6 +99,9 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 		s := ServiceStatus{Kind: "private", Phase: slot.Phase, Unavailable: slot.Unavailable, DataMayHaveChanged: slot.DataMayHaveChanged}
 		cfg := j.Config.Services[name]
 		s.DesiredInstances = cfg.ReplicaCount()
+		if len(cfg.Ports) != 0 || (slot.Current != nil && slot.Current.Config != nil && len(slot.Current.Config.Ports) != 0) {
+			s.Kind = "ports"
+		}
 		if cfg.HTTP != nil {
 			s.Kind = "public"
 			s.URL = ServiceURL(j.App, name, journalDomain(j))

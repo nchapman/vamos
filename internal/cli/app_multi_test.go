@@ -24,19 +24,23 @@ func TestAppStatusShowsPendingOperationAndCandidate(t *testing.T) {
 }
 
 func TestMultiDeploymentCompletionExplainsPublicReadiness(t *testing.T) {
-	for _, kind := range []string{"public", "mixed", "private"} {
+	for _, kind := range []string{"public", "mixed", "private", "ports"} {
 		for _, action := range []string{"deploy", "resume", "status"} {
 			t.Run(kind+"/"+action, func(t *testing.T) {
 				path, _, deps := appFixture(t)
 				services := map[string]deploy.ServiceStatus{}
 				yaml := "app: hello\nservices:\n"
-				if kind != "private" {
+				if kind != "private" && kind != "ports" {
 					services["web"] = deploy.ServiceStatus{Kind: "public", Phase: "ready", URL: "https://hello.example.com", Available: true}
 					yaml += "  web:\n    build: {context: ., dockerfile: Dockerfile}\n    http: {port: 80, health: /healthz}\n"
 				}
 				if kind != "public" {
 					services["backend"] = deploy.ServiceStatus{Kind: "private", Phase: "ready", Available: true}
 					yaml += "  backend:\n    build: {context: ., dockerfile: Dockerfile}\n"
+					if kind == "ports" {
+						services["backend"] = deploy.ServiceStatus{Kind: "ports", Phase: "ready", Available: true}
+						yaml += "    ports: [\"3478:3478/udp\"]\n"
+					}
 				}
 				if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
 					t.Fatal(err)
@@ -53,8 +57,12 @@ func TestMultiDeploymentCompletionExplainsPublicReadiness(t *testing.T) {
 					t.Fatal(diagnostic.String())
 				}
 				hasWarning := strings.Contains(out.String(), "Public DNS and certificate readiness are not implied by deployment success.")
-				if hasWarning != (action != "status" && kind != "private") {
+				if hasWarning != (action != "status" && kind != "private" && kind != "ports") {
 					t.Fatal("incorrect public readiness feedback:", out.String())
+				}
+				portsNote := strings.Contains(out.String(), "Direct IPv4 ports configured")
+				if portsNote != (action != "status" && kind == "ports") {
+					t.Fatal("incorrect ports completion feedback:", out.String())
 				}
 				privateNote := strings.Contains(out.String(), "Private-only app: no public route is configured.")
 				if privateNote != (action != "status" && kind == "private") {

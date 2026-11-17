@@ -266,7 +266,7 @@ func validateLegacyApp(a *config.App) error {
 		}
 	}
 	s, ok := a.Services["web"]
-	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || s.Build == nil || s.ReplicaCount() != 1 || s.Update == config.UpdateManual || len(s.HTTP.Domains) != 0 {
+	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || len(s.Ports) != 0 || s.Build == nil || s.ReplicaCount() != 1 || s.Update == config.UpdateManual || len(s.HTTP.Domains) != 0 {
 		return errors.New("legacy protocol supports only one public web service; use a current client with a captured build bundle")
 	}
 	return nil

@@ -181,6 +181,9 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if err = validateMultiJournal(next, r.App); err != nil {
 			return
 		}
+		if err = m.reservePorts(ctx, next); err != nil {
+			return
+		}
 		if err = m.reserveHostnames(ctx, next); err != nil {
 			return
 		}
@@ -205,7 +208,7 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 				return
 			}
 		}
-		if err = m.save(next); err != nil {
+		if err = m.savePortClaims(ctx, next); err != nil {
 			return
 		}
 		j = next
@@ -442,7 +445,7 @@ func (m *Manager) advanceMulti(ctx context.Context, j *journal) error {
 func (m *Manager) advanceService(ctx context.Context, j *journal, name string) error {
 	s := j.ServiceStates[name]
 	public := j.Config.Services[name].HTTP != nil
-	if s.Phase == "prepared" && s.Candidate.Config.Volume != nil {
+	if s.Phase == "prepared" && s.stopFirst(*s.Candidate.Config) {
 		if err := m.multiEnsureRuntime(ctx, j, s.Candidate, true); err != nil {
 			return err
 		}
@@ -466,7 +469,7 @@ func (m *Manager) advanceService(ctx context.Context, j *journal, name string) e
 	}
 	if s.Phase == "prepared" {
 		s.Phase = "starting"
-		if (!public || s.Candidate.Config.Volume != nil) && s.Current != nil {
+		if (!public || s.stopFirst(*s.Candidate.Config)) && s.Current != nil {
 			s.CurrentRetired = true
 			s.Phase = "retiring"
 		}
@@ -485,7 +488,7 @@ func (m *Manager) advanceService(ctx context.Context, j *journal, name string) e
 	}
 	if s.Phase == "starting" {
 		// Prove the old private writer remains stopped on every resumed attempt.
-		if (!public || s.Candidate.Config.Volume != nil) && s.Current != nil {
+		if (!public || s.stopFirst(*s.Candidate.Config)) && s.Current != nil {
 			if err := m.multiRetire(ctx, j, s.Current); err != nil {
 				return err
 			}

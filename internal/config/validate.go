@@ -40,6 +40,11 @@ func (a App) Validate() error {
 	totalSecrets := 0
 	domains := make(map[string]string)
 	volumes := make(map[string]string)
+	type portClaim struct {
+		mapping PortMapping
+		service string
+	}
+	var ports []portClaim
 	for _, name := range sortedKeys(a.Services) {
 		s := a.Services[name]
 		prefix := "services." + name
@@ -51,6 +56,31 @@ func (a App) Validate() error {
 		}
 		if s.Volume != nil && count > 1 {
 			add("%s: volume-backed services cannot have multiple replicas", prefix)
+		}
+		if len(s.Ports) != 0 && count != 1 {
+			add("%s: services with ports require one replica", prefix)
+		}
+		bindings := 0
+		for _, value := range s.Ports {
+			mapping, err := ParsePort(value)
+			if err != nil {
+				add("%s: %v", prefix, err)
+				continue
+			}
+			bindings += mapping.Count
+			if bindings > MaxPortBindings {
+				add("%s.ports: at most %d published bindings per service are supported (ranges count individually)", prefix, MaxPortBindings)
+				break
+			}
+			if mapping.Reserved() {
+				add("%s.ports: %q overlaps a reserved Vamos ingress/admin port", prefix, value)
+			}
+			for _, prior := range ports {
+				if mapping.Overlaps(prior.mapping) {
+					add("%s.ports: %q overlaps a binding in services.%s", prefix, value, prior.service)
+				}
+			}
+			ports = append(ports, portClaim{mapping, name})
 		}
 		if !validLabel(name) {
 			add("%s: service name must be a lowercase DNS label (1–63 characters)", prefix)

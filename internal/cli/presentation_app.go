@@ -122,11 +122,15 @@ func (p *presentation) statusReport(s *deploy.Status, r appReport) string {
 	}
 	b.WriteString(p.retainedReport(s, r.service))
 	if r.mutation {
-		hasPublic := false
+		hasPublic, hasPorts := false, false
 		for _, ss := range s.Services {
 			hasPublic = hasPublic || ss.Kind == "public"
+			hasPorts = hasPorts || ss.Kind == "ports"
 		}
 		message := "Private-only app: no public route is configured."
+		if hasPorts {
+			message = "Direct IPv4 ports configured; no public HTTP route. Protocol readiness and firewall reachability are not implied by deployment success."
+		}
 		if len(s.Services) == 0 || hasPublic {
 			message = "Routes configured. Public DNS and certificate readiness are not implied by deployment success."
 		}

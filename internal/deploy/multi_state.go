@@ -261,7 +261,7 @@ func validateMultiJournal(j *journal, app string) error {
 			return bad
 		}
 		if cfg.Volume == nil {
-			if s.VolumeID != "" || s.Unavailable || s.DataMayHaveChanged {
+			if s.VolumeID != "" || s.DataMayHaveChanged {
 				return bad
 			}
 		} else if !supportsVolumes(j) || !operation.MatchString(s.VolumeID) {
@@ -276,7 +276,7 @@ func validateMultiJournal(j *journal, app string) error {
 		if s.New && (s.CurrentRetired || (s.Current != nil && s.Current.Operation != j.Operation)) {
 			return bad
 		}
-		if s.CurrentRetired && (s.Current == nil || (cfg.HTTP != nil && (cfg.Volume == nil || !s.Unavailable))) {
+		if s.CurrentRetired && (s.Current == nil || (cfg.HTTP != nil && (!s.stopFirst(cfg) || !s.Unavailable))) {
 			return bad
 		}
 		for _, r := range []*release{s.Current, s.Candidate, s.Retiring} {
@@ -330,19 +330,19 @@ func validateMultiJournal(j *journal, app string) error {
 				return bad
 			}
 		case "withdrawing":
-			if !supportsVolumes(j) || cfg.Volume == nil || cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || s.Unavailable {
+			if !s.stopFirst(cfg) || cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || s.Unavailable {
 				return bad
 			}
 		case "retiring":
-			if (cfg.HTTP != nil && (cfg.Volume == nil || !s.Unavailable)) || s.Candidate == nil || !s.CurrentRetired || s.Retiring != nil {
+			if (cfg.HTTP != nil && (!s.stopFirst(cfg) || !s.Unavailable)) || s.Candidate == nil || !s.CurrentRetired || s.Retiring != nil {
 				return bad
 			}
 		case "starting":
-			if s.Candidate == nil || s.Retiring != nil || ((cfg.HTTP == nil || cfg.Volume != nil) && s.Current != nil && !s.CurrentRetired) || (cfg.Volume != nil && cfg.HTTP != nil && !s.Unavailable) {
+			if s.Candidate == nil || s.Retiring != nil || ((cfg.HTTP == nil || s.stopFirst(cfg)) && s.Current != nil && !s.CurrentRetired) || (s.stopFirst(cfg) && cfg.HTTP != nil && !s.Unavailable) {
 				return bad
 			}
 		case "aliasing", "promoting":
-			if cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || (cfg.Volume != nil && !s.Unavailable) {
+			if cfg.HTTP == nil || s.Candidate == nil || s.Retiring != nil || (s.stopFirst(cfg) && !s.Unavailable) {
 				return bad
 			}
 		case "draining":

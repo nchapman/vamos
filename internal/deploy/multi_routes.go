@@ -39,6 +39,10 @@ func routeDomain(j *journal) (string, error) {
 // Include the persisted own journal as well as the prospective journal: neither
 // an unfinished request nor a superseding request can release effective claims.
 func (m *Manager) routeJournals(j *journal) ([]*journal, string, error) {
+	return m.appJournals(j, true)
+}
+
+func (m *Manager) appJournals(j *journal, includePersistedOwn bool) ([]*journal, string, error) {
 	domain, e := routeDomain(j)
 	if e != nil {
 		return nil, "", e
@@ -55,6 +59,9 @@ func (m *Manager) routeJournals(j *journal) ([]*journal, string, error) {
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			return nil, "", errors.New("unexpected app journal entry")
+		}
+		if entry.Name() == j.App && !includePersistedOwn {
+			continue
 		}
 		other, e := m.load(entry.Name())
 		if errors.Is(e, os.ErrNotExist) && (entry.Name() == j.App || m.MutationLock != nil) {

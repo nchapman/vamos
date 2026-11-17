@@ -152,7 +152,7 @@ func rollbackPlan(r Request, old *journal) (*journal, *RollbackPreview, error) {
 		next.Config.Services[name] = *wanted.Config
 		next.Rollback.Targets[name] = wanted
 		next.ServiceStates[name] = &serviceState{Phase: "pending", Current: prior.Current, CurrentRetired: prior.CurrentRetired, Unavailable: prior.Unavailable, New: prior.Current == nil, SecretRefs: maps.Clone(wanted.SecretRefs), VolumeID: prior.VolumeID, DataMayHaveChanged: prior.DataMayHaveChanged}
-		item.Downtime = wanted.Config.HTTP == nil || wanted.Config.Volume != nil
+		item.Downtime = wanted.Config.HTTP == nil || wanted.Config.StopFirst() || len(currentCfg.Ports) != 0
 		item.SecretVersions = map[string]string{}
 		for env, ref := range wanted.SecretRefs {
 			item.SecretVersions[env] = ref.Version
@@ -226,6 +226,9 @@ func (m *Manager) executeRollback(ctx context.Context, r Request, old *journal, 
 	if err = m.verifyMultiHost(); err != nil {
 		return resp, err
 	}
+	if err = m.reservePorts(ctx, next); err != nil {
+		return resp, err
+	}
 	if err = m.reserveHostnames(ctx, next); err != nil {
 		return resp, err
 	}
@@ -248,13 +251,13 @@ func (m *Manager) executeRollback(ctx context.Context, r Request, old *journal, 
 			return resp, err
 		}
 	}
-	if err = m.save(next); err != nil {
+	if err = m.savePortClaims(ctx, next); err != nil {
 		return resp, err
 	}
 	defer func() {
 		if err != nil {
 			next.LastError = diagnostic(err.Error())
-			err = errors.Join(err, m.save(next))
+			err = errors.Join(err, m.savePortClaims(ctx, next))
 		}
 		s := m.multiStatus(ctx, next, state, false, "")
 		resp.Status = &s

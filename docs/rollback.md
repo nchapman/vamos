@@ -80,7 +80,11 @@ A normal deploy after no-alias v5 rollback returns to the v4 deployment journal 
 Domain-capable apps use v6 for both deployment and rollback and stay v6 after
 alias removal to preserve history. Versions 1–5 strictly reject aliases.
 
-Public stateless replacement retains the normal readiness/routing behavior;
+Services with [`ports`](ports.md) restore their captured bindings through
+stop-first replacement; the preview reports downtime. Conflicts with other
+tracked owners are rejected before retiring the current service.
+
+Public stateless replacement without fixed ports retains the normal readiness/routing behavior;
 private services use stop/start. App-wide completion is not atomic, and rollback
 can itself fail or be interrupted. Inspect status and resume rather than assuming
 all services changed together. See [multi-service recovery](multi-service.md).

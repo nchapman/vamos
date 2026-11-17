@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nchapman/vamos/internal/buildcontext"
+	"github.com/nchapman/vamos/internal/config"
 )
 
 // Runtime errors intentionally never contain Docker output, environment values,
@@ -344,7 +345,11 @@ func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef,
 	if policy := v.HostConfig.RestartPolicy.Name; policy != "unless-stopped" && policy != "no" {
 		return nil, errors.New("runtime restart policy mismatch")
 	}
-	if r.Config.HTTP == nil {
+	if len(r.Config.Ports) != 0 {
+		if err := inspectServicePorts(v, r, attached); err != nil {
+			return nil, err
+		}
+	} else if r.Config.HTTP == nil {
 		if *r.Port != "" || *r.PublishPort != "" || len(v.HostConfig.PortBindings) != 0 {
 			return nil, errors.New("private service publishes ports")
 		}
@@ -407,7 +412,7 @@ func (m *Manager) multiEnsureCandidate(ctx context.Context, j *journal, r *relea
 	return m.multiEnsureRuntime(ctx, j, r, false)
 }
 
-// Volume candidates are created stopped and inspected before route withdrawal
+// Volume and fixed-port candidates are created stopped and inspected before route withdrawal
 // or retiring a writer. The same captured identity is later started explicitly.
 func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runtimeRef, prepareOnly bool) error {
 	if err := instanceIdentity(j, r); err != nil {
@@ -417,10 +422,10 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		return err
 	}
 	slot := j.ServiceStates[r.Service]
-	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || !releaseHas(slot.Candidate, r.Container) || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (r.Config.Volume == nil || slot.Phase != "prepared")) {
+	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || !releaseHas(slot.Candidate, r.Container) || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (!slot.stopFirst(*r.Config) || slot.Phase != "prepared")) {
 		return errors.New("candidate creation requires starting intent")
 	}
-	if !prepareOnly && (r.Config.HTTP == nil || r.Config.Volume != nil) && slot.Current != nil {
+	if !prepareOnly && (r.Config.HTTP == nil || slot.stopFirst(*r.Config)) && slot.Current != nil {
 		if !slot.CurrentRetired {
 			return errors.New("private retirement intent missing")
 		}
@@ -465,7 +470,7 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 					return errors.New("allocate candidate port failed")
 				}
 				*r.PublishPort = port
-				if m.save(j) != nil {
+				if m.savePortClaims(ctx, j) != nil {
 					*r.PublishPort = ""
 					return errors.New("save candidate publish intent failed")
 				}
@@ -477,8 +482,17 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 			return errors.New("private service publishes ports")
 		}
 		args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j)}
+		if slot.stopFirst(*r.Config) {
+			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", network(j)}
+		}
 		if r.Config.Volume != nil {
-			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", network(j), "--mount", volumeMountArgument("vamos-vol-"+r.VolumeID, r.Config.Volume.Mount)}
+			args = append(args, "--mount", volumeMountArgument("vamos-vol-"+r.VolumeID, r.Config.Volume.Mount))
+		}
+		for _, port := range r.Config.Ports {
+			if _, err := config.ParsePort(port); err != nil {
+				return err
+			}
+			args = append(args, "--publish", "0.0.0.0:"+port)
 		}
 		args = append(args, resourceArgs(r.Config.Resources)...)
 		if r.Config.HTTP != nil {
@@ -510,7 +524,7 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 	}
 	if prepareOnly {
 		if v.State.Running || v.State.Restarting || v.HostConfig.RestartPolicy.Name != "no" || r.ExecutionIntent {
-			return errors.New("volume candidate executed before preparation completed")
+			return errors.New("stop-first candidate executed before preparation completed")
 		}
 		return nil
 	}
@@ -536,6 +550,15 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 			if err != nil {
 				return err
 			}
+		}
+	}
+	if slot.stopFirst(*r.Config) && v.HostConfig.RestartPolicy.Name == "no" {
+		if _, err := m.cmd(ctx, "docker", "update", "--restart=unless-stopped", r.Container); err != nil {
+			return errors.New("enable candidate restart failed")
+		}
+		v, err = m.instanceInspect(ctx, j, r, false, r.Config.HTTP == nil)
+		if err != nil {
+			return err
 		}
 	}
 	if v.HostConfig.RestartPolicy.Name != "unless-stopped" {

@@ -372,12 +372,28 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 		}
 		v.HostConfig.NetworkMode = fakeArg(a, "--network")
 		v.HostConfig.RestartPolicy.Name = fakeArg(a, "--restart")
-		if p := fakeArg(a, "--publish"); p != "" {
-			parts := strings.Split(p, ":")
-			if len(parts) != 3 || parts[0] != "127.0.0.1" || parts[1] == "" {
-				f.t.Fatal("not explicit loopback publish", p)
+		for i, arg := range a {
+			if arg != "--publish" {
+				continue
 			}
-			v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{parts[2] + "/tcp": {{HostIP: parts[0], HostPort: parts[1]}}}
+			ip, value, ok := strings.Cut(a[i+1], ":")
+			if !ok || (ip != "127.0.0.1" && ip != "0.0.0.0") {
+				f.t.Fatal("not explicit IPv4 publish", a[i+1])
+			}
+			p, err := config.ParsePort(value)
+			if err != nil {
+				f.t.Fatal(err)
+			}
+			if v.HostConfig.PortBindings == nil {
+				v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{}
+			}
+			for offset := 0; offset < p.Count; offset++ {
+				key := fmt.Sprintf("%d/%s", p.Container+offset, p.Protocol)
+				v.HostConfig.PortBindings[key] = append(v.HostConfig.PortBindings[key], struct{ HostIP, HostPort string }{ip, strconv.Itoa(p.Host + offset)})
+			}
+		}
+		if a[0] == "run" && f.publicPortConflict(v) {
+			return process.Result{}, errors.New("host port already allocated")
 		}
 		v.State.Running = a[0] == "run"
 		if v.State.Running {
@@ -396,6 +412,9 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 		f.events = append(f.events, a[0])
 		switch a[0] {
 		case "start":
+			if f.publicPortConflict(v) {
+				return process.Result{}, errors.New("host port already allocated")
+			}
 			if len(a) != 2 {
 				f.t.Fatal(a)
 			}
@@ -1122,4 +1141,31 @@ func TestMultiDockerPostAdmissionWithdrawalToleratesDaemonNormalization(t *testi
 	if err == nil || !strings.Contains(err.Error(), "endpoint withdrawn") || len(f.containers[r.Container].NetworkSettings.Networks) != 0 {
 		t.Fatalf("expected endpoint withdrawal after daemon normalization, got err=%v networks=%v", err, f.containers[r.Container].NetworkSettings.Networks)
 	}
+}
+
+// Model Docker's wildcard bind conflicts to catch accidental start-first
+// replacements. Container ports need not be equal for host ports to collide.
+func (f *fakeDocker) publicPortConflict(candidate *inspection) bool {
+	for _, old := range f.containers {
+		if old == candidate || !old.State.Running {
+			continue
+		}
+		for key, bindings := range candidate.HostConfig.PortBindings {
+			_, protocol, _ := strings.Cut(key, "/")
+			for oldKey, oldBindings := range old.HostConfig.PortBindings {
+				_, oldProtocol, _ := strings.Cut(oldKey, "/")
+				if protocol != oldProtocol {
+					continue
+				}
+				for _, b := range bindings {
+					for _, prior := range oldBindings {
+						if b.HostPort == prior.HostPort && (b.HostIP == "0.0.0.0" || prior.HostIP == "0.0.0.0") {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }

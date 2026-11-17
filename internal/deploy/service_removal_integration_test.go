@@ -9,7 +9,7 @@ import (
 )
 
 func TestRemovalIntegratedAbandonAndSettledRollback(t *testing.T) {
-	for _, mode := range []string{"build", "health", "rollback", "old-snapshot", "shared-key"} {
+	for _, mode := range []string{"build", "health", "rollback", "old-snapshot", "shared-key", "ports"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newMultiFlow(t)
 			ctx := context.Background()
@@ -32,7 +32,10 @@ func TestRemovalIntegratedAbandonAndSettledRollback(t *testing.T) {
 				return err
 			}
 			a := rollbackApp("1")
-			if mode != "rollback" && mode != "shared-key" {
+			if mode == "ports" {
+				a = portsFlowApp(t, "one")
+			}
+			if mode != "rollback" && mode != "shared-key" && mode != "ports" {
 				delete(a.Services, "backend")
 			}
 			if mode == "shared-key" {
