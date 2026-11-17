@@ -228,6 +228,23 @@ func TestGeneratedShellLifecycle(t *testing.T) {
 	run("guard", true)
 	run("rollback", true)
 	run("verify", true)
+	// Simulate upgrading from a confirmed v0.3.0 script to the current script.
+	legacyBody := legacyV030Script(s)
+	legacyBody = strings.ReplaceAll(legacyBody, "PATH=/usr/sbin:/usr/bin:/sbin:/bin", "PATH="+bin+":/usr/sbin:/usr/bin:/sbin:/bin")
+	legacyBody = strings.ReplaceAll(legacyBody, "/run/lock", filepath.Join(root, "run/lock"))
+	legacyBody = strings.ReplaceAll(legacyBody, "/var/lib/vamos", filepath.Join(root, "var/lib/vamos"))
+	legacyBody = strings.ReplaceAll(legacyBody, "sync -f "+filepath.Join(root, "var/lib/vamos"), ":")
+	run("unhook", true)
+	if err = os.WriteFile(scriptFile, []byte(legacyBody), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run("boot", true)
+	run("verify", true)
+	if err = os.WriteFile(scriptFile, []byte(body), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run("upgrade", true)
+	run("verify", true)
 	// Inject a foreign rule into one owned chain. Neither family may be removed.
 	file := filepath.Join(db, "ip6tables.json")
 	data, err := os.ReadFile(file)

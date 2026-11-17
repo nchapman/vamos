@@ -267,8 +267,23 @@ def run(h):
     # Destroy is explicitly not a data purge; never edit production journals to
     # trick teardown into passing. The parent disposes of the isolated guest.
     before = identities(h.status(app))
+    caddy_path = Path("/etc/caddy/Caddyfile")
+    current_caddy = caddy_path.read_text()
+    legacy_header = (
+        "{\n\tadmin 127.0.0.1:2019\n\torder coraza_waf first\n\torder cache before rewrite\n"
+        "\tcache {\n\t\tdefault_cache_control no-store\n\t\tsimplefs {\n\t\t\tconfiguration {\n"
+        "\t\t\t\tpath /data/cache\n\t\t\t\tsize 1000\n\t\t\t}\n\t\t}\n\t}\n}\n"
+    )
+    require("\n}\n" in current_caddy, "managed Caddyfile missing header delimiter")
+    _, route_suffix = current_caddy.split("\n}\n", 1)
+    caddy_path.write_text(legacy_header + route_suffix)
+    h.command(["docker", "exec", "vamos-caddy", "caddy", "reload", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"], user="root")
     h.cli("server", "upgrade", "--yes", "local")
+    upgraded_caddy = caddy_path.read_text()
+    require("max_cacheable_body_bytes 10485760" in upgraded_caddy and "headers Authorization" in upgraded_caddy,
+            "server upgrade did not migrate legacy Caddyfile header")
     stable(before, before)
+    rows()
     cli(orders, "destroy")
     stable(before, before)
     cli(orders, "destroy", "--yes")

@@ -46,6 +46,29 @@ func (m *Manager) checkFirewall(ctx context.Context, hostID string) error {
 	return nil
 }
 
+func (m *Manager) checkFirewallForUpgrade(ctx context.Context, hostID string) error {
+	owned, err := m.hasFirewallReceipt()
+	if err != nil || !owned {
+		return err
+	}
+	return m.firewallManager().CheckUpgradeable(ctx, hostID)
+}
+
+func (m *Manager) upgradeFirewall(ctx context.Context, hostID string) (string, error) {
+	owned, err := m.hasFirewallReceipt()
+	if err != nil || !owned {
+		return "", err
+	}
+	return m.firewallManager().Upgrade(ctx, hostID)
+}
+
+func (m *Manager) restoreFirewall(ctx context.Context, hostID, oldScript string) error {
+	if oldScript == "" {
+		return nil
+	}
+	return m.firewallManager().RestoreScript(ctx, hostID, oldScript)
+}
+
 // Firewall uses the same installation identity and host mutation lock as other
 // administrative operations. Confirmation is a separate request so the client
 // must establish a new SSH connection through the staged policy.

@@ -95,8 +95,10 @@ func (h *harness) run(_ context.Context, name string, args []string) (process.Re
 	case "/bin/sh":
 		action := args[1]
 		switch action {
-		case "install":
+		case "install", "upgrade", "boot":
 			h.installed = true
+		case "unhook":
+			h.installed = false
 		case "verify":
 			if !h.installed || h.drift {
 				return process.Result{}, errors.New("rules differ")
@@ -513,5 +515,52 @@ func TestRetiredCleanupRefusesReferences(t *testing.T) {
 				t.Fatal("deleted artifacts before validation", err)
 			}
 		})
+	}
+}
+
+func TestUpgradeMigratesConfirmedLegacyV030ScriptAndSupportsRollback(t *testing.T) {
+	h := fixture(t)
+	ctx := context.Background()
+	st, err := h.m.Enable(ctx, "host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSH_CONNECTION", "203.0.113.4 50001 10.0.0.1 2222")
+	if _, err := h.m.Confirm(ctx, "host", st.Token); err != nil {
+		t.Fatal(err)
+	}
+	s, err := h.m.load("host")
+	if err != nil || s == nil {
+		t.Fatalf("load state: %v %v", s, err)
+	}
+	legacy := legacyV030Script(*s)
+	if err := h.m.atomic(scriptPath, []byte(legacy), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Normal Status/CheckOwnership require upgrade while CheckUpgradeable accepts v0.3.0.
+	if err := h.m.CheckOwnership("host"); err == nil || !strings.Contains(err.Error(), "server upgrade") {
+		t.Fatalf("CheckOwnership accepted un-upgraded v0.3.0 script: %v", err)
+	}
+	if err := h.m.CheckUpgradeable(ctx, "host"); err != nil {
+		t.Fatalf("CheckUpgradeable rejected v0.3.0 script: %v", err)
+	}
+	oldScript, err := h.m.Upgrade(ctx, "host")
+	if err != nil {
+		t.Fatalf("Upgrade failed: %v", err)
+	}
+	if oldScript != legacy {
+		t.Fatal("Upgrade did not return previous v0.3.0 script for rollback")
+	}
+	got, err := os.ReadFile(h.m.path(scriptPath))
+	if err != nil || string(got) != script(*s) {
+		t.Fatal("Upgrade did not write current firewall script")
+	}
+	// RestoreScript rolls back to the v0.3.0 script cleanly.
+	if err := h.m.RestoreScript(ctx, "host", oldScript); err != nil {
+		t.Fatalf("RestoreScript failed: %v", err)
+	}
+	got, err = os.ReadFile(h.m.path(scriptPath))
+	if err != nil || string(got) != legacy {
+		t.Fatal("RestoreScript did not restore v0.3.0 firewall script")
 	}
 }

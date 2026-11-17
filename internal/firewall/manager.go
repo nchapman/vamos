@@ -186,13 +186,24 @@ func (m *Manager) CheckOwnership(hostID string) error {
 	return m.checkArtifacts(*s)
 }
 
+func matchesOwnedArtifact(s state, p, got, want string, allowLegacy bool) bool {
+	return got == want || (allowLegacy && p == scriptPath && got == legacyV030Script(s))
+}
+
 func (m *Manager) checkArtifacts(s state) error {
+	return m.checkArtifactsFor(s, false)
+}
+
+func (m *Manager) checkArtifactsFor(s state, allowLegacy bool) error {
 	for p, want := range artifacts(s) {
 		got, err := os.ReadFile(m.path(p))
 		if err != nil {
 			return err
 		}
-		if string(got) != want {
+		if !matchesOwnedArtifact(s, p, string(got), want, allowLegacy) {
+			if p == scriptPath && string(got) == legacyV030Script(s) {
+				return errors.New("managed firewall script does not match this release; run vamos server upgrade")
+			}
 			return fmt.Errorf("owned artifact drift: %s", p)
 		}
 	}
@@ -216,6 +227,10 @@ func (m *Manager) confirmed(s state) (bool, error) {
 	return true, nil
 }
 func (m *Manager) status(ctx context.Context, s *state) (Status, error) {
+	return m.statusFor(ctx, s, false)
+}
+
+func (m *Manager) statusFor(ctx context.Context, s *state, allowLegacy bool) (Status, error) {
 	if s == nil {
 		// An absent JSON file is not evidence that old/foreign owned-name rules are absent.
 		for _, tool := range []string{"iptables-save", "ip6tables-save"} {
@@ -234,7 +249,7 @@ func (m *Manager) status(ctx context.Context, s *state) (Status, error) {
 	yes, err := m.confirmed(*s)
 	st.Pending = !yes
 	if err == nil {
-		err = m.checkArtifacts(*s)
+		err = m.checkArtifactsFor(*s, allowLegacy)
 	}
 	if err == nil {
 		err = m.action(ctx, "verify")
@@ -437,7 +452,7 @@ func (m *Manager) cleanRetired(ctx context.Context, hostID string) error {
 		if e != nil {
 			return e
 		}
-		if string(got) != want {
+		if !matchesOwnedArtifact(*s, p, string(got), want, false) {
 			return fmt.Errorf("owned artifact drift: %s", p)
 		}
 	}
@@ -484,4 +499,95 @@ func lockFailure(ctx context.Context) error {
 		return err
 	}
 	return errors.New("lock attempt ended without acquiring lock")
+}
+
+// CheckUpgradeable verifies that a managed firewall is confirmed and matches
+// either this release or a known migratable release before server upgrade.
+func (m *Manager) CheckUpgradeable(ctx context.Context, hostID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	_, err := m.locked(ctx, hostID, func() (Status, error) {
+		s, err := m.load(hostID)
+		if err != nil {
+			return Status{}, err
+		}
+		st, err := m.statusFor(ctx, s, true)
+		if err != nil {
+			return st, err
+		}
+		if st.Pending {
+			return st, errors.New("managed firewall confirmation is pending")
+		}
+		return st, nil
+	})
+	return err
+}
+
+// Upgrade migrates a confirmed firewall script and its active rules from a
+// previous release (such as v0.3.0) to this release's rules, returning the
+// previous script content when a migration occurred so the caller can roll back.
+func (m *Manager) Upgrade(ctx context.Context, hostID string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	var oldScript string
+	_, err := m.locked(ctx, hostID, func() (Status, error) {
+		s, err := m.load(hostID)
+		if err != nil {
+			return Status{}, err
+		}
+		st, err := m.statusFor(ctx, s, true)
+		if err != nil {
+			return st, err
+		}
+		if st.Pending {
+			return st, errors.New("managed firewall confirmation is pending")
+		}
+		if s == nil {
+			return st, nil
+		}
+		got, err := os.ReadFile(m.path(scriptPath))
+		if err != nil {
+			return Status{}, err
+		}
+		want := script(*s)
+		if string(got) == want {
+			return st, nil
+		}
+		oldScript = string(got)
+		if err := m.atomic(scriptPath, []byte(want), 0700); err != nil {
+			oldScript = ""
+			return Status{Degraded: true}, err
+		}
+		if err := m.action(ctx, "upgrade"); err != nil {
+			if restoreErr := m.restoreLocked(ctx, oldScript); restoreErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to restore firewall script after aborted upgrade: %w", restoreErr))
+			} else {
+				oldScript = ""
+			}
+			return Status{Degraded: true}, err
+		}
+		return m.status(ctx, s)
+	})
+	return oldScript, err
+}
+
+// RestoreScript rolls back a script migration performed by Upgrade.
+func (m *Manager) RestoreScript(ctx context.Context, hostID, oldScript string) error {
+	if oldScript == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err := m.locked(ctx, hostID, func() (Status, error) {
+		return Status{}, m.restoreLocked(ctx, oldScript)
+	})
+	return err
+}
+
+func (m *Manager) restoreLocked(ctx context.Context, oldScript string) error {
+	unhookErr := m.action(ctx, "unhook")
+	if err := m.atomic(scriptPath, []byte(oldScript), 0700); err != nil {
+		return errors.Join(unhookErr, err)
+	}
+	return errors.Join(unhookErr, m.action(ctx, "boot"))
 }

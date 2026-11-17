@@ -19,13 +19,24 @@ import (
 )
 
 const (
-	BaseCaddyfile = "{\n\tadmin 127.0.0.1:2019\n\torder coraza_waf first\n\torder cache before rewrite\n\tcache {\n\t\tdefault_cache_control no-store\n\t\tmax_cacheable_body_bytes 10485760\n\t\tkey {\n\t\t\theaders Authorization\n\t\t\thide\n\t\t}\n\t\tsimplefs {\n\t\t\tconfiguration {\n\t\t\t\tpath /data/cache\n\t\t\t\tsize 1000\n\t\t\t}\n\t\t}\n\t}\n}\n"
-	caddyConfig   = BaseCaddyfile
+	BaseCaddyfile           = "{\n\tadmin 127.0.0.1:2019\n\torder coraza_waf first\n\torder cache before rewrite\n\tcache {\n\t\tdefault_cache_control no-store\n\t\tmax_cacheable_body_bytes 10485760\n\t\tkey {\n\t\t\theaders Authorization\n\t\t\thide\n\t\t}\n\t\tsimplefs {\n\t\t\tconfiguration {\n\t\t\t\tpath /data/cache\n\t\t\t\tsize 1000\n\t\t\t}\n\t\t}\n\t}\n}\n"
+	LegacyBaseCaddyfileV030 = "{\n\tadmin 127.0.0.1:2019\n\torder coraza_waf first\n\torder cache before rewrite\n\tcache {\n\t\tdefault_cache_control no-store\n\t\tsimplefs {\n\t\t\tconfiguration {\n\t\t\t\tpath /data/cache\n\t\t\t\tsize 1000\n\t\t\t}\n\t\t}\n\t}\n}\n"
+	LegacyBaseCaddyfileV020 = "{\n\tadmin 127.0.0.1:2019\n}\n"
+	caddyConfig             = BaseCaddyfile
 	// Applications get explicit private networks; no shared default bridge.
 	DockerDaemonPath   = "/etc/docker/daemon.json"
 	DockerDaemonConfig = "{\n  \"bridge\": \"none\",\n  \"log-driver\": \"local\"\n}\n"
 	dockerConfig       = DockerDaemonConfig
 )
+
+func splitManagedCaddyfile(text string) (prefix, routes string, ok bool) {
+	for _, candidate := range []string{caddyConfig, LegacyBaseCaddyfileV030, LegacyBaseCaddyfileV020} {
+		if strings.HasPrefix(text, candidate) {
+			return candidate, strings.TrimPrefix(text, candidate), true
+		}
+	}
+	return "", "", false
+}
 
 var deployKeyLine = regexp.MustCompile(`^(?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
 
@@ -453,11 +464,30 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	if err := m.verifyFilesFor(s, true); err != nil {
 		return nil, err
 	}
-	if err := m.checkFirewall(ctx, s.ID); err != nil {
+	if err := m.checkFirewallForUpgrade(ctx, s.ID); err != nil {
 		return nil, err
 	}
 	if err := m.verifyQueueIdle(); err != nil {
 		return nil, err
+	}
+	oldCaddy, err := os.ReadFile(m.path(caddyfilePath))
+	if err != nil {
+		return nil, err
+	}
+	caddyPrefix, caddyRoutes, ok := splitManagedCaddyfile(string(oldCaddy))
+	if !ok {
+		return nil, errors.New("managed file /etc/caddy/Caddyfile is missing or changed; refusing upgrade")
+	}
+	if caddyPrefix != caddyConfig {
+		c, findErr := m.findCaddy(ctx, s)
+		if findErr != nil {
+			return nil, findErr
+		}
+		if c != nil && c.State.Running {
+			if err := m.checkCaddyRuntime(ctx); err != nil {
+				return nil, err
+			}
+		}
 	}
 	oldExecutor, err := os.ReadFile(m.path(ExecutorPath))
 	if err != nil {
@@ -471,10 +501,29 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	oldAgentSHA := s.AgentSHA
 	defer func() { m.recordError(s, err) }()
 	agentStopped := false
+	caddyUpdated := false
+	var oldFirewallScript string
 	binariesUpdated := false
 	defer func() {
 		if err == nil {
 			return
+		}
+		restartCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+		defer cancel()
+		if oldFirewallScript != "" {
+			if restoreErr := m.restoreFirewall(restartCtx, s.ID, oldFirewallScript); restoreErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to restore firewall after aborted upgrade: %w", restoreErr))
+			}
+		}
+		if caddyUpdated {
+			if writeErr := atomicWrite(m.path(caddyfilePath), oldCaddy, 0644); writeErr != nil {
+				err = errors.Join(err, fmt.Errorf("failed to restore %s after aborted upgrade: %w", caddyfilePath, writeErr))
+			} else {
+				name, args := CaddyCommand("reload", "--config", caddyfilePath, "--adapter", "caddyfile")
+				if _, reloadErr := m.command(restartCtx, name, args...); reloadErr != nil {
+					err = errors.Join(err, fmt.Errorf("failed to reload Caddy after aborted upgrade: %w", reloadErr))
+				}
+			}
 		}
 		if binariesUpdated {
 			_ = atomicWrite(m.path(ExecutorPath), oldExecutor, 0755)
@@ -485,8 +534,6 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 		if !agentStopped {
 			return
 		}
-		restartCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-		defer cancel()
 		if _, startErr := m.command(restartCtx, "systemctl", "start", agentUnit); startErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to restart %s after aborted upgrade: %w", agentUnit, startErr))
 		}
@@ -498,9 +545,25 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	if err = m.verifyQueueIdle(); err != nil {
 		return nil, err
 	}
+	if caddyPrefix != caddyConfig {
+		if err = atomicWrite(m.path(caddyfilePath), []byte(caddyConfig+caddyRoutes), 0644); err != nil {
+			return nil, err
+		}
+		caddyUpdated = true
+	}
 	// Routes and certificates live on the host, so replacing the container to
 	// adopt a new pinned image keeps them; only in-flight requests are cut.
 	if err = m.ensureCaddy(ctx, s); err != nil {
+		return nil, err
+	}
+	if caddyUpdated {
+		name, args := CaddyCommand("reload", "--config", caddyfilePath, "--adapter", "caddyfile")
+		if _, err = m.command(ctx, name, args...); err != nil {
+			return nil, err
+		}
+	}
+	oldFirewallScript, err = m.upgradeFirewall(ctx, s.ID)
+	if err != nil {
 		return nil, err
 	}
 	binariesUpdated = true
@@ -547,6 +610,10 @@ func (m *Manager) health(ctx context.Context, s *State) error {
 	}
 	if err := m.checkCaddy(ctx, s); err != nil {
 		return err
+	}
+	caddyBytes, err := os.ReadFile(m.path(caddyfilePath))
+	if err != nil || !strings.HasPrefix(string(caddyBytes), caddyConfig) {
+		return errors.New("managed Caddyfile does not match this release; run vamos server upgrade")
 	}
 	name, args := CaddyCommand("validate", "--config", caddyfilePath, "--adapter", "caddyfile")
 	if _, err := m.command(ctx, name, args...); err != nil {
@@ -625,12 +692,15 @@ func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
 	if err != nil {
 		return err
 	}
+	prefix, routes, ok := splitManagedCaddyfile(string(caddyBytes))
 	if allowLiveRoutes {
-		if !strings.HasPrefix(string(caddyBytes), caddyConfig) {
+		if !ok {
 			return errors.New("managed file /etc/caddy/Caddyfile is missing or changed; refusing upgrade")
 		}
-	} else if string(caddyBytes) != caddyConfig {
+	} else if !ok || routes != "" {
 		return errors.New("managed file /etc/caddy/Caddyfile is missing or changed; refusing to overwrite or remove it")
+	} else if prefix != caddyConfig {
+		return errors.New("managed Caddyfile does not match this release; run vamos server upgrade")
 	}
 	// Principals and authorized keys are deliberately administrator-managed
 	// dynamic ACL inputs. They must remain private regular files, but their

@@ -67,6 +67,14 @@ func artifacts(s state) map[string]string {
 // All generated data is validated before this function. The rollback executable
 // is self-contained: no vamos binary, Docker daemon, caller, or JSON tool needed.
 func script(s state) string {
+	return scriptWithRules(s, plan.rules, true)
+}
+
+func legacyV030Script(s state) string {
+	return scriptWithRules(s, plan.legacyV030Rules, false)
+}
+
+func scriptWithRules(s state, rulesFn func(plan, string) []string, includeUpgrade bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `#!/bin/sh
 # Owned by vamos firewall; generation %s
@@ -90,7 +98,7 @@ identity() { [ -f "$STATE" ] && grep -Fq '"token": "%s"' "$STATE"; }
 		if family == "ip6tables" {
 			tag = "v6"
 		}
-		rules := s.Plan.rules(family)
+		rules := rulesFn(s.Plan, family)
 		fmt.Fprintf(&b, "subset_%s() {\n    tool=%s\n    snapshot=$($tool -w 10 -S)\n", tag, family)
 		// Verify rule count against the set of expected rules that actually exist.
 		for _, chain := range []string{inputChain, forwardChain} {
@@ -165,7 +173,7 @@ remove_%s() {
 		}
 		b.WriteString("}\n")
 	}
-	b.WriteString(earlyScript(s))
+	b.WriteString(earlyScriptWithRules(s, rulesFn))
 	b.WriteString(`remove_owned() {
     # Validate BOTH families before mutating either; on failure retain identity
     # and let systemd retry. Partial installs are valid subsets, not foreign rules.
@@ -251,7 +259,35 @@ case "${1:-}" in
         verify_v4_early
         verify_v6_early
         ;;
-    *) echo 'invalid firewall action' >&2; exit 1 ;;
+`)
+	if includeUpgrade {
+		b.WriteString(`    upgrade)
+        identity
+        confirmed
+        remove_v4
+        remove_v6
+        remove_v4_early
+        remove_v6_early
+        install_v4_early
+        install_v6_early
+        install_v4
+        install_v6
+        verify_v4
+        verify_v6
+        verify_v4_early
+        verify_v6_early
+        ;;
+    unhook)
+        identity
+        confirmed
+        remove_v4
+        remove_v6
+        remove_v4_early
+        remove_v6_early
+        ;;
+`)
+	}
+	b.WriteString(`    *) echo 'invalid firewall action' >&2; exit 1 ;;
 esac
 `)
 	return b.String()
@@ -261,6 +297,10 @@ esac
 // jump reordering during startup. DNAT has already happened in PREROUTING. This
 // gate only DROPs or RETURNs, so it cannot bypass Docker's later isolation rules.
 func earlyScript(s state) string {
+	return earlyScriptWithRules(s, plan.rules)
+}
+
+func earlyScriptWithRules(s state, rulesFn func(plan, string) []string) string {
 	var b strings.Builder
 	for _, family := range []string{"iptables", "ip6tables"} {
 		tag := "v4_early"
@@ -268,7 +308,7 @@ func earlyScript(s state) string {
 			tag = "v6_early"
 		}
 		rules := []string{}
-		for _, r := range s.Plan.rules(family) {
+		for _, r := range rulesFn(s.Plan, family) {
 			if strings.HasPrefix(r, "-A "+forwardChain+" ") {
 				rules = append(rules, r)
 			}
