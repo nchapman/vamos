@@ -35,9 +35,12 @@ renderer output in `fixtures.json`: an array of `{case, theme, width, ansi}`
 objects, not hand-written HTML replicas. Missing fixtures fail capture. The matrix
 covers 48/80/120 columns and light/dark/mono/terminal modes. Mono and inherited
 terminal foreground modes are rendered on both controlled light and dark
-backgrounds in xterm.js and installed Chrome. The 144-fixture, 216-capture matrix
-includes successful replica groups and blocked release commands as well as the
-existing help, status, inventory, maintenance and recovery views.
+backgrounds in xterm.js and installed Chrome. The 264-fixture, 396-capture matrix
+includes successful replica groups, blocked release commands, firewall states
+and failures, non-root inspection, candidate readiness recovery, and direct-port
+and mixed HTTP/port outcomes alongside help, status, inventory and maintenance.
+The fixture generator requires every named case at each width/theme. The HTML
+gallery also exposes a background selector and preserves it across view changes.
 
 Generated bundles, fixtures, screenshots (`shots/`), and `evaluation.json` stay in
 Git-ignored `.pi/visual/`. Review the screenshots as well as the evaluation: this

@@ -38,9 +38,11 @@ func (p *presentation) appFailure(r appReport, request deploy.Request, response 
 	if !unknown && response.Status != nil {
 		text += p.releaseReport(response.Status.Release, r)
 	}
-	if r.mutation && readinessFailed(err) {
+	if r.mutation && !unknown && readinessFailed(err) {
 		text += p.section("Readiness recovery") + p.prose(readinessRecovery)
-		text += p.command(r.command("logs", "--candidate"))
+		if args := readinessLogArgs(response.Status, r.service); len(args) > 0 {
+			text += p.command(r.command("logs", args...))
+		}
 	}
 	if bindingCommand != "" {
 		text += p.section("Explicit adoption") + p.prose("Inspect status first; explicitly adopt only the intended service.") + p.command(bindingCommand)

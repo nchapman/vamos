@@ -94,7 +94,11 @@ func (p *presentation) header(action, app, server, target string) string {
 	}
 	text += "\n"
 	if server != "" {
-		text += p.ink("", server, false) + "  " + p.ink("secondary", "/  "+target, false) + "\n"
+		text += p.ink("", server, false)
+		if target != "" {
+			text += "  " + p.ink("secondary", "/  "+target, false)
+		}
+		text += "\n"
 	}
 	return text
 }

@@ -1,4 +1,5 @@
 import {chromium} from 'playwright-core';
+import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {createServer} from 'node:http';
 import {readFile, mkdir, writeFile, copyFile, rm} from 'node:fs/promises';
@@ -69,6 +70,21 @@ try {
   });
   await page.goto(origin);
   await page.waitForFunction(() => window.ready === true);
+  // Exercise actual gallery controls, not source-text assertions. Wait for the
+  // rendered URL/summary update so asynchronous changes cannot race capture.
+  await page.evaluate(() => window.renderCase('status', 'mono', 48, 'dark'));
+  assert.equal(await page.locator('#background').inputValue(), 'dark');
+  for (const [id, value] of [['width', '80'], ['case', 'firewall-pending'], ['theme', 'terminal']]) {
+    await page.locator(`#${id}`).selectOption(value);
+    await page.waitForFunction(({id, value}) => new URLSearchParams(location.search).get(id) === value, {id, value});
+    assert.equal(await page.locator('#background').inputValue(), 'dark');
+    assert.match(await page.locator('#summary').textContent(), /dark background/);
+  }
+  await page.evaluate(() => window.renderCase('status', 'mono', 48));
+  assert.equal(await page.locator('#background').inputValue(), 'light');
+  await page.goto(`${origin}/?case=status&theme=mono&width=48&background=dark`);
+  await page.waitForFunction(() => window.ready === true);
+  assert.equal(await page.locator('#background').inputValue(), 'dark');
   for (const fixture of fixtures) {
     // Inherited foreground and no-color modes are checked on both backgrounds.
     const backgrounds = ['terminal', 'mono'].includes(fixture.theme) ? ['light', 'dark'] : [fixture.theme];

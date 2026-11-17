@@ -37,6 +37,7 @@ window.renderCase = async function(name, theme, width, background = theme === 'd
   screen.replaceChildren(Object.assign(document.createElement('div'), {id: 'terminal'}));
   screen.style.background = palettes[background].background;
   updateSelectors(fixture);
+  options('background', Object.keys(palettes), background);
   await document.fonts.ready;
   const plain = plainText(fixture.ansi);
   // Allocate a conservative full-transcript bound before writing: no scrolling
@@ -155,7 +156,7 @@ for (const el of document.querySelectorAll('select')) el.addEventListener('chang
   const candidates = fixtures.filter(f => f.case === name);
   const fixture = candidates.find(f => f.theme === theme && f.width === width) ||
     candidates.find(f => f.theme === theme) || candidates[0];
-  await window.renderCase(fixture.case, fixture.theme, fixture.width);
+  await window.renderCase(fixture.case, fixture.theme, fixture.width, document.querySelector('#background').value);
 });
 const params = new URLSearchParams(location.search);
 const initial = fixtures.find(f => f.case === params.get('case') && f.theme === params.get('theme') && f.width === +params.get('width')) || fixtures[0];

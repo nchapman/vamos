@@ -19,7 +19,24 @@ type appReport struct {
 
 func (r appReport) command(action string, extra ...string) string {
 	args := []string{"vamos", action, "--server", r.server.Name, "--app", r.app}
-	args = append(args, r.extraFlags...)
+	for i := 0; i < len(r.extraFlags); i++ {
+		flag := r.extraFlags[i]
+		key := strings.SplitN(flag, "=", 2)[0]
+		overridden := false
+		for _, value := range extra {
+			if value == key && strings.HasPrefix(key, "--") {
+				overridden = true
+				break
+			}
+		}
+		if overridden {
+			if !strings.Contains(flag, "=") && key != "--candidate" && i+1 < len(r.extraFlags) {
+				i++
+			}
+			continue
+		}
+		args = append(args, flag)
+	}
 	args = append(args, extra...)
 	return suggestedCommand(args...)
 }
@@ -122,19 +139,10 @@ func (p *presentation) statusReport(s *deploy.Status, r appReport) string {
 	}
 	b.WriteString(p.retainedReport(s, r.service))
 	if r.mutation {
-		hasPublic, hasPorts := false, false
-		for _, ss := range s.Services {
-			hasPublic = hasPublic || ss.Kind == "public"
-			hasPorts = hasPorts || ss.Kind == "ports"
+		b.WriteString("\n")
+		for _, notice := range strings.Split(deploymentRouteNotice(s), "\n") {
+			b.WriteString(p.prose(notice))
 		}
-		message := "Private-only app: no public route is configured."
-		if hasPorts {
-			message = "Direct IPv4 ports configured; no public HTTP route. Protocol readiness and firewall reachability are not implied by deployment success."
-		}
-		if len(s.Services) == 0 || hasPublic {
-			message = "Routes configured. Public DNS and certificate readiness are not implied by deployment success."
-		}
-		b.WriteString("\n" + p.prose(message))
 	}
 	return b.String()
 }
@@ -351,4 +359,58 @@ func (p *presentation) replicaReport(s deploy.ServiceStatus) string {
 		b.WriteString(p.field("Running", yesNo(instance.Running)))
 	}
 	return b.String()
+}
+
+func deploymentRouteNotice(s *deploy.Status) string {
+	hasPublic, hasPorts := len(s.Services) == 0, false
+	for _, ss := range s.Services {
+		hasPublic = hasPublic || ss.Kind == "public"
+		hasPorts = hasPorts || ss.Kind == "ports"
+	}
+	var messages []string
+	if hasPublic {
+		messages = append(messages, "Routes configured. Public DNS and certificate readiness are not implied by deployment success.")
+	}
+	if hasPorts {
+		prefix := "Direct IPv4 ports configured."
+		if !hasPublic {
+			prefix = "Direct IPv4 ports configured; no public HTTP route."
+		}
+		messages = append(messages, prefix+" Protocol readiness and firewall reachability are not implied by deployment success.")
+	}
+	if len(messages) == 0 {
+		return "Private-only app: no public route is configured."
+	}
+	return strings.Join(messages, "\n")
+}
+
+// Only acknowledged, recorded candidates are safe readiness log targets.
+func readinessLogArgs(s *deploy.Status, selected string) []string {
+	if s == nil {
+		return nil
+	}
+	names := selectedServices(s, selected)
+	for _, failedOnly := range []bool{true, false} {
+		for _, name := range names {
+			ss := s.Services[name]
+			if failedOnly && !ss.Unavailable {
+				continue
+			}
+			if ss.Candidate == "" && len(ss.CandidateInstances) == 0 {
+				continue
+			}
+			args := []string{"--service", name, "--candidate"}
+			if len(ss.CandidateInstances) > 1 {
+				ordinal := ss.CandidateInstances[0].Ordinal
+				for _, instance := range ss.CandidateInstances {
+					if instance.Ordinal < ordinal {
+						ordinal = instance.Ordinal
+					}
+				}
+				args = append(args, "--replica", fmt.Sprint(ordinal))
+			}
+			return args
+		}
+	}
+	return nil
 }

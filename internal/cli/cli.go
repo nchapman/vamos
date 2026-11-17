@@ -44,12 +44,15 @@ Usage:
   vamos server firewall enable|disable|status [flags]  Manage opt-in host firewall
   vamos server teardown [flags] NAME    Remove an unused owned installation
   vamos backup repository [COMMAND]      Register and inspect backup repositories
+  vamos backup configure [flags]         Preview or apply backup configuration
+  vamos backup plan [flags]              Inspect recorded backup plan metadata
   vamos upgrade [--check] [--version VER]
                                         Upgrade the CLI and Linux executor binaries
   vamos version                          Print the build version
   vamos help [COMMAND [SUBCOMMAND [ACTION]]]      Show general or command-specific help
 
-Setup/teardown require explicit authorization. Deploy supports 1–8 built or prebuilt public/private
+Setup/teardown require explicit authorization. Server administration requires root or passwordless sudo;
+server inspect remains unelevated. Deploy supports built or prebuilt public HTTP, private, and direct-port
 services, with one optional named volume per service. Use deploy --service NAME for scoped updates;
 existing manual services require --yes. Data-backed updates stop/start; data is retained.
 Run a command with --help for options.

@@ -28,11 +28,13 @@ const firewallHelp = `Usage:
 NAME defaults to the registered default server. Requires root or passwordless-sudo SSH access and a matching
 installed executor artifact. --timeout bounds client waiting (default 4m).
 Opt-in automatic policy for dedicated hosts: preserve discovered SSH ports,
-allow HTTP/HTTPS and intentional Docker public publishing, deny other inbound
-traffic. Unsupported existing firewall configurations are refused, not replaced.
+allow HTTP/HTTPS and intentional Docker TCP/UDP publishing, deny other inbound
+traffic. Direct ports bypass HTTP routing, WAF, caching, and managed TLS. Unsupported existing firewall configurations are refused, not replaced.
 Enable confirms through a fresh SSH connection; otherwise independent rollback
 restores the previous rules after five minutes. Disable removes protection only;
 it does not stop containers or remove their published ports. No custom rules.
+Status exits 1 when degraded. Pending confirmation means rollback remains armed;
+it is not confirmation that protection will remain enabled.
 `
 
 func firewallTerminalInput(r io.Reader) bool {
@@ -110,7 +112,7 @@ func enableAndConfirmFirewall(ctx context.Context, target string, cfg *lifecycle
 
 func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		fmt.Fprint(stdout, firewallHelp)
+		_ = writeHelpText(stdout, firewallHelp)
 		return 0
 	}
 	op := args[0]
@@ -123,7 +125,7 @@ func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer
 	asJSON := flags.Bool("json", false, "print status as JSON")
 	artifact := flags.String("executor", "", "matching installed Linux executor artifact")
 	timeout := flags.Duration("timeout", 4*time.Minute, "client wait deadline")
-	flags.Usage = func() { fmt.Fprint(flags.Output(), firewallHelp) }
+	flags.Usage = func() { _ = writeHelpText(flags.Output(), firewallHelp) }
 	if err := parseFlags(flags, args[1:], stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -187,10 +189,7 @@ func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer
 		status, err = deps.Firewall(ctx, server.Target, executor.Request{Version: executor.Version, Operation: "firewall-" + op, Config: &cfg, Confirm: op != "status"}, binary)
 	}
 	if err != nil {
-		if op == "disable" {
-			return lifecycleError(stderr, fmt.Errorf("%w; disable has no automatic rollback. Run `vamos server firewall status %s` before retrying `vamos server firewall disable --yes %s`; resolve any ownership or drift errors rather than flushing rules", err, name, name))
-		}
-		return lifecycleError(stderr, err)
+		return firewallFailure(stderr, op, name, server.Target, *artifact, err)
 	}
 	if status == nil {
 		return lifecycleError(stderr, errors.New("missing firewall status"))
@@ -210,6 +209,9 @@ func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer
 }
 
 func renderFirewallStatus(out io.Writer, name string, s *firewall.Status) error {
+	if p := presentationFor(out); p != nil {
+		return p.write(out, p.firewallStatus(name, s))
+	}
 	state := "disabled"
 	if s.Enabled {
 		state = "enabled"

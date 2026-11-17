@@ -444,9 +444,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		} else if mutation {
 			fmt.Fprintf(stderr, "Inspect: vamos status --server %s --app %s\nIf recorded, resume: vamos resume --server %s --app %s %s\n", server.Name, name, server.Name, name, request.Operation)
 		}
-		if mutation && readinessFailed(err) {
+		if mutation && response.Version == 1 && response.Error != "" && readinessFailed(err) {
 			fmt.Fprintln(stderr, readinessRecovery)
-			fmt.Fprintln(stderr, "Inspect candidate:", reportView.command("logs", "--candidate"))
+			if args := readinessLogArgs(response.Status, reportView.service); len(args) > 0 {
+				fmt.Fprintln(stderr, "Inspect candidate:", reportView.command("logs", args...))
+			}
 		}
 		return code
 	}
@@ -619,11 +621,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 		names := make([]string, 0, len(s.Services))
-		hasPublic, hasPorts := false, false
-		for name, service := range s.Services {
+		for name := range s.Services {
 			names = append(names, name)
-			hasPublic = hasPublic || service.Kind == "public"
-			hasPorts = hasPorts || service.Kind == "ports"
 		}
 		sort.Strings(names)
 		for _, serviceName := range names {
@@ -662,13 +661,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			fmt.Fprintf(stdout, "Last error: %q\n", s.LastError)
 		}
 		if mutation {
-			message := "Private-only app: no public route is configured."
-			if hasPorts {
-				message = "Direct IPv4 ports configured; no public HTTP route. Protocol readiness and firewall reachability are not implied by deployment success."
-			}
-			if hasPublic {
-				message = "Routes configured. Public DNS and certificate readiness are not implied by deployment success."
-			}
+			message := deploymentRouteNotice(s)
 			if _, err := fmt.Fprintln(stdout, message); err != nil {
 				return lifecycleError(stderr, err)
 			}

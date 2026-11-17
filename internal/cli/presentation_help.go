@@ -79,6 +79,11 @@ func (p *presentation) renderMainHelp() string {
 			{"cleanup", "Preview or remove obsolete app resources"},
 			{"destroy", "Preview or remove an app"},
 		}},
+		{"Manage backups", []command{
+			{"backup repository", "Register and inspect backup repositories"},
+			{"backup configure", "Preview or apply backup configuration"},
+			{"backup plan", "Inspect recorded backup plan metadata"},
+		}},
 		{"Manage a server", []command{
 			{"server inspect", "Inspect a host over SSH without provisioning"},
 			{"server add", "Bootstrap a dedicated Ubuntu host"},
@@ -122,7 +127,8 @@ func (p *presentation) renderMainHelp() string {
 	// navigation; this is still help, not a deployment success claim.
 	text += p.section("Before you begin")
 	text += p.prose("Setup/teardown require explicit authorization.") + "\n"
-	text += p.prose("Deploy supports 1–8 built or prebuilt public/private services, with one optional named volume per service.") + "\n"
+	text += p.prose("Server administration requires root or passwordless sudo; server inspect remains unelevated.") + "\n"
+	text += p.prose("Deploy supports built or prebuilt public HTTP, private, and direct-port services, with one optional named volume per service.") + "\n"
 	text += p.prose("Use deploy --service NAME for scoped updates.")
 	text += p.prose("Existing manual services require --yes.")
 	text += p.prose("Data-backed updates stop/start; data is retained.")

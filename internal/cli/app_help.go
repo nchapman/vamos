@@ -14,7 +14,7 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 	commands := map[string]help{
 		"deploy": {
 			"vamos deploy [OPTIONS]", "service yes supersede re-add reuse-data",
-			"Update automatic services, or only --service NAME. Existing manual services preview unless --yes.\n--yes requires --service; --re-add additionally authorizes recreating a removed service.\n--reuse-data is separate approval for exact retained-volume reuse after destroy.\nPrivate and volume-backed replacements use stop/start; application data is not rolled back.",
+			"Update automatic services, or only --service NAME. Existing manual services preview unless --yes.\n--yes requires --service; --re-add additionally authorizes recreating a removed service.\n--reuse-data is separate approval for exact retained-volume reuse after destroy.\nPrivate, direct-port, and volume-backed replacements use stop-first (stop/start); application data is not rolled back.\nConfigure direct publishing with services.<name>.ports; direct ports bypass HTTP middleware.\nHTTP middleware switches: services.<name>.http.waf, services.<name>.http.cache, services.<name>.http.compression.",
 			"vamos deploy -f api/vamos.yaml --server home --service web",
 		},
 		"run": {

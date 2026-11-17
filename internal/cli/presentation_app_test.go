@@ -33,7 +33,7 @@ func TestPlainReadinessFailureProvidesCandidateRecovery(t *testing.T) {
 	path, _, deps := appFixture(t)
 	deps.Run = func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error) {
 		err := errors.New("HTTP readiness: context deadline exceeded")
-		return deploy.Response{Version: 1, Error: err.Error()}, err
+		return deploy.Response{Version: 1, Error: err.Error(), Status: presentationStatusFixture()}, err
 	}
 	var out, diagnostic bytes.Buffer
 	code := appCommand(context.Background(), "resume", []string{"-f", path, visualOperation}, &out, &diagnostic, deps)
@@ -52,9 +52,9 @@ func TestReadinessFailureExplainsRetainedCandidateWithoutAvailabilityPromise(t *
 	r.action, r.mutation = "deploy", true
 	err := errors.New("HTTP readiness: context deadline exceeded")
 	request := deploy.Request{Operation: visualOperation}
-	response := deploy.Response{Version: 1, Error: err.Error()}
+	response := deploy.Response{Version: 1, Error: err.Error(), Status: presentationStatusFixture()}
 	text := strings.Join(strings.Fields(newHelpAppsTerminal(120, false).p.appFailure(r, request, response, err, "")), " ")
-	for _, want := range []string{"Readiness recovery", "stop-first services may be unavailable", "--supersede OPERATION", "vamos logs --server home --app ledger --candidate", "vamos resume"} {
+	for _, want := range []string{"Readiness recovery", "stop-first services may be unavailable", "--supersede OPERATION", "vamos logs --server home --app ledger --service database --candidate", "vamos resume"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q: %s", want, text)
 		}
@@ -315,7 +315,17 @@ func TestPresentationVisualFixtures(t *testing.T) {
 			web.Image = "sha256:" + strings.Repeat("e", 64)
 			status.Services["web"] = web
 			cases["long-status"] = p.statusReport(status, r)
-			for _, name := range []string{"status", "long-status", "preview", "unknown", "help", "apps", "rollback", "staged", "server", "secrets", "replicas-release", "release-blocked"} {
+			for name, text := range featureVisualCases(t, p, presentationReportFixture()) {
+				cases[name] = text
+			}
+			required := []string{"status", "long-status", "preview", "unknown", "help", "apps", "rollback", "staged", "server", "secrets", "replicas-release", "release-blocked", "firewall-enabled", "firewall-disabled", "firewall-pending", "firewall-degraded", "firewall-enable-failure", "firewall-disable-failure", "server-sudo", "readiness-candidates", "ports-success", "mixed-success"}
+			if len(cases) != len(required) {
+				t.Fatalf("visual cases=%d required=%d", len(cases), len(required))
+			}
+			for _, name := range required {
+				if strings.TrimSpace(cases[name]) == "" {
+					t.Fatalf("missing visual case %s/%s/%d", name, theme, width)
+				}
 				var out bytes.Buffer
 				if err := p.write(&out, cases[name]); err != nil {
 					t.Fatal(err)
