@@ -102,7 +102,7 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 		}
 		if a[5] == "python3" {
 			// Focused scenarios retain the same ownership and restart protocol.
-			if len(a) >= 11 && a[len(a)-2] == "--scenario" && a[len(a)-1] == "firewall" {
+			if len(a) >= 11 && a[len(a)-2] == "--scenario" && (a[len(a)-1] == "firewall" || a[len(a)-1] == "waf-cache") {
 				a = a[:len(a)-2]
 			}
 			verify := len(a) == 11 && a[9] == "--phase" && a[10] == "verify-restart"
@@ -352,28 +352,32 @@ func TestRestartPhases(t *testing.T) {
 	}
 }
 
-func TestFocusedFirewallKeepsOwnedRestartButSkipsRepository(t *testing.T) {
-	f := &fakeExec{t: t, mode: "success"}
-	r := runner{exec: f, out: io.Discard, stderr: io.Discard}
-	err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "vamos-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04", scenario: "firewall"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	phases, deleted := 0, false
-	for _, args := range f.calls {
-		joined := strings.Join(args, " ")
-		if strings.Contains(joined, "/repository/acceptance.py") {
-			t.Fatal("focused firewall stage ran unrelated repository acceptance")
-		}
-		if strings.Contains(joined, "/linux_suite.py") {
-			phases++
-			if !strings.HasSuffix(joined, "--scenario firewall") {
-				t.Fatalf("missing focused selector: %v", args)
+func TestFocusedScenariosKeepOwnedRestartButSkipRepository(t *testing.T) {
+	for _, scenario := range []string{"firewall", "waf-cache"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := &fakeExec{t: t, mode: "success"}
+			r := runner{exec: f, out: io.Discard, stderr: io.Discard}
+			err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "vamos-test-0123456789ab", token: strings.Repeat("a", 32), arch: "native", ubuntu: "24.04", scenario: scenario})
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-		deleted = deleted || args[0] == "delete"
-	}
-	if phases != 2 || !f.restarted || !deleted {
-		t.Fatalf("focused lifecycle incomplete: phases=%d restart=%v deleted=%v", phases, f.restarted, deleted)
+			phases, deleted := 0, false
+			for _, args := range f.calls {
+				joined := strings.Join(args, " ")
+				if strings.Contains(joined, "/repository/acceptance.py") {
+					t.Fatal("focused stage ran unrelated repository acceptance")
+				}
+				if strings.Contains(joined, "/linux_suite.py") {
+					phases++
+					if !strings.HasSuffix(joined, "--scenario "+scenario) {
+						t.Fatalf("missing focused selector: %v", args)
+					}
+				}
+				deleted = deleted || args[0] == "delete"
+			}
+			if phases != 2 || !f.restarted || !deleted {
+				t.Fatalf("focused lifecycle incomplete: phases=%d restart=%v deleted=%v", phases, f.restarted, deleted)
+			}
+		})
 	}
 }

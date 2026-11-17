@@ -230,7 +230,7 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	}
 	fmt.Fprintln(r.out, "Guest prepare phase")
 	prepareArgs := []string{"python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token}
-	if o.scenario == "firewall" {
+	if o.scenario == "firewall" || o.scenario == "waf-cache" {
 		prepareArgs = append(prepareArgs, "--scenario", o.scenario)
 	}
 	if err := call(nil, prepareArgs...); err != nil {
@@ -278,13 +278,13 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	defer cancelVerify()
 	fmt.Fprintln(r.out, "Guest verify-restart phase")
 	verifyArgs := []string{"python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token, "--phase", "verify-restart"}
-	if o.scenario == "firewall" {
+	if o.scenario == "firewall" || o.scenario == "waf-cache" {
 		verifyArgs = append(verifyArgs, "--scenario", o.scenario)
 	}
 	if err := r.exec.Run(verifyCtx, runArgs(m.ID, verifyArgs...), nil, r.out, r.stderr); err != nil {
 		return fmt.Errorf("guest verify-restart: %w", err)
 	}
-	if o.scenario == "firewall" {
+	if o.scenario == "firewall" || o.scenario == "waf-cache" {
 		return nil
 	}
 	// Run after all Docker ownership/teardown and reboot checks. Repository
@@ -383,9 +383,9 @@ func entry() error {
 	keep := flag.Bool("keep-on-failure", false, "retain owned VM on failure")
 	arch := flag.String("arch", "native", "native, arm64, or amd64")
 	ubuntu := flag.String("ubuntu", "24.04", "24.04 or 26.04")
-	scenario := flag.String("scenario", "all", "all or firewall (focused packet-path and restart checks)")
+	scenario := flag.String("scenario", "all", "all, firewall, or waf-cache (focused acceptance checks)")
 	flag.Parse()
-	if (*scenario != "all" && *scenario != "firewall") || flag.NArg() != 0 || (*arch != "native" && *arch != "arm64" && *arch != "amd64") || (*ubuntu != "24.04" && *ubuntu != "26.04") {
+	if (*scenario != "all" && *scenario != "firewall" && *scenario != "waf-cache") || flag.NArg() != 0 || (*arch != "native" && *arch != "arm64" && *arch != "amd64") || (*ubuntu != "24.04" && *ubuntu != "26.04") {
 		return errors.New("invalid arguments")
 	}
 	if runtime.GOOS != "darwin" {
