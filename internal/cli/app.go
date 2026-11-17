@@ -39,7 +39,7 @@ type appDeps struct {
 
 func defaultAppDeps() appDeps {
 	agentTransport := ssh.NewAgentTransport()
-	return appDeps{Registry: registry.Default, Archive: buildcontext.Archive, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunApp, Stream: ssh.StreamApp, Agent: agentTransport.RunApp, AgentStream: agentTransport.StreamApp}
+	return appDeps{Registry: registry.Default, Archive: buildcontext.Archive, Inspect: ssh.InspectAdmin, Artifact: ssh.Artifact, Run: ssh.RunApp, Stream: ssh.StreamApp, Agent: agentTransport.RunApp, AgentStream: agentTransport.StreamApp}
 }
 
 // runAppTransport routes one app operation through the installed coordinator
@@ -58,8 +58,8 @@ func runAppTransport(ctx context.Context, target, executorFile string, request d
 	if err != nil {
 		return deploy.Response{}, err
 	}
-	if !report.Supported || !report.Root {
-		return deploy.Response{}, errors.New("deployment requires root on a supported Ubuntu host")
+	if err := host.RequireAdmin(report); err != nil {
+		return deploy.Response{}, err
 	}
 	binary, err := deps.Artifact(executorFile, report.Architecture)
 	if err != nil {
@@ -83,8 +83,8 @@ func runSessionTransport(ctx context.Context, target, executorFile string, reque
 	if err != nil {
 		return -1, err
 	}
-	if !report.Supported || !report.Root {
-		return -1, errors.New("deployment requires root on a supported Ubuntu host")
+	if err := host.RequireAdmin(report); err != nil {
+		return -1, err
 	}
 	binary, err := deps.Artifact(executorFile, report.Architecture)
 	if err != nil {
@@ -443,6 +443,10 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			fmt.Fprintf(stderr, "Inspect: vamos status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
 		} else if mutation {
 			fmt.Fprintf(stderr, "Inspect: vamos status --server %s --app %s\nIf recorded, resume: vamos resume --server %s --app %s %s\n", server.Name, name, server.Name, name, request.Operation)
+		}
+		if mutation && readinessFailed(err) {
+			fmt.Fprintln(stderr, readinessRecovery)
+			fmt.Fprintln(stderr, "Inspect candidate:", reportView.command("logs", "--candidate"))
 		}
 		return code
 	}

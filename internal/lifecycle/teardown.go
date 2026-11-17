@@ -212,7 +212,7 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 		return nil, err
 	}
 	if len(present) > 0 {
-		args := append([]string{"-y", "-qq", "--no-auto-remove", "-o", "Dpkg::Use-Pty=0", "-o", "DPkg::Lock::Timeout=60", "purge"}, present...)
+		args := aptMutationArgs(append([]string{"--no-auto-remove", "purge"}, present...)...)
 		if _, err := m.command(ctx, "apt-get", args...); err != nil {
 			return nil, err
 		}

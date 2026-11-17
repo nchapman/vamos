@@ -37,7 +37,7 @@ type lifecycleDeps struct {
 }
 
 func defaultLifecycleDeps() lifecycleDeps {
-	return lifecycleDeps{Input: os.Stdin, IsTerminal: firewallTerminalInput, Firewall: ssh.RunFirewall, Registry: registry.Default, Inspect: ssh.Inspect, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey, ResolveDomain: defaultServerDomain}
+	return lifecycleDeps{Input: os.Stdin, IsTerminal: firewallTerminalInput, Firewall: ssh.RunFirewall, Registry: registry.Default, Inspect: ssh.InspectAdmin, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey, ResolveDomain: defaultServerDomain}
 }
 
 func serverLifecycle(ctx context.Context, operation string, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {
@@ -212,8 +212,8 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
-	if !report.Supported || !report.Root {
-		return lifecycleError(stderr, errors.New("server lifecycle changes require root on a supported Ubuntu host"))
+	if err := host.RequireAdmin(report); err != nil {
+		return lifecycleError(stderr, err)
 	}
 	binary, err := deps.Artifact(*artifact, report.Architecture)
 	if err != nil {
@@ -249,7 +249,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 
 		if enableFirewall {
 			if _, err := enableAndConfirmFirewall(ctx, server.Target, request.Config, binary, deps.Firewall); err != nil {
-				return lifecycleError(stderr, fmt.Errorf("host registered, but firewall setup was not confirmed: %w", err))
+				return lifecycleError(stderr, fmt.Errorf("server %s is ready and registered, but firewall setup was not confirmed: %w; do not repeat server add. Run `vamos server firewall status %s` to check protection, then `vamos server firewall enable --yes %s` to enable and confirm it", name, err, name, name))
 			}
 			if _, err := fmt.Fprintln(stdout, "Managed firewall enabled and confirmed through a fresh SSH connection."); err != nil {
 				return lifecycleError(stderr, err)

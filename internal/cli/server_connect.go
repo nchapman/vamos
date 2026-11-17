@@ -8,6 +8,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/registry"
 	"github.com/nchapman/vamos/internal/ssh"
@@ -64,8 +65,8 @@ func serverConnect(ctx context.Context, args []string, stdout, stderr io.Writer,
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
-	if report == nil || !report.Supported || !report.Root {
-		return lifecycleError(stderr, errors.New("connect requires root on a supported Ubuntu host"))
+	if err := host.RequireAdmin(report); err != nil {
+		return lifecycleError(stderr, err)
 	}
 	status, err := deps.Status(ctx, target)
 	if err != nil {

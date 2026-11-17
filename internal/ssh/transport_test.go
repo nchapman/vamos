@@ -53,10 +53,14 @@ func TestTransportInspectsSelectsArtifactAndRuns(t *testing.T) {
 		{Supported: false, Root: true, Architecture: "arm64"},
 	} {
 		tr.InspectFn = func(context.Context, string) (*host.Report, error) { return badReport, nil }
-		if _, err := tr.RunApp(context.Background(), "root@host", req, nil); err == nil || !strings.Contains(err.Error(), "requires root") {
+		want := "requires root"
+		if !badReport.Supported {
+			want = "unsupported host"
+		}
+		if _, err := tr.RunApp(context.Background(), "root@host", req, nil); err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("expected RunApp host refusal for %+v, got %v", badReport, err)
 		}
-		if code, err := tr.StreamApp(context.Background(), "root@host", deploy.SessionRequest{Version: 1}, nil, io.Discard, io.Discard); code != -1 || err == nil || !strings.Contains(err.Error(), "requires root") {
+		if code, err := tr.StreamApp(context.Background(), "root@host", deploy.SessionRequest{Version: 1}, nil, io.Discard, io.Discard); code != -1 || err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("expected StreamApp host refusal for %+v, got code=%d err=%v", badReport, code, err)
 		}
 	}

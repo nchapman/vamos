@@ -37,10 +37,16 @@ func TestSessionTransportSeparatesSetupAndWorkloadStreams(t *testing.T) {
 					t.Fatalf("invalid control call %v", args)
 				}
 				if calls == 2 {
+					if args[len(args)-1] != adminCommand(sessionCleanupCommand(p.Token)) {
+						t.Fatal("cleanup not elevated")
+					}
 					if payload != nil || !strings.Contains(args[len(args)-1], "internal-session-cleanup") {
 						t.Fatal("missing cleanup")
 					}
 					return process.Result{}, nil
+				}
+				if args[len(args)-1] != adminCommand("/bin/sh -c "+shellQuote(strings.ReplaceAll(sessionPrepareScript, "__TOKEN__", p.Token))) {
+					t.Fatal("preparation not elevated")
 				}
 				var uploaded deploy.SessionRequest
 				tr := tar.NewReader(bytes.NewReader(payload))
@@ -69,9 +75,7 @@ func TestSessionTransportSeparatesSetupAndWorkloadStreams(t *testing.T) {
 			}
 			stream := func(_ context.Context, name string, args []string, stdin io.Reader, out, diag io.Writer) (int, error) {
 				wantTTY := "-T"
-				if tty {
-					wantTTY = "-tt"
-				}
+
 				joined := strings.Join(args, " ")
 				if name != "ssh" || args[2] != wantTTY || stdin != input || out != &stdout || diag != &stderr {
 					t.Fatalf("bad session streams/args %v", args)
@@ -81,7 +85,7 @@ func TestSessionTransportSeparatesSetupAndWorkloadStreams(t *testing.T) {
 						t.Fatalf("missing %s", option)
 					}
 				}
-				if strings.Contains(joined, "touch /tmp") || !strings.HasSuffix(joined, "internal-session-attach "+p.Token) {
+				if strings.Contains(joined, "touch /tmp") || args[len(args)-1] != adminCommand("/var/lib/.vamos-session-exec."+p.Token+" internal-session-attach "+p.Token) {
 					t.Fatal("unsafe attach command")
 				}
 				io.WriteString(out, "workload output")

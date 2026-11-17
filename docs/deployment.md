@@ -23,7 +23,7 @@ partial-deploy targets, exclusions, missing inputs and recovery.
 
 ## Deploy an app
 
-The host must already be bootstrapped and registered with the real base domain. Point wildcard DNS at its address and allow inbound TCP 80/443 through host/cloud firewalls. Vamos does not change DNS or cloud firewall policy. The optional [managed host firewall](firewall.md) is configured through `server add --firewall=true` or `server firewall enable --yes`, not app deployment. Server administration requires root SSH; normal app commands use the restricted bridge.
+The host must already be bootstrapped and registered with the real base domain. Point wildcard DNS at its address and allow inbound TCP 80/443 through host/cloud firewalls. Vamos does not change DNS or cloud firewall policy. The optional [managed host firewall](firewall.md) is configured through `server add --firewall=true` or `server firewall enable --yes`, not app deployment. Server administration requires root or passwordless-sudo SSH access; normal app commands use the restricted bridge.
 
 ```sh
 mise run build

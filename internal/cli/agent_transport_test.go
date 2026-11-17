@@ -62,7 +62,9 @@ func TestRunAppTransportLegacyPathInspectsRootAndUploads(t *testing.T) {
 	if err != nil || !ran || response.Status == nil {
 		t.Fatalf("legacy path broken: %+v %v", response, err)
 	}
-	deps.Inspect = func(context.Context, string) (*host.Report, error) { return &host.Report{}, nil }
+	deps.Inspect = func(context.Context, string) (*host.Report, error) {
+		return &host.Report{Supported: true, UID: 1000}, nil
+	}
 	if _, err := runAppTransport(context.Background(), "root@home", "", request, nil, deps); err == nil || !strings.Contains(err.Error(), "requires root") {
 		t.Fatalf("non-root host accepted: %v", err)
 	}

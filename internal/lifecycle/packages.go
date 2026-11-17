@@ -9,6 +9,36 @@ import (
 	"strings"
 )
 
+// aptLockTimeoutOption bounds APT's own dpkg lock acquisition, not the
+// installation itself. The caller context still bounds the entire command.
+// This does not cover apt-get update's separate lists lock.
+const aptLockTimeoutOption = "DPkg::Lock::Timeout=60"
+
+func aptMutationArgs(args ...string) []string {
+	return append([]string{"-y", "-qq", "-o", "Dpkg::Use-Pty=0", "-o", aptLockTimeoutOption}, args...)
+}
+
+// aptLockDiagnostic only classifies lock acquisition failures, not generic
+// dpkg errors (which may require a different recovery procedure).
+func aptLockDiagnostic(args []string, output []byte) string {
+	text := strings.ToLower(string(output))
+	locked := strings.Contains(text, "could not get lock") ||
+		strings.Contains(text, "unable to acquire the dpkg frontend lock") ||
+		strings.Contains(text, "unable to lock directory") ||
+		strings.Contains(text, "is another process using it?")
+	if !locked {
+		return ""
+	}
+	advice := "wait for cloud-init or unattended-upgrades (or another package manager) to finish, then retry; do not delete lock files or kill package processes"
+	if contains(args, "update") {
+		return "apt-get update could not acquire its separate package-list lock; automatic waiting for this lock is not implemented; " + advice
+	}
+	if contains(args, aptLockTimeoutOption) && !contains(args, "--simulate") {
+		return "APT could not acquire a package-manager lock (dpkg lock waiting is limited to 60 seconds, or less if the caller cancels); " + advice
+	}
+	return "APT could not acquire a package-manager lock; " + advice
+}
+
 var installLine = regexp.MustCompile(`^Inst ([^ ]+)(?: \[[^]]+\])? \(([^ ]+) `)
 
 type installedPackage struct{ Status, Version string }
@@ -127,7 +157,7 @@ func (m *Manager) installPackages(ctx context.Context, s *State) error {
 		}
 	}
 	if len(planned) != 0 {
-		args := append([]string{"-y", "-qq", "-o", "Dpkg::Use-Pty=0", "-o", "DPkg::Lock::Timeout=60"}, installArgs...)
+		args := aptMutationArgs(installArgs...)
 		if _, err := m.command(ctx, "apt-get", args...); err != nil {
 			return err
 		}

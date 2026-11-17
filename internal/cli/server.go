@@ -29,7 +29,8 @@ TARGET is an SSH alias or [user@]host (unbracketed IPv6 is supported).
 Use SSH config for ports, identities, and jump hosts. Flags precede TARGET.
 Requires an already trusted host key and noninteractive key/agent authentication.
 Inspect is read-only. Connect verifies an existing ready host and registers it locally;
-it requires root but makes no remote changes. Add and teardown require root and explicit --yes.
+it requires root or passwordless sudo but makes no setup changes.
+Add and teardown require root or passwordless sudo and explicit --yes.
 Add prompts for a firewall choice on interactive stdin; scripts must pass --firewall=true|false.
 Managed firewall is opt-in dedicated-host protection with automatic Docker public publishing.
 Disable removes protection only; unsupported existing firewall configurations are refused.

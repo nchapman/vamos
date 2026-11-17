@@ -26,7 +26,7 @@ vamos upgrade
 
 ### 2. Inspect and bootstrap a server
 
-Start with a **fresh Ubuntu 24.04+ server** (amd64 or arm64) with root SSH access and an already-trusted host key. Point a wildcard DNS record (e.g. `*.apps.example.com`) at the server and allow TCP ports `80` and `443`.
+Start with a **fresh Ubuntu 24.04+ server** (amd64 or arm64) with root SSH access **or a non-root SSH account with passwordless sudo**, and an already-trusted host key. Point a wildcard DNS record (e.g. `*.apps.example.com`) at the server and allow TCP ports `80` and `443`.
 
 ```sh
 # Read-only compatibility check
@@ -113,7 +113,7 @@ Run `vamos help` or `vamos <command> --help` for full options and flags.
 | Local CLI (`vamos`) | macOS, Linux, Windows |
 | Target server (`vamos-agent` & executor) | Ubuntu 24.04+ with systemd (`amd64` or `arm64`) |
 
-The local CLI does not require Docker, systemd, or Linux. Server lifecycle commands (`server add`, `server upgrade`, `server teardown`, `server connect`) require root SSH; normal app commands use the restricted `vamos` SSH bridge configured by `server add`.
+The local CLI does not require Docker, systemd, or Linux. Server lifecycle commands (`server add`, `server upgrade`, `server teardown`, `server connect`) require root or passwordless-sudo SSH access; normal app commands use the restricted `vamos` SSH bridge configured by `server add`.
 
 ## Examples
 
@@ -146,7 +146,7 @@ All default Go and Python tests run offline without Docker or a remote server.
 
 Detailed contracts and architecture notes live in `docs/`:
 
-- [CLI reference](docs/cli.md)
+- [CLI reference](docs/cli.md) & [Troubleshooting and safe recovery](docs/troubleshooting.md)
 - [Host inspection](docs/host-inspection.md) & [Host lifecycle (`add`, `upgrade`, `connect`, `teardown`)](docs/host-lifecycle.md)
 - [Deployment & recovery](docs/deployment.md), [Multi-service apps](docs/multi-service.md), & [Rollback](docs/rollback.md)
 - [Service ports](docs/ports.md), [Volumes](docs/volumes.md), [Secrets](docs/secrets.md), [Custom domains](docs/domains.md), [Resources](docs/resources.md), & [Release commands](docs/release-commands.md)

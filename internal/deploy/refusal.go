@@ -3,6 +3,7 @@ package deploy
 import (
 	"errors"
 	"github.com/nchapman/vamos/internal/backup"
+	"github.com/nchapman/vamos/internal/engine"
 	"github.com/nchapman/vamos/internal/secrets"
 )
 
@@ -18,6 +19,9 @@ var (
 
 // ErrorCode classifies identities, never diagnostic strings.
 func ErrorCode(err error) string {
+	if code := engine.RuntimeErrorCode(err); code != "" {
+		return code
+	}
 	if errors.Is(err, errBackupPlanLegacy) {
 		return "backup_plan_legacy"
 	}

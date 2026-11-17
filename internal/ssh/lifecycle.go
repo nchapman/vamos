@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/nchapman/vamos/internal/buildmeta"
 	"github.com/nchapman/vamos/internal/executor"
@@ -84,7 +83,7 @@ func HostStatus(ctx context.Context, target string) (*Status, error) {
 	if err := ValidateTarget(target); err != nil {
 		return nil, err
 	}
-	result, err := process.Run(ctx, "ssh", arguments(target, "/bin/sh -s"), []byte(statusScript))
+	result, err := process.Run(ctx, "ssh", arguments(target, adminCommand("/bin/sh -s")), []byte(statusScript))
 	if err != nil {
 		return nil, connectionError(target, result, err)
 	}
@@ -226,6 +225,6 @@ func runStagedRequest(ctx context.Context, target string, request executor.Reque
 		return process.Result{}, err
 	}
 	// This command is assembled only from an embedded constant, never request fields.
-	command := "/bin/sh -c '" + strings.ReplaceAll(bootstrapScript, "'", "'\\''") + "'"
-	return run(ctx, "ssh", arguments(target, command), payload)
+	command := "/bin/sh -c " + shellQuote(bootstrapScript)
+	return run(ctx, "ssh", arguments(target, adminCommand(command)), payload)
 }

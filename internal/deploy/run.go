@@ -533,8 +533,8 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 	}
 	args := runCreateArgs(j, rec)
 	rel := &release{Image: rec.Image, SecretRefs: refs}
-	if m.runContainer(ctx, j, rel, args) != nil {
-		return resp, errors.New("run create outcome unknown; no retry")
+	if err := m.runContainer(ctx, j, rel, args); err != nil {
+		return resp, runtimeContext("run create outcome unknown; no retry", err)
 	}
 	v, err := m.inspect(ctx, "container", rec.Container)
 	if err != nil {

@@ -2,7 +2,7 @@
 
 ## Supported boundary
 
-Root SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm64. The client runs on macOS, Linux, or Windows and needs OpenSSH, not Docker or APT. Trust the SSH host key separately. No sudo escalation, distribution-independent installer, external package repository, or adoption of existing Docker/Caddy installations is implemented. The separate [deployment slice](deployment.md) can subsequently manage app routes; host teardown still refuses active/incomplete app state and workloads. It can purge only strict, matching-host [completed app destruction receipts](app-lifecycle.md) with no other app files.
+Root or passwordless-sudo SSH access to a **dedicated Ubuntu 24.04+ host with systemd**, amd64 or arm64. The client runs on macOS, Linux, or Windows and needs OpenSSH, not Docker or APT. Trust the SSH host key separately. Administrative commands use root directly or `sudo -n` through the same SSH account; root SSH login need not be enabled. Sudo must allow a root shell without a password or TTY. Password-required, denied, or missing sudo fails before setup, without consuming command input. Explicit `server inspect` remains unprivileged and never invokes sudo. No distribution-independent installer, external package repository, or adoption of existing Docker/Caddy installations is implemented. The separate [deployment slice](deployment.md) can subsequently manage app routes; host teardown still refuses active/incomplete app state and workloads. It can purge only strict, matching-host [completed app destruction receipts](app-lifecycle.md) with no other app files.
 
 ```sh
 mise run build

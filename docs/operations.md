@@ -9,7 +9,7 @@ implemented features.
 ## Operating envelope
 
 - Use a **dedicated, trusted Ubuntu 24.04+ systemd host**, amd64 or arm64, with
-  root SSH administration. Keep host keys independently verified and authentication
+  root or passwordless-sudo SSH administration. Keep host keys independently verified and authentication
   noninteractive; do not weaken strict known-host checking to restore access.
 - Trust all administrators, application code, Dockerfiles, and build inputs.
   [Build networking](builds.md) isolates the builder from host-local services and
@@ -152,7 +152,7 @@ After timeout, disconnect, or an unexpected result:
    verified container; it does not follow future replacements. Logs can expose
    secrets and application-controlled content.
 4. If SSH works but runtime/systemd state is suspect, use read-only host diagnosis
-   under the trusted root SSH workflow. For example, on the host:
+   under the trusted root/passwordless-sudo SSH workflow. For example, on the host:
 
    ```sh
    systemctl status vamos-agent.service docker.service --no-pager

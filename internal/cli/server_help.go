@@ -16,7 +16,7 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		names = append(names, "json")
 	case "add":
 		usage = "vamos server add [OPTIONS] --yes [--firewall=true|false] [--domain DOMAIN] NAME TARGET"
-		notes = "Bootstrap a dedicated supported Ubuntu host as root. Requires explicit --yes.\nDefaults to <hex-ip>.tryvamos.dev when --domain is omitted. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH.\nChoose --firewall=true|false explicitly in scripts; interactive stdin prompts if omitted.\nManaged firewall is opt-in automatic dedicated-host protection, including Docker public publishing.\nFalse leaves rules untouched. Unsupported existing firewall configurations are refused."
+		notes = "Bootstrap a dedicated supported Ubuntu host using root or passwordless sudo. Requires explicit --yes.\nDefaults to <hex-ip>.tryvamos.dev when --domain is omitted. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH.\nChoose --firewall=true|false explicitly in scripts; interactive stdin prompts if omitted.\nManaged firewall is opt-in automatic dedicated-host protection, including Docker public publishing.\nFalse leaves rules untouched. Unsupported existing firewall configurations are refused."
 		names = append(names, "yes", "domain", "executor", "deploy-key", "firewall")
 	case "upgrade":
 		usage = "vamos server upgrade [OPTIONS] --yes [NAME [TARGET]]"
@@ -24,7 +24,7 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		names = append(names, "yes", "executor")
 	case "connect":
 		usage = "vamos server connect [OPTIONS] [--domain DOMAIN] NAME TARGET"
-		notes = "Verify an existing ready installation and register it locally. Requires root SSH.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME (and optional DOMAIN) must match the installed identity; SSH host keys must already be trusted."
+		notes = "Verify an existing ready installation and register it locally. Requires root or passwordless-sudo SSH access.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME (and optional DOMAIN) must match the installed identity; SSH host keys must already be trusted."
 		names = append(names, "domain")
 	case "status":
 		usage = "vamos server status [OPTIONS] [NAME [TARGET]]"

@@ -27,7 +27,7 @@ False leaves firewall rules untouched, including any existing managed policy.
 The choice is not saved in application configuration or host identity.
 
 Standalone firewall commands use the registered default server when NAME is
-omitted. Flags precede NAME. All require root SSH, a ready matching owned
+omitted. Flags precede NAME. All require root or passwordless-sudo SSH access, a ready matching owned
 installation, and the matching Linux executor artifact (including status).
 `--executor FILE` selects an artifact; `--timeout DURATION` bounds client waiting
 (default two minutes). Normal app operations still use the restricted SSH bridge.

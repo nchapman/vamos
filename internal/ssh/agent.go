@@ -35,6 +35,9 @@ var _ transport.Client = (*AgentTransport)(nil)
 func NewAgentTransport() *AgentTransport { return &AgentTransport{} }
 
 func (*AgentTransport) Inspect(ctx context.Context, target string) (*host.Report, error) {
+	// Agent operations authorize at the coordinator, not through sudo. This
+	// optional host report remains unprivileged on the original login target;
+	// the restricted bridge itself only speaks the agent protocol.
 	return Inspect(ctx, target)
 }
 

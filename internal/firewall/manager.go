@@ -419,19 +419,47 @@ func (m *Manager) cleanRetired(ctx context.Context, hostID string) error {
 	if err != nil || s == nil {
 		return err
 	}
-	if err = m.checkArtifacts(*s); err != nil {
-		return err
+	// Only a retained, validated retired identity permits absent artifacts.
+	// Lstat distinguishes absence from a dangling/foreign symlink; never follow
+	// references when deciding whether an artifact is ours to delete.
+	for p, want := range artifacts(*s) {
+		info, e := os.Lstat(m.path(p))
+		if os.IsNotExist(e) {
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("owned artifact is not a regular file: %s", p)
+		}
+		got, e := os.ReadFile(m.path(p))
+		if e != nil {
+			return e
+		}
+		if string(got) != want {
+			return fmt.Errorf("owned artifact drift: %s", p)
+		}
 	}
 	if _, err = m.status(ctx, nil); err != nil {
 		return err
 	}
 	for _, args := range [][]string{{"disable", "--now", "vamos-firewall-rollback.timer"}, {"stop", "vamos-firewall-rollback.service"}, {"disable", "vamos-firewall.service"}} {
+		// These units are disabled/stopped before any artifact deletion. A
+		// missing unit on retry means that step already completed; systemctl
+		// disable would otherwise fail on the now-uninstalled unit.
+		unitPath := "/etc/systemd/system/" + args[len(args)-1]
+		if _, e := os.Lstat(m.path(unitPath)); os.IsNotExist(e) {
+			continue
+		} else if e != nil {
+			return e
+		}
 		if _, err = m.command(ctx, "systemctl", args...); err != nil {
 			return err
 		}
 	}
 	for p := range artifacts(*s) {
-		if err = os.Remove(m.path(p)); err != nil {
+		if err = os.Remove(m.path(p)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}

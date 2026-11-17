@@ -27,6 +27,9 @@ func TestAppTransportUsesFixedCommandAndBoundedTar(t *testing.T) {
 			t.Fatal(name)
 		}
 		command := args[len(args)-1]
+		if command != adminCommand("/bin/sh -c "+shellQuote(appScript)) {
+			t.Fatal("missing admin wrapper")
+		}
 		if strings.Contains(command, request.Config.Services["web"].Env["LITERAL"]) || !strings.Contains(command, "internal-app-executor") {
 			t.Fatal("request interpolated into shell")
 		}

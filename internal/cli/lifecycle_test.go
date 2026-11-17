@@ -20,6 +20,26 @@ import (
 
 const testDeployKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHJlcGxhY2VtZW50cHVibGlja2V5Ym9keWZvcnRlc3Rpbmdvbmx5 ci@host"
 
+func TestSetupShowsCompatibilityReasonsBeforeMutation(t *testing.T) {
+	store := registry.New(t.TempDir())
+	deps := lifecycleDeps{
+		Registry: func() (*registry.Store, error) { return store, nil },
+		Inspect: func(context.Context, string) (*host.Report, error) {
+			return &host.Report{Root: true, Problems: []string{"Ubuntu VERSION_ID must be 24.04 or newer", "systemd must be PID 1"}}, nil
+		},
+	}
+	var out, diagnostic bytes.Buffer
+	code := serverLifecycle(context.Background(), "add", []string{"--yes", "--firewall=false", "--domain", "example.com", "home", "ubuntu@home"}, &out, &diagnostic, deps)
+	if code != 1 {
+		t.Fatalf("code=%d: %s", code, &diagnostic)
+	}
+	for _, want := range []string{"24.04 or newer", "systemd must be PID 1"} {
+		if !strings.Contains(diagnostic.String(), want) {
+			t.Fatalf("missing %q: %s", want, &diagnostic)
+		}
+	}
+}
+
 func TestLifecycleRefusals(t *testing.T) {
 	for _, tt := range []struct {
 		op   string

@@ -33,7 +33,7 @@ func TestLifecycleArchiveAndFixedCommand(t *testing.T) {
 			}
 			previous = append([]string(nil), args...)
 			wantCommand := "/bin/sh -c '" + strings.ReplaceAll(bootstrapScript, "'", "'\\''") + "'"
-			if args[len(args)-1] != wantCommand {
+			if args[len(args)-1] != adminCommand(wantCommand) {
 				t.Fatal("not the fixed bootstrap command")
 			}
 			tr := tar.NewReader(bytes.NewReader(input))

@@ -514,8 +514,8 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		}
 		args = append(args, r.Image)
 		args = append(args, r.Config.Command...)
-		if m.runContainer(ctx, j, r.release, args) != nil {
-			return errors.New("create candidate failed")
+		if err := m.runContainer(ctx, j, r.release, args); err != nil {
+			return runtimeContext("create candidate failed", err)
 		}
 	}
 	v, err := m.instanceInspect(ctx, j, r, false, r.Config.HTTP == nil)

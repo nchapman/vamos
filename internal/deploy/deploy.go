@@ -613,7 +613,13 @@ func (m *Manager) cmd(c context.Context, n string, a ...string) ([]byte, error) 
 			if c.Err() != nil {
 				return nil, fmt.Errorf("docker command: %w", c.Err())
 			}
-			return nil, errors.New("Docker command failed; runtime diagnostic output withheld")
+			if errors.Is(e, context.Canceled) {
+				return nil, context.Canceled
+			}
+			if errors.Is(e, context.DeadlineExceeded) {
+				return nil, context.DeadlineExceeded
+			}
+			return nil, engine.ClassifyRuntimeFailure(r.Stderr)
 		}
 		return nil, fmt.Errorf("%s: %w: %s", n, e, diagnostic(string(r.Stderr)))
 	}

@@ -45,7 +45,7 @@ func TestBackupPlanTypedResponseAndWorker(t *testing.T) {
 					script = appScript
 				}
 				command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
-				if !strings.Contains(strings.Join(args, " "), command) {
+				if args[len(args)-1] != adminCommand(command) {
 					t.Fatal("wrong worker script")
 				}
 				return process.Result{Stdout: body, Stderr: []byte("private-canary")}, nil

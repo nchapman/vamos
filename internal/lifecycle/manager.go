@@ -151,6 +151,11 @@ func (m *Manager) command(ctx context.Context, name string, args ...string) ([]b
 		if len(detail) > 4096 {
 			detail = detail[len(detail)-4096:]
 		}
+		if name == "apt-get" {
+			if diagnostic := aptLockDiagnostic(args, detail); diagnostic != "" {
+				return nil, fmt.Errorf("%s: %w; output tail: %q", diagnostic, err, detail)
+			}
+		}
 		return nil, fmt.Errorf("%s failed: %w; output tail: %q", name, err, detail)
 	}
 	return r.Stdout, nil

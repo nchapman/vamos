@@ -2,7 +2,6 @@ package ssh
 
 import (
 	"context"
-	"errors"
 	"io"
 	"time"
 
@@ -25,7 +24,7 @@ var _ transport.Client = (*Transport)(nil)
 func NewTransport(executorOverride string) *Transport {
 	return &Transport{
 		ExecutorOverride: executorOverride,
-		InspectFn:        Inspect,
+		InspectFn:        InspectAdmin,
 		ArtifactFn:       Artifact,
 		RunAppFn:         RunApp,
 		StreamAppFn:      StreamApp,
@@ -35,7 +34,7 @@ func NewTransport(executorOverride string) *Transport {
 func (t *Transport) Inspect(ctx context.Context, target string) (*host.Report, error) {
 	fn := t.InspectFn
 	if fn == nil {
-		fn = Inspect
+		fn = InspectAdmin
 	}
 	return fn(ctx, target)
 }
@@ -47,8 +46,8 @@ func (t *Transport) prepareArtifact(ctx context.Context, target string) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	if !report.Supported || !report.Root {
-		return nil, errors.New("deployment requires root on a supported Ubuntu host")
+	if err := host.RequireAdmin(report); err != nil {
+		return nil, err
 	}
 	artifactFn := t.ArtifactFn
 	if artifactFn == nil {

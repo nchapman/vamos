@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/nchapman/vamos/internal/backup"
 	"github.com/nchapman/vamos/internal/buildcontext"
@@ -61,8 +60,8 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 	if mutation {
 		script = appScript
 	}
-	command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
-	result, runErr := run(ctx, "ssh", arguments(target, command), payload)
+	command := "/bin/sh -c " + shellQuote(script)
+	result, runErr := run(ctx, "ssh", arguments(target, adminCommand(command)), payload)
 	decodeErr := decodeJSON(result.Stdout, &response)
 	var connErr error
 	if runErr != nil {

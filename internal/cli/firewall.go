@@ -15,6 +15,7 @@ import (
 
 	"github.com/nchapman/vamos/internal/executor"
 	"github.com/nchapman/vamos/internal/firewall"
+	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"golang.org/x/term"
 )
@@ -24,7 +25,7 @@ const firewallHelp = `Usage:
   vamos server firewall disable --yes [--executor FILE] [NAME]
   vamos server firewall status [--json] [--executor FILE] [NAME]
 
-NAME defaults to the registered default server. Requires root SSH and a matching
+NAME defaults to the registered default server. Requires root or passwordless-sudo SSH access and a matching
 installed executor artifact. --timeout bounds client waiting (default 4m).
 Opt-in automatic policy for dedicated hosts: preserve discovered SSH ports,
 allow HTTP/HTTPS and intentional Docker public publishing, deny other inbound
@@ -169,8 +170,8 @@ func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
-	if report == nil || !report.Supported || !report.Root {
-		return lifecycleError(stderr, errors.New("managed firewall requires root SSH on a supported Ubuntu host"))
+	if err := host.RequireAdmin(report); err != nil {
+		return lifecycleError(stderr, err)
 	}
 	binary, err := deps.Artifact(*artifact, report.Architecture)
 	if err != nil {
@@ -186,6 +187,9 @@ func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer
 		status, err = deps.Firewall(ctx, server.Target, executor.Request{Version: executor.Version, Operation: "firewall-" + op, Config: &cfg, Confirm: op != "status"}, binary)
 	}
 	if err != nil {
+		if op == "disable" {
+			return lifecycleError(stderr, fmt.Errorf("%w; disable has no automatic rollback. Run `vamos server firewall status %s` before retrying `vamos server firewall disable --yes %s`; resolve any ownership or drift errors rather than flushing rules", err, name, name))
+		}
 		return lifecycleError(stderr, err)
 	}
 	if status == nil {

@@ -59,15 +59,15 @@ func streamApp(ctx context.Context, target string, request deploy.SessionRequest
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		command := sessionCleanupCommand(token)
-		if _, err := run(cleanupCtx, "ssh", arguments(target, command), nil); err != nil {
+		if _, err := run(cleanupCtx, "ssh", arguments(target, adminCommand(command)), nil); err != nil {
 			fmt.Fprintln(stderr, "warning: session staging cleanup could not be confirmed; inactive staging expires on subsequent session setup or host restart")
 		}
 	}()
 	prepareCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	script := strings.ReplaceAll(sessionPrepareScript, "__TOKEN__", token)
-	command := "/bin/sh -c '" + strings.ReplaceAll(script, "'", "'\\''") + "'"
-	result, runErr := run(prepareCtx, "ssh", arguments(target, command), payload)
+	command := "/bin/sh -c " + shellQuote(script)
+	result, runErr := run(prepareCtx, "ssh", arguments(target, adminCommand(command)), payload)
 	var prepared session.Preparation
 	decodeErr := decodeJSON(result.Stdout, &prepared)
 	if decodeErr == nil && prepared.Error != "" {
@@ -96,10 +96,8 @@ func streamApp(ctx context.Context, target string, request deploy.SessionRequest
 }
 
 func sessionArguments(target, command string, tty bool) []string {
-	args := arguments(target, command)
-	if tty {
-		args[0] = "-tt"
-	}
+	args := arguments(target, adminCommand(command))
+	// Workload TTY handling must not allocate an SSH TTY for sudo.
 	// Literal ~. and other OpenSSH escape sequences belong to the workload,
 	// not a second hidden local command language.
 	return append([]string{"-o", "EscapeChar=none"}, args...)

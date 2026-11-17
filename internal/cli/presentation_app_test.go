@@ -29,6 +29,38 @@ func presentationStatusFixture() *deploy.Status {
 func presentationReportFixture() appReport {
 	return appReport{action: "status", app: "ledger", server: registry.Server{Name: "home", Target: "root@home.example.net", Domain: "example.net"}}
 }
+func TestPlainReadinessFailureProvidesCandidateRecovery(t *testing.T) {
+	path, _, deps := appFixture(t)
+	deps.Run = func(context.Context, string, deploy.Request, []byte, []byte) (deploy.Response, error) {
+		err := errors.New("HTTP readiness: context deadline exceeded")
+		return deploy.Response{Version: 1, Error: err.Error()}, err
+	}
+	var out, diagnostic bytes.Buffer
+	code := appCommand(context.Background(), "resume", []string{"-f", path, visualOperation}, &out, &diagnostic, deps)
+	if code != 1 {
+		t.Fatalf("code=%d: %s", code, &diagnostic)
+	}
+	for _, want := range []string{readinessRecovery, "Inspect candidate: vamos logs", "--candidate"} {
+		if !strings.Contains(diagnostic.String(), want) {
+			t.Fatalf("missing %q: %s", want, &diagnostic)
+		}
+	}
+}
+
+func TestReadinessFailureExplainsRetainedCandidateWithoutAvailabilityPromise(t *testing.T) {
+	r := presentationReportFixture()
+	r.action, r.mutation = "deploy", true
+	err := errors.New("HTTP readiness: context deadline exceeded")
+	request := deploy.Request{Operation: visualOperation}
+	response := deploy.Response{Version: 1, Error: err.Error()}
+	text := strings.Join(strings.Fields(newHelpAppsTerminal(120, false).p.appFailure(r, request, response, err, "")), " ")
+	for _, want := range []string{"Readiness recovery", "stop-first services may be unavailable", "--supersede OPERATION", "vamos logs --server home --app ledger --candidate", "vamos resume"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q: %s", want, text)
+		}
+	}
+}
+
 func TestStatusPresentationPreservesFactsAndRecoveryOrder(t *testing.T) {
 	for _, width := range []int{48, 80, 120} {
 		out := newHelpAppsTerminal(width, true)

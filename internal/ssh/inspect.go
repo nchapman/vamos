@@ -32,6 +32,9 @@ func ValidateTarget(target string) error {
 		hostname = rest
 	}
 	if !hostPattern.MatchString(hostname) && net.ParseIP(hostname) == nil {
+		if strings.Contains(hostname, ":") {
+			return errors.New("TARGET does not accept host:port or ssh:// URLs; use an SSH config alias with HostName and Port (and ProxyJump if needed); IPv6 addresses must be unbracketed")
+		}
 		return errors.New("invalid SSH host; use an alias, hostname, IPv4, or unbracketed IPv6 address")
 	}
 	return nil
@@ -41,13 +44,23 @@ func Inspect(ctx context.Context, target string) (*host.Report, error) {
 	return inspect(ctx, target, process.Run)
 }
 
+// InspectAdmin collects the same read-only report as Inspect, but as effective
+// root. Administrative callers should use this to verify noninteractive sudo.
+func InspectAdmin(ctx context.Context, target string) (*host.Report, error) {
+	return inspectCommand(ctx, target, process.Run, adminCommand("/bin/sh -s"))
+}
+
 type runProcess func(context.Context, string, []string, []byte) (process.Result, error)
 
 func inspect(ctx context.Context, target string, run runProcess) (*host.Report, error) {
+	return inspectCommand(ctx, target, run, "/bin/sh -s")
+}
+
+func inspectCommand(ctx context.Context, target string, run runProcess, command string) (*host.Report, error) {
 	if err := ValidateTarget(target); err != nil {
 		return nil, err
 	}
-	args := arguments(target, "/bin/sh -s")
+	args := arguments(target, command)
 	return host.Inspect(ctx, func(ctx context.Context) ([]byte, error) {
 		result, err := run(ctx, "ssh", args, []byte(host.Collector()))
 		if err != nil {
@@ -86,5 +99,5 @@ func connectionError(target string, result process.Result, err error) error {
 		}
 		detail = fmt.Sprintf("; SSH stderr: %q", stderr)
 	}
-	return fmt.Errorf("connect to %q over SSH: %w%s; verify OpenSSH, connectivity, known_hosts, and noninteractive key/agent authentication", target, err, detail)
+	return fmt.Errorf("connect to %q over SSH: %w%s; verify OpenSSH, connectivity, known_hosts, and noninteractive key/agent authentication%s", target, err, detail, sshFailureHint(string(result.Stderr)))
 }

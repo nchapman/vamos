@@ -214,7 +214,8 @@ Service selection matches logs (`web`, sole service, or `--service`). Existing
 project service-identity bindings are checked for the selected service; a stale
 binding cannot silently attach to a removed/recreated incarnation. Outside a
 project, specify both `--server` and `--app`. An explicit server override does not
-rewrite a project's binding. All remote commands still require root SSH access
+rewrite a project's binding. Normal sessions use the restricted coordinator bridge.
+Uploaded-executor recovery sessions require root or passwordless-sudo SSH access
 and a matching Linux executor artifact.
 
 ## Open a console

@@ -1,6 +1,15 @@
 package cli
 
-import "github.com/nchapman/vamos/internal/deploy"
+import (
+	"github.com/nchapman/vamos/internal/deploy"
+	"strings"
+)
+
+const readinessRecovery = "Readiness failed. A failed candidate can remain for inspection; resume rechecks the captured operation. Check status before assuming the previous release is still serving: stop-first services may be unavailable. To replace the captured inputs, deploy with explicit --supersede OPERATION."
+
+func readinessFailed(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "readiness")
+}
 
 func (p *presentation) appFailure(r appReport, request deploy.Request, response deploy.Response, err error, bindingCommand string) string {
 	text := p.header(r.action, r.app, r.server.Name, r.server.Target)
@@ -28,6 +37,10 @@ func (p *presentation) appFailure(r appReport, request deploy.Request, response 
 	}
 	if !unknown && response.Status != nil {
 		text += p.releaseReport(response.Status.Release, r)
+	}
+	if r.mutation && readinessFailed(err) {
+		text += p.section("Readiness recovery") + p.prose(readinessRecovery)
+		text += p.command(r.command("logs", "--candidate"))
 	}
 	if bindingCommand != "" {
 		text += p.section("Explicit adoption") + p.prose("Inspect status first; explicitly adopt only the intended service.") + p.command(bindingCommand)

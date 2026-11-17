@@ -158,8 +158,8 @@ func (m *Manager) advanceRelease(ctx context.Context, j *journal) error {
 				return errors.New("recorded release container missing; execution will not be retried")
 			}
 			args := runCreateArgs(j, rec)
-			if m.runContainer(ctx, j, &release{Image: rec.Image, SecretRefs: rec.SecretRefs}, args) != nil {
-				return errors.New("release create outcome unknown; resume to inspect before execution")
+			if err := m.runContainer(ctx, j, &release{Image: rec.Image, SecretRefs: rec.SecretRefs}, args); err != nil {
+				return runtimeContext("release create outcome unknown; resume to inspect before execution", err)
 			}
 		}
 		v, e := m.inspect(ctx, "container", rec.Container)

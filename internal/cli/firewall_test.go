@@ -119,6 +119,13 @@ func TestFirewallDefaultAndFreshConfirmation(t *testing.T) {
 				if fail && op == "enable" && !strings.Contains(diag.String(), "rollback") {
 					t.Fatal(diag.String())
 				}
+				if fail && op == "disable" {
+					for _, hint := range []string{"no automatic rollback", "vamos server firewall status home", "ownership or drift"} {
+						if !strings.Contains(diag.String(), hint) {
+							t.Fatalf("missing %q: %s", hint, &diag)
+						}
+					}
+				}
 			})
 		}
 	}
@@ -192,8 +199,15 @@ func TestServerAddFirewallChoiceAndRegistration(t *testing.T) {
 				if calls != wantCalls || (code != 0) != (choice == "true" && confirmFails) {
 					t.Fatalf("code=%d calls=%d out=%s diag=%s", code, calls, &out, &diag)
 				}
-				if choice == "true" && confirmFails && strings.Contains(out.String(), "firewall enabled") {
-					t.Fatal("false success")
+				if choice == "true" && confirmFails {
+					if strings.Contains(out.String(), "firewall enabled") {
+						t.Fatal("false success")
+					}
+					for _, hint := range []string{"ready and registered", "do not repeat server add", "vamos server firewall status home", "vamos server firewall enable --yes home"} {
+						if !strings.Contains(diag.String(), hint) {
+							t.Fatalf("missing recovery hint %q: %s", hint, &diag)
+						}
+					}
 				}
 			})
 		}

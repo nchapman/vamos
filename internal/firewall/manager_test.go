@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -382,5 +383,127 @@ func TestLockFailureAndStatusNoDataArtifacts(t *testing.T) {
 	}
 	if _, err := h.m.Status(context.Background(), "host"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Simulate process death after each unlink, as well as command failures after
+// all unlinks. The retired identity must survive until cleanup completes.
+func TestRetiredCleanupResumes(t *testing.T) {
+	paths := []string{dropinPath, servicePath, timerPath, rollbackPath, scriptPath}
+	for stage := 0; stage < len(paths)+2; stage++ {
+		t.Run(fmt.Sprint(stage), func(t *testing.T) {
+			h := fixture(t)
+			ctx := context.Background()
+			if _, err := h.m.Enable(ctx, "host"); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.m.action(ctx, "rollback"); err != nil {
+				t.Fatal(err)
+			}
+			if stage < len(paths) {
+				for _, p := range paths[:stage+1] {
+					if err := os.Remove(h.m.path(p)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			} else {
+				h.fail = "daemon-reload"
+				if stage > len(paths) {
+					h.fail = "stop vamos-firewall.service"
+				}
+				if _, err := h.m.Disable(ctx, "host"); err == nil {
+					t.Fatal("expected interruption")
+				}
+				if _, err := os.Stat(h.m.path(retiredPath)); err != nil {
+					t.Fatal(err)
+				}
+				h.fail = ""
+			}
+			original := h.m.Run
+			h.m.Run = func(ctx context.Context, name string, args []string) (process.Result, error) {
+				if name == "systemctl" && len(args) > 1 && (args[0] == "disable" || args[0] == "stop") {
+					if _, e := os.Stat(h.m.path("/etc/systemd/system/" + args[len(args)-1])); os.IsNotExist(e) {
+						if args[0] == "disable" {
+							return process.Result{}, systemctlExit(1)
+						}
+						return process.Result{}, systemctlExit(5)
+					}
+				}
+				return original(ctx, name, args)
+			}
+			if _, err := h.m.Disable(ctx, "host"); err != nil {
+				t.Fatalf("retry: %v", err)
+			}
+			if _, err := os.Stat(h.m.path(retiredPath)); !os.IsNotExist(err) {
+				t.Fatalf("identity remains: %v", err)
+			}
+		})
+	}
+}
+
+func TestRetiredCleanupRefusesChangedSurvivor(t *testing.T) {
+	h := fixture(t)
+	ctx := context.Background()
+	if _, err := h.m.Enable(ctx, "host"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.m.action(ctx, "rollback"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(h.m.path(scriptPath)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(h.m.path(dropinPath), []byte("foreign"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.m.Disable(ctx, "host"); err == nil {
+		t.Fatal("accepted drift")
+	}
+	if b, err := os.ReadFile(h.m.path(dropinPath)); err != nil || string(b) != "foreign" {
+		t.Fatal("removed foreign artifact")
+	}
+}
+
+func TestRetiredCleanupRefusesReferences(t *testing.T) {
+	for _, kind := range []string{"symlink", "dangling-symlink", "rules"} {
+		t.Run(kind, func(t *testing.T) {
+			h := fixture(t)
+			ctx := context.Background()
+			if _, err := h.m.Enable(ctx, "host"); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.m.action(ctx, "rollback"); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "rules" {
+				h.installed = true
+			} else {
+				target := filepath.Join(t.TempDir(), "foreign")
+				if kind == "symlink" {
+					b, err := os.ReadFile(h.m.path(dropinPath))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(target, b, 0644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Remove(h.m.path(dropinPath)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, h.m.path(dropinPath)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := h.m.Disable(ctx, "host"); err == nil {
+				t.Fatal("accepted foreign reference")
+			}
+			if _, err := os.Stat(h.m.path(retiredPath)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(h.m.path(servicePath)); err != nil {
+				t.Fatal("deleted artifacts before validation", err)
+			}
+		})
 	}
 }

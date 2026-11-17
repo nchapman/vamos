@@ -102,7 +102,7 @@ func (f *fakeExec) Run(ctx context.Context, a []string, in io.Reader, out, stder
 		}
 		if a[5] == "python3" {
 			// Focused scenarios retain the same ownership and restart protocol.
-			if len(a) >= 11 && a[len(a)-2] == "--scenario" && (a[len(a)-1] == "firewall" || a[len(a)-1] == "waf-cache") {
+			if len(a) >= 11 && a[len(a)-2] == "--scenario" && (a[len(a)-1] == "firewall" || a[len(a)-1] == "waf-cache" || a[len(a)-1] == "sudo") {
 				a = a[:len(a)-2]
 			}
 			verify := len(a) == 11 && a[9] == "--phase" && a[10] == "verify-restart"
@@ -353,7 +353,7 @@ func TestRestartPhases(t *testing.T) {
 }
 
 func TestFocusedScenariosKeepOwnedRestartButSkipRepository(t *testing.T) {
-	for _, scenario := range []string{"firewall", "waf-cache"} {
+	for _, scenario := range []string{"firewall", "waf-cache", "sudo"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := &fakeExec{t: t, mode: "success"}
 			r := runner{exec: f, out: io.Discard, stderr: io.Discard}
