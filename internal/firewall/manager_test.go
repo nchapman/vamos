@@ -311,8 +311,12 @@ func TestScriptGeneration(t *testing.T) {
 	if err := os.WriteFile(file, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("/bin/sh", "-n", file).CombinedOutput(); err != nil {
-		t.Fatalf("shell syntax: %s %v", out, err)
+	// Keep generated-content checks on every client OS; only shell execution
+	// depends on a POSIX host.
+	if runtime.GOOS != "windows" {
+		if out, err := exec.Command("/bin/sh", "-n", file).CombinedOutput(); err != nil {
+			t.Fatalf("shell syntax: %s %v", out, err)
+		}
 	}
 	for _, want := range []string{"flock -x 9", "if confirmed; then exit 0", "if ! confirmed; then remove_owned", "subset_v4_early\n    subset_v6_early\n    remove_v4", "sync -f /var/lib/vamos", "ip6tables -w 10 -I FORWARD", "identity"} {
 		if !strings.Contains(body, want) {
