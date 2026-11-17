@@ -173,7 +173,7 @@ remove_%s() {
 		}
 		b.WriteString("}\n")
 	}
-	b.WriteString(earlyScriptWithRules(s, rulesFn))
+	b.WriteString(earlyScript(s, rulesFn))
 	b.WriteString(`remove_owned() {
     # Validate BOTH families before mutating either; on failure retain identity
     # and let systemd retry. Partial installs are valid subsets, not foreign rules.
@@ -296,11 +296,7 @@ esac
 // A mangle/FORWARD gate precedes filter/FORWARD regardless of Docker's temporary
 // jump reordering during startup. DNAT has already happened in PREROUTING. This
 // gate only DROPs or RETURNs, so it cannot bypass Docker's later isolation rules.
-func earlyScript(s state) string {
-	return earlyScriptWithRules(s, plan.rules)
-}
-
-func earlyScriptWithRules(s state, rulesFn func(plan, string) []string) string {
+func earlyScript(s state, rulesFn func(plan, string) []string) string {
 	var b strings.Builder
 	for _, family := range []string{"iptables", "ip6tables"} {
 		tag := "v4_early"
