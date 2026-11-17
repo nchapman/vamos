@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -11,6 +12,9 @@ import (
 // Execute the generated POSIX shell, mocking only identity and sudo so these
 // tests also run on non-root macOS without changing the test runner's privileges.
 func TestAdminCommandShell(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("executes generated server-side POSIX shell")
+	}
 	for _, mode := range []string{"root", "sudo", "missing", "denied"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ func TestAPTMutationLockPolicy(t *testing.T) {
 }
 
 func TestAPTLockFailureDiagnostics(t *testing.T) {
+	type contextKey struct{}
 	sentinel := errors.New("exit status 100")
 	for _, tc := range []struct {
 		name         string
@@ -41,7 +43,7 @@ func TestAPTLockFailureDiagnostics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
-			ctx := context.WithValue(context.Background(), struct{}{}, "caller")
+			ctx := context.WithValue(context.Background(), contextKey{}, "caller")
 			m := Manager{Run: func(got context.Context, name string, args []string) (process.Result, error) {
 				calls++
 				if got != ctx || name != "apt-get" || !reflect.DeepEqual(args, tc.args) {
@@ -61,6 +63,9 @@ func TestAPTLockFailureDiagnostics(t *testing.T) {
 }
 
 func TestRunCommandAPTSafety(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("server runner requires POSIX shell and /usr/bin/env")
+	}
 	dir := t.TempDir()
 	// A private PATH executable ensures no real package manager is invoked.
 	script := "#!/bin/sh\ncase \"$1\" in\nwait) while :; do :; done ;;\n*) i=0; while [ $i -lt 12000 ]; do printf 'package progress line\\n'; i=$((i+1)); done ;;\nesac\n"

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -29,6 +30,9 @@ type harness struct {
 
 func fixture(t *testing.T) *harness {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("server firewall persistence requires POSIX directory fsync and permissions")
+	}
 	t.Setenv("SSH_CONNECTION", "203.0.113.4 50000 10.0.0.1 2222")
 	h := &harness{t: t, m: &Manager{Root: t.TempDir()}}
 	h.m.Run = h.run

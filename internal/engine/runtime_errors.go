@@ -9,10 +9,10 @@ import (
 // Runtime failures contain only local text: never attach the process error,
 // arguments, or output. Diagnostics are untrusted and are not recovery authority.
 var (
-	ErrPortBind          = errors.New("Docker could not bind a host port. Inspect host port usage and the configured published ports before retrying.")
-	ErrDaemonUnavailable = errors.New("Docker daemon is unreachable. Check that Docker is running and that the configured Docker endpoint is accessible.")
-	ErrImageAccess       = errors.New("Docker could not access the image. Verify the image reference, registry availability, and registry credentials.")
-	ErrDiskFull          = errors.New("Docker storage is full. Inspect host disk space and inode usage before retrying; no data was automatically removed.")
+	ErrPortBind          = errors.New("Docker could not bind a host port. Inspect host port usage and the configured published ports before retrying")
+	ErrDaemonUnavailable = errors.New("Docker daemon is unreachable. Check that Docker is running and that the configured Docker endpoint is accessible")
+	ErrImageAccess       = errors.New("Docker could not access the image. Verify the image reference, registry availability, and registry credentials")
+	ErrDiskFull          = errors.New("Docker storage is full. Inspect host disk space and inode usage before retrying; no data was automatically removed")
 	ErrRuntime           = errors.New("Docker command failed; runtime diagnostic output withheld")
 )
 

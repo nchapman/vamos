@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/nchapman/vamos/internal/host"
@@ -38,10 +37,6 @@ Upgrade replaces only the matching installed coordinator/executor bundle after o
 Teardown refuses workloads and changed managed resources; --purge deletes owned data.
 TARGET is optional for registered names; provide it to recover an unregistered host.
 `
-
-func server(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	return serverWithInput(ctx, args, os.Stdin, stdout, stderr)
-}
 
 func serverWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	deps := defaultLifecycleDeps()

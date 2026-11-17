@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -141,6 +142,9 @@ func TestIPTablesHelper(t *testing.T) {
 }
 
 func TestGeneratedShellLifecycle(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("executes server-side POSIX shell and directory fsync")
+	}
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
 	db := filepath.Join(root, "db")

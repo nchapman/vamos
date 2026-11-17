@@ -32,7 +32,7 @@ func TestRuntimeClassification(t *testing.T) {
 		if strings.Contains(err.Error(), secret) || len(err.Error()) > 256 {
 			t.Fatal("unsafe diagnostic")
 		}
-		if tt.want != ErrRuntime && RuntimeErrorCode(err) == "" {
+		if !errors.Is(tt.want, ErrRuntime) && RuntimeErrorCode(err) == "" {
 			t.Fatal("missing code")
 		}
 	}
