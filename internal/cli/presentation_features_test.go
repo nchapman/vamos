@@ -37,9 +37,18 @@ func featureVisualCases(t *testing.T, p *presentation, r appReport) map[string]s
 	cases["server-sudo"] = p.renderServerInspect("ubuntu@home.example.net", &host.Report{OS: "ubuntu", Version: "24.04", Architecture: "arm64", Systemd: true, UID: 1000, Supported: true})
 	r.action, r.mutation = "deploy", true
 	status := &deploy.Status{App: r.app, Phase: "ready", Services: map[string]deploy.ServiceStatus{
-		"game": {Kind: "ports", Phase: "ready", Running: true, Available: true, Container: "vamos-ledger-game-current", Image: "registry.example.net/game:v2"},
+		"game": {PublishedPorts: &deploy.PublishedPortStatus{Mappings: []string{"25565:25565", "27015-27020:27015-27020/udp"}, Total: 2, Observed: true}, Kind: "ports", Phase: "ready", Running: true, Available: true, Container: "vamos-ledger-game-current", Image: "registry.example.net/game:v2"},
 	}}
 	cases["ports-success"] = p.header(r.action, r.app, r.server.Name, r.server.Target) + p.statusReport(status, r)
+	pending := status.Services["game"]
+	pending.Phase, pending.Running, pending.Available, pending.Unavailable = "starting", false, false, true
+	pending.PublishedPorts = &deploy.PublishedPortStatus{Mappings: []string{"25565:25565/tcp"}, Total: 1}
+	pending.CandidatePublishedPorts = &deploy.PublishedPortStatus{Mappings: []string{"25566:25565/tcp"}, Total: 1, Observed: true}
+	pending.Candidate = "vamos-ledger-game-candidate"
+	pendingStatus := &deploy.Status{App: r.app, Phase: "updating", Services: map[string]deploy.ServiceStatus{"game": pending}}
+	readReport := r
+	readReport.action, readReport.mutation = "status", false
+	cases["ports-pending"] = p.statusReport(pendingStatus, readReport)
 	status.Services["web"] = deploy.ServiceStatus{Kind: "public", Phase: "ready", Running: true, Available: true, URL: "https://ledger.example.net", Container: "vamos-ledger-web-current", Image: "registry.example.net/web:v2"}
 	cases["mixed-success"] = p.header(r.action, r.app, r.server.Name, r.server.Target) + p.statusReport(status, r)
 	failed := presentationStatusFixture()

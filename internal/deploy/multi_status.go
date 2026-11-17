@@ -107,6 +107,7 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 			s.URL = ServiceURL(j.App, name, journalDomain(j))
 		}
 		if slot.Candidate != nil {
+			s.CandidatePublishedPorts = recordedPublishedPorts(slot.Candidate)
 			s.Candidate = slot.Candidate.Container
 			if refs := runtimeRefs(slot.Candidate); len(refs) == 1 {
 				s.Candidate = refs[0].Container
@@ -115,6 +116,11 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 				item := InstanceStatus{Ordinal: max(1, ref.Ordinal), Container: ref.Container, Port: *ref.Port}
 				if v, err := m.instanceInspect(ctx, j, ref, slot.Phase == "aliasing", false); err == nil {
 					item.Running = runtimeRunning(v)
+					if s.CandidatePublishedPorts != nil && len(runtimeRefs(slot.Candidate)) == 1 {
+						// Detached alias-transition candidates are inspectable,
+						// but are not observed publishes without effective binds.
+						s.CandidatePublishedPorts.Observed = item.Running && v.NetworkSettings.Networks[network(j)] != nil && inspectServicePorts(v, ref, true) == nil
+					}
 				}
 				s.CandidateInstances = append(s.CandidateInstances, item)
 			}
@@ -145,6 +151,7 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 // Shared by ordinary status and maintenance; an aggregate is true only when
 // every recorded current member is observed in that state.
 func (m *Manager) observeServiceInstances(ctx context.Context, j *journal, slot *serviceState, s *ServiceStatus) error {
+	s.PublishedPorts = recordedPublishedPorts(slot.Current)
 	refs := runtimeRefs(slot.Current)
 	s.CurrentInstances = len(refs)
 	s.RunningInstances, s.AvailableInstances = 0, 0
@@ -171,6 +178,11 @@ func (m *Manager) observeServiceInstances(ctx context.Context, j *journal, slot 
 		s.Instances = append(s.Instances, item)
 	}
 	s.Running = s.RunningInstances == s.CurrentInstances && s.CurrentInstances > 0
+	if s.PublishedPorts != nil {
+		// Running is counted only after instanceInspect verifies ownership,
+		// network attachment, and exact effective bindings for the current runtime.
+		s.PublishedPorts.Observed = s.Running && len(refs) == 1
+	}
 	s.Available = s.AvailableInstances == s.CurrentInstances && s.CurrentInstances > 0
 	return first
 }

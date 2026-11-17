@@ -318,7 +318,7 @@ func TestPresentationVisualFixtures(t *testing.T) {
 			for name, text := range featureVisualCases(t, p, presentationReportFixture()) {
 				cases[name] = text
 			}
-			required := []string{"status", "long-status", "preview", "unknown", "help", "apps", "rollback", "staged", "server", "secrets", "replicas-release", "release-blocked", "firewall-enabled", "firewall-disabled", "firewall-pending", "firewall-degraded", "firewall-enable-failure", "firewall-disable-failure", "server-sudo", "readiness-candidates", "ports-success", "mixed-success"}
+			required := []string{"status", "long-status", "preview", "unknown", "help", "apps", "rollback", "staged", "server", "secrets", "replicas-release", "release-blocked", "firewall-enabled", "firewall-disabled", "firewall-pending", "firewall-degraded", "firewall-enable-failure", "firewall-disable-failure", "server-sudo", "readiness-candidates", "ports-success", "ports-pending", "mixed-success"}
 			if len(cases) != len(required) {
 				t.Fatalf("visual cases=%d required=%d", len(cases), len(required))
 			}

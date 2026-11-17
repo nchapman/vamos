@@ -128,6 +128,7 @@ func (p *presentation) statusReport(s *deploy.Status, r appReport) string {
 			if ss.Candidate != "" {
 				b.WriteString(p.field("Candidate", ss.Candidate))
 			}
+			b.WriteString(p.publishedPortReport(name, ss))
 			b.WriteString(p.replicaReport(ss))
 			b.WriteString(p.domainReport(ss.Domains))
 		}
@@ -413,4 +414,50 @@ func readinessLogArgs(s *deploy.Status, selected string) []string {
 		}
 	}
 	return nil
+}
+
+func publishedPortSlots(ss deploy.ServiceStatus) []struct {
+	name   string
+	status *deploy.PublishedPortStatus
+} {
+	return []struct {
+		name   string
+		status *deploy.PublishedPortStatus
+	}{{"current", ss.PublishedPorts}, {"candidate", ss.CandidatePublishedPorts}}
+}
+
+func publishedPortObservation(ports *deploy.PublishedPortStatus) string {
+	if ports.Observed {
+		return "bindings validated on running owned runtime"
+	}
+	return "bindings not validated; not confirmation that ports are closed"
+}
+
+func publishedPortCount(ports *deploy.PublishedPortStatus) string {
+	text := fmt.Sprintf("Mappings listed: %d/%d", len(ports.Mappings), ports.Total)
+	if len(ports.Mappings) < ports.Total {
+		text += " (truncated)"
+	}
+	return text
+}
+
+func (p *presentation) publishedPortReport(service string, ss deploy.ServiceStatus) string {
+	var b strings.Builder
+	for _, slot := range publishedPortSlots(ss) {
+		if slot.status == nil {
+			continue
+		}
+		ports := slot.status
+		b.WriteString(p.section(service + " · " + slot.name + " published ports"))
+		b.WriteString(p.field("Recorded IPv4 bind", "0.0.0.0"))
+		b.WriteString(p.field("Observed", yesNo(ports.Observed)))
+		b.WriteString(p.prose(publishedPortObservation(ports)))
+		b.WriteString(p.prose("HOST:CONTAINER[/protocol]; omitted protocol defaults to tcp"))
+		for _, mapping := range ports.Mappings {
+			b.WriteString(p.field("Mapping", mapping))
+		}
+		b.WriteString(p.prose(publishedPortCount(ports)))
+		b.WriteString(p.prose("Public reachability is not verified."))
+	}
+	return b.String()
 }

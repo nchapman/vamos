@@ -161,6 +161,13 @@ def checks(h, p, state):
     p.probe(address, 8080, allowed=False)
     p.probe(HOST, TCP_PORT)
     p.probe(HOST, UDP_PORT, protocol='udp')
+    services = h.status(state['app'])['services']
+    for service, mapping in [('web', f'{TCP_PORT}:8080/tcp'), ('echo', f'{UDP_PORT}:8081/udp')]:
+        require(service in services, f'missing expected service {service}; found {sorted(services)}')
+        published = services[service].get('published_ports')
+        require(published == {'mappings': [mapping], 'total': 1, 'observed': True},
+                f'{service}: incorrect observed published-port status: {published}')
+        require('candidate_published_ports' not in services[service], 'ready service retained candidate ports')
     host = state['app'] + '.vamos.localhost'
     # HTTP redirects and real HTTPS responses through host-network Caddy.
     response = p.command('curl', '--silent', '--show-error', '--noproxy', '*', '--max-time', '10',

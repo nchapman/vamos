@@ -645,6 +645,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 					}
 				}
 			}
+			if err := printPublishedPortStatuses(stdout, serviceName, ss); err != nil {
+				return lifecycleError(stderr, err)
+			}
 			if err := printDomainStatuses(stdout, ss.Domains); err != nil {
 				return lifecycleError(stderr, err)
 			}
@@ -713,6 +716,31 @@ func printVolumeWarnings(out io.Writer, action, supersede string, app *config.Ap
 	if action == "resume" || (action == "deploy" && supersede != "") {
 		_, err := fmt.Fprintln(out, "If the captured operation uses volumes: data is retained and may already have changed; starting new code may change it further. No automatic rollback. Code must tolerate current data. Volume-backed replacement uses stop/start, with HTTP 503 for public services.")
 		return err
+	}
+	return nil
+}
+
+// Published bindings are recorded configuration, not a public reachability probe.
+func printPublishedPortStatuses(out io.Writer, service string, ss deploy.ServiceStatus) error {
+	for _, slot := range publishedPortSlots(ss) {
+		if slot.status == nil {
+			continue
+		}
+		ports := slot.status
+		if _, err := fmt.Fprintf(out, "%s %s published ports: recorded IPv4=0.0.0.0 observed=%t (%s)\n", service, slot.name, ports.Observed, publishedPortObservation(ports)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(out, "  HOST:CONTAINER[/protocol]; omitted protocol defaults to tcp"); err != nil {
+			return err
+		}
+		for _, mapping := range ports.Mappings {
+			if _, err := fmt.Fprintf(out, "  %s\n", mapping); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintf(out, "  %s; public reachability is not verified.\n", publishedPortCount(ports)); err != nil {
+			return err
+		}
 	}
 	return nil
 }

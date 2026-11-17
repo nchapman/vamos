@@ -90,6 +90,40 @@ restrictions still apply. Cleanup removes unused retired containers; service
 removal/destroy retire and remove owned containers and release their claims.
 One-off `run` and release commands do **not** inherit published ports.
 
+## Inspecting published ports
+
+`vamos status --server NAME --app APP` lists **current** and **candidate**
+published mappings separately, including on services that also have HTTP.
+These come from captured releases on the server, not the local manifest. The
+existing `port` field is the loopback HTTP upstream port, not a public binding.
+
+JSON status adds optional `published_ports` and `candidate_published_ports`
+objects to each service:
+
+```json
+{
+  "published_ports": {
+    "mappings": ["3478:3478/udp", "49160-49200:49160-49200/udp"],
+    "total": 2,
+    "observed": true
+  }
+}
+```
+
+- Mappings retain `HOST:CONTAINER[/protocol]` syntax and compact ranges; an
+  omitted protocol means TCP. The recorded bind address is always `0.0.0.0`.
+- `observed: true` means an owned running container's effective Docker bindings
+  matched its captured configuration at inspection time. It does **not** verify
+  cloud/host firewall reachability, application protocol health, or authentication.
+- Stopped, missing, restarting, detached, or unverifiable runtimes retain their
+  recorded mappings with `observed: false`. False does not prove ports are closed.
+- Absent objects mean no direct-port mappings are recorded for that release (or
+  an older server does not provide this metadata); never infer that the host has
+  no other listeners. A candidate is not presented as the current release.
+- Each object lists up to 32 sorted mapping entries; `total` is the exact count
+  before truncation. A range counts as one entry here, unlike the expanded-binding
+  validation limit. Human output explicitly identifies truncated lists.
+
 ## Coturn example
 
 Keep relay ranges small enough for your capacity needs: Docker expands each

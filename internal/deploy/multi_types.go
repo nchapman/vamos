@@ -15,27 +15,39 @@ type InstanceStatus struct {
 	Available bool   `json:"available"`
 }
 
+// PublishedPortStatus reports recorded IPv4 wildcard mappings, not protocol
+// health or external reachability. Observed requires a running owned runtime
+// whose effective Docker bindings match the captured release configuration.
+// Total counts mappings (a range is one mapping), before display truncation.
+type PublishedPortStatus struct {
+	Mappings []string `json:"mappings"`
+	Total    int      `json:"total"`
+	Observed bool     `json:"observed"`
+}
+
 type ServiceStatus struct {
-	DesiredInstances   int              `json:"desired_instances,omitempty"`
-	CurrentInstances   int              `json:"current_instances,omitempty"`
-	RunningInstances   int              `json:"running_instances"`
-	AvailableInstances int              `json:"available_instances"`
-	Instances          []InstanceStatus `json:"instances,omitempty"`
-	CandidateInstances []InstanceStatus `json:"candidate_instances,omitempty"`
-	Incarnation        string           `json:"incarnation,omitempty"`
-	Domains            []DomainStatus   `json:"domains,omitempty"`
-	Unavailable        bool             `json:"unavailable,omitempty"`
-	DataMayHaveChanged bool             `json:"data_may_have_changed,omitempty"`
-	Kind               string           `json:"kind"`
-	Phase              string           `json:"phase"`
-	URL                string           `json:"url,omitempty"`
-	Operation          string           `json:"operation,omitempty"`
-	Container          string           `json:"container,omitempty"`
-	Candidate          string           `json:"candidate,omitempty"`
-	Image              string           `json:"image,omitempty"`
-	Port               string           `json:"port,omitempty"`
-	Running            bool             `json:"running"`
-	Available          bool             `json:"available"`
+	PublishedPorts          *PublishedPortStatus `json:"published_ports,omitempty"`
+	CandidatePublishedPorts *PublishedPortStatus `json:"candidate_published_ports,omitempty"`
+	DesiredInstances        int                  `json:"desired_instances,omitempty"`
+	CurrentInstances        int                  `json:"current_instances,omitempty"`
+	RunningInstances        int                  `json:"running_instances"`
+	AvailableInstances      int                  `json:"available_instances"`
+	Instances               []InstanceStatus     `json:"instances,omitempty"`
+	CandidateInstances      []InstanceStatus     `json:"candidate_instances,omitempty"`
+	Incarnation             string               `json:"incarnation,omitempty"`
+	Domains                 []DomainStatus       `json:"domains,omitempty"`
+	Unavailable             bool                 `json:"unavailable,omitempty"`
+	DataMayHaveChanged      bool                 `json:"data_may_have_changed,omitempty"`
+	Kind                    string               `json:"kind"`
+	Phase                   string               `json:"phase"`
+	URL                     string               `json:"url,omitempty"`
+	Operation               string               `json:"operation,omitempty"`
+	Container               string               `json:"container,omitempty"`
+	Candidate               string               `json:"candidate,omitempty"`
+	Image                   string               `json:"image,omitempty"`
+	Port                    string               `json:"port,omitempty"`
+	Running                 bool                 `json:"running"`
+	Available               bool                 `json:"available"`
 }
 
 // Each slot describes effective state, not just the last requested app config.
