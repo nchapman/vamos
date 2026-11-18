@@ -4,10 +4,11 @@ ARG TARGETARCH
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH xcaddy build \
     --with github.com/corazawaf/coraza-caddy/v2@v2.6.2 \
     --with github.com/caddyserver/cache-handler@v0.17.0 \
-    --with github.com/darkweak/storages/simplefs/caddy@v0.0.23
+    --with github.com/darkweak/storages/simplefs/caddy@v0.0.23 \
+    --with github.com/mholt/caddy-ratelimit@v0.1.0
 
 FROM caddy:2.11.9@sha256:4e2425f6009577e7c651010f16679c28f7d12df3e7b1914f941a7a3370746b3c
 LABEL org.opencontainers.image.source="https://github.com/nchapman/vamos"
-LABEL org.opencontainers.image.description="Vamos managed Caddy ingress with Coraza WAF and Souin HTTP cache"
+LABEL org.opencontainers.image.description="Vamos managed Caddy ingress with Coraza WAF, Souin HTTP cache, and rate limiting"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
