@@ -21,6 +21,7 @@ import (
 	"github.com/nchapman/vamos/internal/buildmeta"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/session"
+	"github.com/nchapman/vamos/internal/transport"
 )
 
 type Conn interface {
@@ -85,7 +86,7 @@ func (c *Client) Hello() agentproto.HelloResponse { return c.hello }
 // therefore returns the existing operation instead of a duplicate.
 func (c *Client) Submit(ctx context.Context, request deploy.Request, idempotencyKey string, payload []byte) (agentproto.SubmitResponse, error) {
 	if err := ctx.Err(); err != nil {
-		return agentproto.SubmitResponse{}, err
+		return agentproto.SubmitResponse{}, transport.NotSubmitted(err)
 	}
 	submit := agentproto.SubmitRequest{IdempotencyKey: idempotencyKey, Request: request}
 	if len(payload) != 0 {
@@ -99,6 +100,21 @@ func (c *Client) Submit(ctx context.Context, request deploy.Request, idempotency
 			return err
 		}
 		if err := readResponse(c.reader, &response); err != nil {
+			var remote *RemoteError
+			if errors.As(err, &remote) {
+				switch remote.Code {
+				case "forbidden", "not_submitted", "invalid_request", "handshake_required", "unsupported_version", "host_unavailable":
+					return transport.NotSubmitted(err)
+				case "submission_refused":
+					// In v0.5.0 this code also covered errors after queue-record
+					// rename. Only the exact scope refusal proves non-admission.
+					var principal, app string
+					const scopeRefusal = `principal %q is not authorized for app %q`
+					if n, _ := fmt.Sscanf(remote.Message, scopeRefusal, &principal, &app); n == 2 && app == request.App && remote.Message == fmt.Sprintf(scopeRefusal, principal, app) {
+						return transport.NotSubmitted(&RemoteError{Code: "forbidden", Message: remote.Message})
+					}
+				}
+			}
 			return err
 		}
 		if !response.Deduplicated && len(payload) != 0 {

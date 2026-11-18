@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"slices"
+	"strings"
 )
 
 // Standard flag parsing invokes Usage before returning ErrHelp. Capture that
@@ -14,6 +16,12 @@ func parseFlags(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) er
 	var output bytes.Buffer
 	flags.SetOutput(&output)
 	err := flags.Parse(args)
+	if err == nil {
+		err = validateSelectorFlags(flags, args[:len(args)-flags.NArg()])
+		if err != nil {
+			fmt.Fprintln(&output, err)
+		}
+	}
 	flags.SetOutput(stderr)
 	dest := stderr
 	if errors.Is(err, flag.ErrHelp) {
@@ -29,6 +37,46 @@ func parseFlags(flags *flag.FlagSet, args []string, stdout, stderr io.Writer) er
 		return writeErr
 	}
 	return err
+}
+
+// selectorUsageError names a registered flag, never its argument. Credential
+// commands can show this diagnostic while suppressing raw flag parse errors.
+type selectorUsageError string
+
+func (e selectorUsageError) Error() string { return string(e) }
+
+// Inspect only the successfully parsed prefix. Visit reports final values but
+// loses repetitions. Skip option operands (which may themselves look like
+// flags); never inspect positional arguments or a forwarded command.
+func validateSelectorFlags(flags *flag.FlagSet, parsed []string) error {
+	seen := map[string]bool{}
+	for i := 0; i < len(parsed); i++ {
+		if parsed[i] == "--" {
+			break
+		}
+		option, value, inline := strings.Cut(parsed[i], "=")
+		name := strings.TrimLeft(option, "-")
+		f := flags.Lookup(name)
+		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); !inline && !(ok && b.IsBoolFlag()) {
+			i++
+			value = parsed[i]
+		}
+		switch name {
+		case "server", "app", "service", "f", "replica", "run", "supersede", "key", "deploy-key", "repository-id":
+			if strings.TrimSpace(value) == "" {
+				return selectorUsageError(option + " must not be empty")
+			}
+		case "domain", "version", "endpoint", "bucket", "prefix", "region", "recovery-file":
+			// Keep command-specific defaults (e.g. an empty storage prefix).
+		default:
+			continue
+		}
+		if seen[name] {
+			return selectorUsageError(option + " must not be repeated")
+		}
+		seen[name] = true
+	}
+	return nil
 }
 
 func printFlagDefaults(w io.Writer, parsed *flag.FlagSet, names ...string) {

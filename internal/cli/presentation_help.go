@@ -68,7 +68,7 @@ func (p *presentation) renderMainHelp() string {
 			{"console", "Open a shell in an existing service"},
 			{"run", "Run a noninteractive command"},
 			{"service bind|remove", "Bind locally or preview/remove a service"},
-			{"secrets stage|set|list", "Stage/set secrets or list retained metadata"},
+			{"secrets stage|set|list", "Stage only, set new values and replace consumers, or list versions"},
 		}},
 		{"Inspect and recover", []command{
 			{"apps", "List recorded inventory, not live health"},
@@ -87,7 +87,7 @@ func (p *presentation) renderMainHelp() string {
 		{"Manage a server", []command{
 			{"server inspect", "Inspect a host over SSH without provisioning"},
 			{"server add", "Bootstrap a dedicated Ubuntu host"},
-			{"server upgrade", "Upgrade the coordinator and executor on a server"},
+			{"server upgrade", "Update host components; may interrupt public traffic"},
 			{"server connect", "Register an existing ready host without remote changes"},
 			{"server principal", "Grant, list, and revoke single-app deploy keys"},
 			{"server firewall", "Manage opt-in dedicated-host firewall protection"},

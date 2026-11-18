@@ -20,6 +20,20 @@ func appRequest() deploy.Request {
 	return deploy.Request{Version: 1, Action: "deploy", App: "hello", Operation: strings.Repeat("a", 32), Host: lifecycle.Config{Name: "home", Domain: "example.com"}, Config: &config.App{Name: "hello", Services: map[string]config.Service{"web": {Build: &config.Build{Context: ".", Dockerfile: "Dockerfile"}, HTTP: &config.HTTP{Port: 80, Health: "/healthz"}, Update: config.UpdateAuto, Env: map[string]string{"LITERAL": "$(touch nope); 'quoted'"}}}}}
 }
 
+func TestProtectedPreviewRequiresMatchingPlanAndNeverClaimsDeploymentUncertainty(t *testing.T) {
+	r := appRequest()
+	r.Service, r.PreviewOnly = "web", true
+	lost := errors.New("connection closed")
+	if _, err := appOutcome(r, deploy.Response{}, io.EOF, lost); !errors.Is(err, lost) || strings.Contains(err.Error(), "deployment outcome") {
+		t.Errorf("wrong lost-preview guidance: %v", err)
+	}
+	for _, response := range []deploy.Response{{Version: 1, Status: &deploy.Status{Phase: "ready"}}, {Version: 1, DeployPreview: &deploy.DeploymentPreview{Service: "other", NeedsConfirmation: true}}} {
+		if _, err := appOutcome(r, response, nil, nil); err == nil {
+			t.Error("unrelated deployment response accepted as preview")
+		}
+	}
+}
+
 func TestAppTransportUsesFixedCommandAndBoundedTar(t *testing.T) {
 	request := appRequest()
 	run := func(_ context.Context, name string, args []string, input []byte) (process.Result, error) {

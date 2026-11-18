@@ -30,6 +30,11 @@ import (
 
 const recordsDirectory = "operations"
 
+var errSubmitForbidden = errors.New("submission forbidden")
+
+// After rename the record may already be visible even if directory sync fails.
+var errRecordSync = errors.New("cannot confirm operation record durability")
+
 var operationIDRE = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 type operation struct {
@@ -180,7 +185,7 @@ func (q *Queue) saveLocked(op operation) error {
 		return err
 	}
 	if err := syncDir(dir); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errRecordSync, err)
 	}
 	close(q.changed)
 	q.changed = make(chan struct{})
@@ -192,7 +197,7 @@ func (q *Queue) saveLocked(op operation) error {
 // can be reused by an authenticated socket service and tests.
 func (q *Queue) Submit(_ context.Context, principal agentproto.Principal, request agentproto.SubmitRequest) (agentproto.SubmitResponse, error) {
 	if err := agentproto.Authorize(principal, request.Request.Action, request.Request.App); err != nil {
-		return agentproto.SubmitResponse{}, err
+		return agentproto.SubmitResponse{}, fmt.Errorf("%w: %w", errSubmitForbidden, err)
 	}
 	if err := agentproto.ValidateSubmitRequest(request); err != nil {
 		return agentproto.SubmitResponse{}, err

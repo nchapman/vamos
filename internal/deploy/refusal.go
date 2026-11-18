@@ -19,6 +19,10 @@ var (
 
 // ErrorCode classifies identities, never diagnostic strings.
 func ErrorCode(err error) string {
+	var protected protectedChange
+	if errors.As(err, &protected) {
+		return protected.code()
+	}
 	if code := engine.RuntimeErrorCode(err); code != "" {
 		return code
 	}
@@ -49,7 +53,7 @@ var refusalClasses = []struct {
 }{
 	{ErrBindingRequired, CodeBindingRequired, "", false},
 	{errSecretSetIncomplete, "secret_set_incomplete", "Secret application requires a completed deployment. Inspect status and finish recovery before setting secrets; no new values were staged.", true},
-	{errSecretSetProtected, "secret_set_protected", "A consumer is protected by update: manual. No new values were staged. Stage the secrets instead, then explicitly deploy the protected service with --service NAME --yes.", true},
+	{errSecretSetProtected, "secret_set_protected", "A consumer is protected by update: manual. No new values were staged. Stage the secrets instead, then preview a scoped deploy of the protected service using the intended server and manifest.", true},
 	{errSecretSetLegacy, "secret_set_legacy", "Secret application requires captured multi-service configuration. No new values were staged; deploy with a current client first.", true},
 	{errSecretSetUnavailable, "secret_set_unavailable", "A consumer or captured image is unavailable or has drifted. Inspect status before recovery.", true},
 	{secrets.ErrVersionLimit, "secret_version_limit", "Secret store has reached its 256 retained-version limit; no versions are automatically deleted. Inspect retained versions before planning recovery.", true},

@@ -134,6 +134,7 @@ func writeServerUpgradeHint(w io.Writer, openRegistry func() (*registry.Store, e
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	fmt.Fprintln(w, serverUpgradeImpact)
 	if len(names) == 1 {
 		fmt.Fprintf(w, "To upgrade your registered server: vamos server upgrade --yes %s\n", names[0])
 		return

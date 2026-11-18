@@ -56,9 +56,15 @@ func writeServerMutationStart(w io.Writer, operation, name, target, domain strin
 		text := p.header("server "+operation, "", name, target)
 		text += p.ink("warning", "Root host mutation authorized", true) + "\n"
 		text += p.field("Domain", domain)
+		if operation == "upgrade" {
+			text += p.prose(serverUpgradeImpact)
+		}
 		return p.write(w, text)
 	}
 	_, err := fmt.Fprintf(w, "%s / %s / %s: %s (root host mutation authorized)\n", name, target, domain, operation)
+	if err == nil && operation == "upgrade" {
+		_, err = fmt.Fprintln(w, serverUpgradeImpact)
+	}
 	return err
 }
 
@@ -75,13 +81,13 @@ func writeServerMutationResult(w io.Writer, name string, state *lifecycle.State,
 	return err
 }
 
-func writeSecretStageStart(w io.Writer, server, target, app, name, operation string) error {
+func writeSecretStart(w io.Writer, action, server, target, app, name, operation string) error {
 	if p := presentationFor(w); p != nil {
-		text := p.header("secrets stage", app, server, target)
+		text := p.header("secrets "+action, app, server, target)
 		text += p.field("Secret", name) + p.field("Operation/version", operation)
 		return p.write(w, text)
 	}
-	_, err := fmt.Fprintf(w, "%s / %s: stage %s (operation/version %s)\n", server, app, name, operation)
+	_, err := fmt.Fprintf(w, "%s / %s: %s %s (operation/version %s)\n", server, app, action, name, operation)
 	return err
 }
 

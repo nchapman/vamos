@@ -35,7 +35,7 @@ are retained in the repository. Older repository formats are rejected, not upgra
 
 Flags precede the repository name. All repository commands select a registered
 server using `--server` or the default server; app-directory bindings do not select
-or scope a repository.
+or scope a repository. Keep both credential files and recovery kits in owner-only directories outside **all Docker build contexts**. The examples assume `$HOME/.config/vamos` is outside those contexts and the credential files there are already provisioned privately.
 
 ```sh
 mkdir -p "$HOME/.config/vamos/recovery"
@@ -44,10 +44,10 @@ vamos backup repository add --server home --mode new \
   --endpoint https://s3.example.com --bucket personal-backups \
   --region us-east-1 --prefix vamos --lookup path \
   --recovery-file "$HOME/.config/vamos/recovery/offsite.json" \
-  --credentials-stdin --yes offsite < private-storage-credentials.json
+  --credentials-stdin --yes offsite < "$HOME/.config/vamos/private/storage-credentials.json"
 ```
 
-`private-storage-credentials.json` is an operator-provided private JSON object:
+`storage-credentials.json` is an operator-provided private JSON object:
 
 ```json
 {
@@ -65,7 +65,7 @@ unknown/duplicate fields are rejected by the CLI. New passwords are generated fr
 
 On a terminal, omit flags to use public configuration prompts and no-echo
 credential input. Use `--credentials-stdin` with complete public flags and `--yes`
-for automation; it never consumes that stream as interactive prompt answers.
+for automation; redirect a file or pipe private JSON. Setup refuses to read raw credentials from a terminal with this flag and does not write a kit. It never consumes that stream as interactive prompt answers.
 Without `--yes`, nonterminal add is a preview: it does not read credentials, write
 a recovery kit, inspect SSH, or contact storage.
 
@@ -87,7 +87,7 @@ vamos backup repository add --server home --mode connect \
   --region us-east-1 --prefix existing/exact-prefix --lookup path \
   --repository-id FULL_64_HEX_REPOSITORY_ID \
   --recovery-file "$HOME/.config/vamos/recovery/existing.json" \
-  --credentials-stdin --yes existing < private-existing-credentials.json
+  --credentials-stdin --yes existing < "$HOME/.config/vamos/private/existing-credentials.json"
 ```
 
 The private JSON must additionally contain the existing restic `password`.
@@ -110,6 +110,7 @@ vamos backup repository resume --server home offsite ORIGINAL_32_HEX_OPERATION
   format, and updates local verification metadata. It uses restic
   `cat config --no-cache --no-lock`: no remote lock, cache, snapshots, or repair.
   It is not a full repository integrity check or restore test.
+- A request refused before submission has no new remote operation to resume. Keep any local kit already written; verify the server and SSH key grant before trying again. Loss of access after submission does not prove the operation stopped.
 - `resume` uses the original operation and captured credentials/configuration.
   Before initialization was attempted, it can repeat the read-only preflight and
   continue the approved setup. Once initialization intent has been durably recorded,

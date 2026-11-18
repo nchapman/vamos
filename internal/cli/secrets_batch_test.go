@@ -35,6 +35,9 @@ func TestSecretBatchCommand(t *testing.T) {
 			deps.Archive = func(string, config.Build) ([]byte, error) { t.Fatal("archive called"); return nil, nil }
 			deps.Run = func(_ context.Context, _ string, r deploy.Request, _, v []byte) (deploy.Response, error) {
 				calls++
+				if !strings.Contains(diag.String(), "new values") || (action == "set" && !strings.Contains(diag.String(), "not atomic")) || (action == "stage" && !strings.Contains(diag.String(), "unchanged")) {
+					t.Fatal("missing action-specific preflight", diag.String())
+				}
 				if r.Action != "secrets-"+action || r.SecretName != "" || len(r.SecretNames) != 2 || r.Config != nil {
 					t.Fatal("wrong request")
 				}
@@ -58,7 +61,7 @@ func TestSecretBatchCommand(t *testing.T) {
 				reader = func(_ context.Context, _ io.Reader, w io.Writer, _ bool) ([]byte, error) {
 					n := []string{"a", "b"}[reads]
 					reads++
-					if !strings.Contains(diag.String(), "Secret "+n) {
+					if !strings.Contains(diag.String(), "Secret "+n) || !strings.Contains(diag.String(), "new values") || (action == "set" && !strings.Contains(diag.String(), "replace deployed consumers")) {
 						t.Fatal("missing separate prompt")
 					}
 					return []byte("canary=" + strings.ToLower(n)), nil
@@ -67,7 +70,7 @@ func TestSecretBatchCommand(t *testing.T) {
 				args = append(args, "--stdin")
 			}
 			args = append(args, "a", "b")
-			code := secretsCommand(context.Background(), args, strings.NewReader("a=canary=a\nb=canary=b\n"), &out, &diag, deps, reader)
+			code := secretsCommandInteractive(context.Background(), args, strings.NewReader("a=canary=a\nb=canary=b\n"), &out, &diag, deps, reader, interactive)
 			if code != 0 || calls != 1 || strings.Contains(out.String()+diag.String(), "canary") {
 				t.Fatalf("code %d calls %d", code, calls)
 			}
@@ -100,7 +103,7 @@ func TestSecretSetFailureIsValueFreeAndExplainsRecovery(t *testing.T) {
 				return deploy.Response{Version: 1, Error: "remote-canary", ErrorCode: code, Logs: "remote-canary"}, nil
 			}
 			result := secretsCommand(context.Background(), []string{"set", "-f", path, "--stdin", "--json", "token"}, strings.NewReader("input-canary"), &out, &diag, deps, readSecretInput)
-			if result != 1 || out.Len() != 0 || strings.Contains(diag.String(), "canary") || !strings.Contains(diag.String(), operation) || !strings.Contains(diag.String(), "only if status records this incomplete operation") {
+			if result != 1 || out.Len() != 0 || strings.Contains(diag.String(), "canary") || !strings.Contains(diag.String(), operation) || (code == "" && !strings.Contains(diag.String(), "outcome unknown")) || (code != "" && strings.Contains(diag.String(), "Resume with")) {
 				t.Fatal("unsafe or missing failure guidance", result, out.String(), diag.String())
 			}
 			if code != "" && !strings.Contains(diag.String(), "protected by update: manual") {

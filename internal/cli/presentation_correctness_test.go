@@ -14,7 +14,7 @@ func TestUXCorrectness(t *testing.T) {
 		for _, scenario := range []string{"mixed", "candidate", "selected", "missing", "unknown"} {
 			t.Run(scenario+map[bool]string{false: "/plain", true: "/rich"}[rich], func(t *testing.T) {
 				path, _, deps := appFixture(t)
-				s := &deploy.Status{Services: map[string]deploy.ServiceStatus{
+				s := &deploy.Status{Operation: visualOperation, Services: map[string]deploy.ServiceStatus{
 					"web": {Kind: "public"}, "worker": {Kind: "ports", Unavailable: true, Candidate: "candidate", CandidateInstances: []deploy.InstanceStatus{{Ordinal: 2}, {Ordinal: 3}}},
 				}}
 				response := deploy.Response{Version: 1, Status: s}

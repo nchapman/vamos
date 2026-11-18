@@ -120,7 +120,7 @@ vamos backup plan --server home --app journal --json
 `--app` is mandatory and must match the file. `-f` defaults to `backup.yaml`.
 `--server` defaults to the registered default server; project-directory bindings
 are deliberately ignored. Flags precede arguments; these commands take no
-positional arguments. Both support `--executor PATH` and `--timeout DURATION`.
+positional arguments. Both support `--timeout DURATION`. These commands use the installed agent; omit `--executor`.
 Configure preview prints current/proposed JSON metadata with a heading;
 `--json` removes the heading, not a separate human-readable diff. Summarized
 coverage changes and schedule/downtime previews are future work. There is no

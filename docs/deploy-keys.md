@@ -4,7 +4,7 @@ Use one named key per runner or laptop. The key can operate **one app**, includi
 
 ## Grant access (administrator)
 
-Have the runner generate a dedicated SSH key (e.g. `ssh-keygen -t ed25519 -f ~/.ssh/vamos-ledger`) and give you **only the `.pub` file**. Keep the private key on the runner or in its CI secret store. Use your existing root or passwordless-sudo server registration and matching Vamos bundle. On an older installation, upgrade the CLI and run `vamos server upgrade --yes prod` first. Run key administration when the host is idle:
+Have the runner generate a dedicated SSH key (e.g. `ssh-keygen -t ed25519 -f ~/.ssh/vamos-ledger`) and give you **only the `.pub` file**. Keep the private key on the runner or in its CI secret store. Use your existing root or passwordless-sudo server registration and matching Vamos bundle. On an older installation, upgrade the CLI first, then schedule `vamos server upgrade --yes prod` as [host maintenance](host-lifecycle.md#caddy-ingress): it restarts the agent and can interrupt public traffic. Run key administration when the host is idle:
 
 ```sh
 vamos server principal grant --server prod --app ledger --key ./vamos-ledger.pub --yes ledger-ci
@@ -35,7 +35,7 @@ vamos service bind web --server prod -f vamos.yaml
 vamos deploy --service web --server prod -f vamos.yaml
 ```
 
-For a new app, skip status and binding and deploy from its manifest. Bind each existing service you intend to update; [service bindings](services.md#explicit-identity-bindings) are local to the checkout. Don't copy the administrator's `.vamos/` directory or private key. `connect --bridge` checks the installed identity and protocol via the bridge and writes only the local server registry. It does not enroll a key, invoke sudo, or bootstrap the host. Use `status --app ledger` rather than `apps` with a scoped key.
+For a new app, skip status and binding and deploy from its manifest. Bind each existing service you intend to update; [service bindings](services.md#explicit-identity-bindings) are local to the checkout. Don't copy the administrator's `.vamos/` directory or private key. `connect --bridge` checks the installed identity and protocol via the bridge and writes only the local server registry. It does not enroll a key, invoke sudo, or bootstrap the host. Use `status --app ledger` rather than `apps` with a scoped key. If a deploy is denied for another app, verify the manifest's app name and the SSH alias/key with the administrator. That refused request did not start a deployment; do not resume it.
 
 ## Rotate or revoke (administrator)
 

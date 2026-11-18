@@ -20,7 +20,7 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		names = append(names, "yes", "domain", "executor", "deploy-key", "firewall")
 	case "upgrade":
 		usage = "vamos server upgrade [OPTIONS] --yes [NAME [TARGET]]"
-		notes = "Upgrade the installed coordinator and executor bundle as root. Requires explicit --yes.\nNAME defaults to the registered default server; TARGET is optional for registered names.\nStarted mutations survive client disconnection."
+		notes = serverUpgradeImpact + "\nPlan a maintenance window and confirm with --yes. Local `vamos upgrade` only updates your client bundle.\nNAME defaults to the registered default server; TARGET is optional for registered names.\nStarted mutations survive client disconnection."
 		names = append(names, "yes", "executor")
 	case "connect":
 		usage = "vamos server connect [OPTIONS] [--bridge] [--domain DOMAIN] NAME TARGET"

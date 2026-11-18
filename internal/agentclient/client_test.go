@@ -14,6 +14,7 @@ import (
 	"github.com/nchapman/vamos/internal/buildmeta"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
+	"github.com/nchapman/vamos/internal/transport"
 )
 
 func TestHandshakeSubmitAndReattachStatus(t *testing.T) {
@@ -52,6 +53,36 @@ func TestHandshakeSubmitAndReattachStatus(t *testing.T) {
 	record, err := client.Status(context.Background(), response.OperationID)
 	if err != nil || record.OperationID != response.OperationID {
 		t.Fatalf("record=%+v err=%v", record, err)
+	}
+}
+
+func TestSubmitAdmissionBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		code, message string
+		notSubmitted  bool
+	}{
+		{"forbidden", "authorization refused", true}, {"not_submitted", "queue full", true},
+		{"submission_refused", `principal "ci" is not authorized for app "ledger"`, true},
+		{"submission_refused", "cannot sync record", false}, {"admission_uncertain", "cannot sync record", false}, {"", "", false},
+	} {
+		code := tc.code
+		t.Run("response_"+code, func(t *testing.T) {
+			conn, peer := net.Pipe()
+			defer conn.Close()
+			go func() {
+				defer peer.Close()
+				var req agentproto.RPCRequest
+				_ = agentproto.DecodeFrame(peer, &req)
+				if code != "" {
+					_ = agentproto.EncodeFrame(peer, agentproto.RPCResponse{Version: 1, Error: &agentproto.RPCError{Code: code, Message: tc.message}})
+				}
+			}()
+			c := Client{conn: conn, reader: bufio.NewReader(conn)}
+			_, err := c.Submit(context.Background(), deploy.Request{App: "ledger"}, "test", nil)
+			if err == nil || errors.Is(err, transport.ErrNotSubmitted) != tc.notSubmitted {
+				t.Fatalf("%s: %v", code, err)
+			}
+		})
 	}
 }
 

@@ -21,20 +21,28 @@ vamos status                         # Pending versions and affected services
 vamos deploy                         # Capture staged versions and deploy
 ```
 
-Flags precede the name. `-f`, project/server binding, `--server`, and `--executor` work as for deployment. Outside a project:
+Flags precede the name. `-f`, project/server binding, and `--server` work as for deployment. The normal client uses the installed agent; omit `--executor`. Outside a project:
 
 ```sh
 vamos secrets stage --server home --app notes session-secret
 vamos secrets list --server home --app notes --json
 ```
 
-For automation, prefer piping a value from a trusted secret producer into `vamos secrets stage --stdin NAME`, rather than putting credentials in shell commands or command arguments. Inline arguments are supported below, but expose values to shell history and local process inspection. Single-name `--stdin` reads a bounded stream and removes exactly one final LF or CRLF as input framing; it preserves other spaces and tabs. Additional line endings are rejected. Without `--stdin`, a terminal is required. Input is not echoed or added to terminal-editor history; ordinary cancellation restores terminal settings. A forced process kill cannot guarantee restoration.
+For automation, prefer piping a value from a trusted secret producer into `vamos secrets stage --stdin NAME`, rather than putting credentials in shell commands or command arguments. Inline arguments are supported below, but expose values to shell history and local process inspection. Single-name `--stdin` reads a bounded stream and removes exactly one final LF or CRLF as input framing; it preserves other spaces and tabs. Additional line endings are rejected. For bare names, omit `--stdin` on a terminal to get hidden prompts. Explicit `--stdin` refuses a terminal before reading. For example, redirect a private, owner-readable file **outside every Docker build context**:
+
+```sh
+vamos secrets stage --stdin session-secret < "$HOME/.config/vamos/private/session-secret"
+```
+
+Prompt input is not echoed or added to terminal-editor history; ordinary cancellation restores terminal settings. A forced process kill cannot guarantee restoration.
 
 Values must be nonempty, single-line UTF-8 without CR, LF, or NUL, at most **8192 bytes**. The interactive editor conservatively limits total typed/pasted input to fewer than 4096 value bytes; use `--stdin` for larger values. Multiline PEM material and binary values are not supported. In prompt and stdin input, quotes, backslashes, dollar signs, equals signs, and whitespace are literal, not shell syntax.
 
 `secrets list --json` emits a metadata response including all retained versions, not just the latest. Version IDs are random operation IDs, not hashes of values; list order is by name/version, not creation time. `status --json` includes `secrets` entries with staged/applied version IDs, `pending`, and affected `services`. A staged but unused secret has no affected services. Secret-management output does not display values.
 
-## Set and apply immediately
+## Set new values and replace consumers immediately
+
+`set` takes **new input**; it does not apply a previously staged value by name. Replacement can interrupt service, and the rollout across containers is not atomic.
 
 ```sh
 vamos secrets set llm-api-key
@@ -44,7 +52,7 @@ vamos status
 
 `set` discovers consumers from their **deployed** secret mappings, not the local manifest. It changes only the named secret pins, preserving deployed configuration, per-service image identities, and all other secret pins—even if other secrets have newer staged values. It updates all replicas of each consumer through the normal public-readiness/private-stop-start machinery. This replaces containers; a Docker restart alone cannot change their environment.
 
-The app must have a completed multi-service deployment, and affected consumers and their captured local images must be available and ownership-valid. Incomplete deployments must be recovered first. A legacy single-service v1 app must first be deployed with a current client. A manual-service consumer causes the entire request to refuse before staging: use `stage`, then the existing explicit `deploy --service NAME --yes` workflow. `set` never starts dependencies or silently approves a protected database update. Unused secrets, including those staged before the first deployment, are stored without starting any services.
+The app must have a completed multi-service deployment, and affected consumers and their captured local images must be available and ownership-valid. Incomplete deployments must be recovered first. A legacy single-service v1 app must first be deployed with a current client. A manual-service consumer causes the entire request to refuse before staging: use `stage`, then preview a scoped `deploy --preview --service NAME` with the intended server and manifest before approving it. `set` never starts dependencies or silently approves a protected database update. Unused secrets, including those staged before the first deployment, are stored without starting any services.
 
 **Setting a database initialization secret does not rotate a SQL role password.** PostgreSQL initialization environment variables only affect an empty data directory. Coordinate SQL-side credential changes separately. For provider API keys, keep the old key valid until all consumers have transitioned and their availability and applied versions have been checked.
 
@@ -70,22 +78,24 @@ Use either bare names (prompts) or `NAME=VALUE` pairs, not a mixture; inline pai
 
 All inputs are validated before sending, and all versions are staged in **one atomic secret-store write**. An invalid value or exhausted store budget does not stage a partial batch. `set` then replaces each affected service once, even when it consumes several changed secrets.
 
-For automation, use a trusted producer piped into:
+For automation, pipe records from a trusted producer or redirect a private batch file outside every Docker build context:
 
 ```sh
-vamos secrets set --stdin llm-api-key webhook-secret
+vamos secrets set --stdin llm-api-key webhook-secret < "$HOME/.config/vamos/private/new-secret-values"
 ```
 
 With multiple names, stdin contains literal `NAME=value` records, one per line, exactly once for each requested name. Record order does not matter; the first `=` separates the name from the value. Values are not shell-expanded, unquoted, or whitespace-trimmed. CRLF record endings are accepted; blank records, extra names, duplicates, missing names, and invalid values are refused. The existing **single-name** `--stdin` behavior remains raw value input, not `NAME=value` parsing. Stdin input cannot be combined with inline pairs.
 
 The CLI prints the operation ID and every version ID before dispatch. A singleton retains its operation ID as the version; batch members have distinct, deterministic version IDs bound to the operation and secret name. Replaying an internal batch requires the same complete name set and values, never moves latest pointers backward, and cannot reuse that operation for a different batch. Ordinary CLI invocations still create new operations, even for identical values.
 
+If the request was not submitted, it did not stage these values. If access was revoked after admission, ask the administrator to verify the original app and key before retrying; loss of access does not undo earlier work.
+
 Staging is atomic; application across containers is **not**. If `set` loses its response or fails after staging, inspect `secrets list` and `status` before retrying. If status records the printed operation as incomplete, use `vamos resume OP`: it reuses the captured images and secret versions, including after newer values are staged. A failure before publishing the deployment journal can leave the values staged but no resumable deployment. Do not assume every failure left the store untouched, or rerun `set` blindly.
 
 ## Selection and recovery
 
 - Staging before first deployment registers the app's secret identity without creating a deployment journal, container, network, or route. Status reports `staged`.
-- Scoped deploy and `run` require only the selected service’s secrets. Unselected services retain actual configuration and secret pins. Ordinary deploy refuses staged-secret or policy changes to an existing manual service with the exact `deploy --service NAME --yes` command; selecting it without approval previews.
+- Scoped deploy and `run` require only the selected service’s secrets. Unselected services retain actual configuration and secret pins. Ordinary deploy refuses staged-secret or policy changes to an existing manual service and points to a scoped preview pinned to the original manifest and server; the preview gives the approval command.
 - Deploy preflight resolves all required secrets **before** saving new deployment inputs, building, or superseding a failed candidate. Missing secrets fail without disturbing the existing deployment.
 - The deployment journal captures immutable references by environment key. Candidate, current, and previous releases retain their own mappings and version IDs, never the values.
 - Resume uses the captured versions. Newer staging during a stopped incomplete deployment does not repin that operation. Missing/corrupt pinned versions cause failure; there is no fallback to latest.
@@ -95,6 +105,8 @@ Staging is atomic; application across containers is **not**. If `set` loses its 
 - Staging shares the host mutation lock and refuses an active worker or pending maintenance. It is allowed during a stopped incomplete deployment, but pending/running/unknown one-off runs block mutations. See [run recovery](deployment.md#one-off-commands).
 
 A lost staging response means the outcome is unknown. Record the printed operation/version ID and run `secrets list` for that target; the retained version list can confirm it even after another staging operation. Repeating the same internal operation with identical content is idempotent and never moves latest backward. Reusing that identity with different content fails. A new CLI staging invocation always creates a new version, even for identical plaintext. `resume` is for deployment/maintenance, not staging.
+
+A **not submitted** diagnostic means the request was not admitted; check target and access rather than attempting to resume it. If the coordinator recorded a failure, inspect retained versions and, for `set`, deployment status: a failed queue record alone does not establish whether staging or replacement occurred.
 
 Known refusals have value-free explanations: retained-version/name/size capacity,
 conflicting operation content, an active host mutation, mismatched ownership/identity,

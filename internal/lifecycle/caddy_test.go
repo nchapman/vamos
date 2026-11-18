@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/nchapman/vamos/internal/process"
 )
 
 func indexOf(calls []string, prefix string) int {
@@ -109,9 +111,34 @@ func TestUpgradeMovesCaddyToPinnedImageAndKeepsRoutes(t *testing.T) {
 	if pull, remove := indexOf(calls, "docker pull"), indexOf(calls, "docker container rm"); pull < 0 || remove < pull {
 		t.Fatalf("old ingress removed before the new image was pulled: %v", calls)
 	}
+	if remove := indexOf(calls, "docker container rm"); indexOf(calls[remove+1:], "docker pull") >= 0 {
+		t.Fatal("upgrade contacts registry again after taking down working ingress")
+	}
 	data, err := os.ReadFile(m.path(caddyfilePath))
 	if err != nil || string(data) != routes {
 		t.Fatal("upgrade changed live routes")
+	}
+}
+
+func TestUpgradeKeepsServingIngressOnPullFailure(t *testing.T) {
+	m, f := newTestManager(t)
+	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
+		t.Fatal(err)
+	}
+	f.caddy.Image = "caddy:old@sha256:" + strings.Repeat("0", 64)
+	oldID := f.caddy.ID
+	run := m.Run
+	m.Run = func(ctx context.Context, name string, args []string) (process.Result, error) {
+		if name == "docker" && len(args) > 0 && args[0] == "pull" {
+			return process.Result{}, os.ErrPermission
+		}
+		return run(ctx, name, args)
+	}
+	if _, err := m.Upgrade(context.Background(), testConfig); err == nil {
+		t.Fatal("upgrade succeeded without its image")
+	}
+	if f.caddy == nil || f.caddy.ID != oldID || !f.caddy.Running {
+		t.Fatal("pull failure interrupted existing ingress")
 	}
 }
 

@@ -143,6 +143,15 @@ func TestWorkflowBootstrapWholeDeployAndManualPreview(t *testing.T) {
 		t.Fatal("pending unselected config captured")
 	}
 }
+func TestExplicitPreviewCannotCreateMissingService(t *testing.T) {
+	f := newWorkflowFlow(t)
+	f.req.PreviewOnly = true
+	_, err := f.selected(workflowApp(true), "db", "1", false)
+	if err == nil || f.pulls != 0 || f.builds != 0 {
+		t.Fatalf("preview started deployment: pulls=%d builds=%d err=%v", f.pulls, f.builds, err)
+	}
+}
+
 func TestWorkflowProtectedChangesFailBeforeCapture(t *testing.T) {
 	for _, kind := range []string{"env", "image", "policy", "secret"} {
 		t.Run(kind, func(t *testing.T) {
@@ -171,8 +180,13 @@ func TestWorkflowProtectedChangesFailBeforeCapture(t *testing.T) {
 			a.Services["db"] = s
 			before := workflowFiles(t, f.m.dir(a.Name))
 			events := len(f.docker.events)
-			_, err := f.selected(a, "", "2", false)
-			if err == nil || !strings.Contains(err.Error(), "--service db --yes") {
+			resp, err := f.selected(a, "", "2", false)
+			if err == nil || strings.Contains(err.Error(), "vamos deploy") || resp.ProtectedService(a) != "db" {
+				t.Fatalf("unsafe or untyped protection: %+v %v", resp, err)
+			}
+			f.req.PreviewOnly = true
+			preview, err := f.selected(a, resp.ProtectedService(a), "3", false)
+			if err != nil || preview.DeployPreview == nil || !preview.DeployPreview.NeedsConfirmation {
 				t.Fatalf("missing actionable protection: %v", err)
 			}
 			if !reflect.DeepEqual(before, workflowFiles(t, f.m.dir(a.Name))) || len(f.docker.events) != events || f.pulls != 1 || f.builds != 0 {

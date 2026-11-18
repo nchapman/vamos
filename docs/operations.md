@@ -241,7 +241,7 @@ without operator action; Vamos deliberately does not pin or hold them, and a
 changed package version is not ownership drift. See
 [runtime package updates](host-lifecycle.md#runtime-package-updates). Caddy is
 not an Ubuntu package: it runs from an image pinned by each Vamos release, so
-`vamos server upgrade` updates Vamos's own binaries and Caddy together. See
+`vamos upgrade` updates the local client bundle only. `vamos server upgrade` restarts the agent and can replace Caddy or update the managed firewall. Reserve a maintenance window for a host serving traffic: existing requests may be cut and new connections can fail during ingress replacement. Check public HTTPS after the upgrade, not just the host journal. See
 [Caddy ingress](host-lifecycle.md#caddy-ingress).
 
 What remains an operator responsibility:

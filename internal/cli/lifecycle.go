@@ -73,7 +73,16 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 	if *timeout <= 0 || (!allowDefaultServer && flags.NArg() < 1) || flags.NArg() > 2 {
 		return usageError(stderr, "provide NAME and optional TARGET, with flags before positional arguments")
 	}
+	if flags.NArg() >= 1 && strings.TrimSpace(flags.Arg(0)) == "" {
+		return usageError(stderr, "NAME must not be empty")
+	}
+	if flags.NArg() == 2 && strings.TrimSpace(flags.Arg(1)) == "" {
+		return usageError(stderr, "TARGET must not be empty")
+	}
 	if operation != "status" && !*yes {
+		if operation == "upgrade" {
+			return usageError(stderr, serverUpgradeImpact+" Schedule a maintenance window and pass --yes to proceed.")
+		}
 		return usageError(stderr, "host mutation requires --yes after reviewing the target and operation")
 	}
 	if operation == "teardown" && !*purge {
@@ -191,6 +200,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		}
 		return 0
 	}
+	var previousIngress string
 	if operation == "teardown" || operation == "upgrade" {
 		status, err := deps.Status(ctx, server.Target)
 		if err != nil {
@@ -206,6 +216,7 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 			return lifecycleError(stderr, errors.New("host must be ready before coordinator upgrade"))
 		}
 		server.Domain = status.State.Config.Domain
+		previousIngress = status.State.CaddyContainerID
 	}
 	if err := writeServerMutationStart(stdout, operation, name, server.Target, server.Domain); err != nil {
 		return lifecycleError(stderr, err)
@@ -267,8 +278,14 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 			return lifecycleError(stderr, fmt.Errorf("host removed but local registration cleanup failed: %w", err))
 		}
 	}
-	message := "Installed coordinator and executor were replaced after ownership and health checks."
+	var message string
 	switch operation {
+	case "upgrade":
+		message = "Updated the host bundle and restarted the agent."
+		if previousIngress != "" && state.CaddyContainerID != "" && previousIngress != state.CaddyContainerID {
+			message += " Caddy ingress was replaced."
+		}
+		message += " Check public app URLs after maintenance."
 	case "teardown":
 		message = "Owned installation removed. A small host receipt and the runtime lock are retained for safe retries."
 	case "add":

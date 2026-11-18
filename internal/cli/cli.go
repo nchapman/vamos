@@ -32,12 +32,12 @@ Usage:
   vamos cleanup [--yes]                  Preview or remove obsolete app resources
   vamos destroy [--yes]                  Preview or remove an app
   vamos service bind|remove NAME [flags]  Bind locally or preview/remove a service
-  vamos secrets stage|set|list [flags]        Stage/set secrets or list retained version metadata
+  vamos secrets stage|set|list [flags]        Stage only, set new values and replace consumers, or list versions
   vamos validate [-f vamos.yaml]           Validate local app configuration
   vamos server inspect [flags] TARGET    Inspect a host over SSH without provisioning
   vamos server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
   vamos server upgrade [flags] --yes [NAME [TARGET]]
-                                      Upgrade the coordinator and executor on a server
+                                      Update host components; may interrupt public traffic
   vamos server connect [--bridge] [--domain DOMAIN] NAME TARGET
                                       Register an existing host without remote changes
   vamos server status [NAME [TARGET]]   Read the host lifecycle journal

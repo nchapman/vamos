@@ -28,13 +28,13 @@ web startup never migrates. Only deploy web after the migration succeeds.
 
 Ordinary deploy never refreshes an unchanged manual service's mutable image tag.
 It refuses requested protected image, environment, command, secrets or policy
-changes rather than silently ignoring them. Explicit existing db updates use:
+changes rather than silently ignoring them. To preview an existing db update:
 
 ```sh
-vamos deploy --service db --yes
+vamos deploy --preview --service db
 ```
 
-This acknowledges the scoped plan and possible downtime. It does not deploy
+Review the target and possible downtime before running the approval command printed by the preview. The scoped update does not deploy
 other services' pending changes. Image tags should be vetted/pinned for important
 data; PostgreSQL major upgrades and on-disk compatibility remain the operator's
 responsibility, not something this command makes safe.

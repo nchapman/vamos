@@ -61,8 +61,30 @@ func supportsVolumes(j *journal) bool {
 	return j != nil && (j.Version == 3 || j.Version == 4 || j.Version == 5 || j.Version == 6 || j.Version == 7 || j.Version == 8)
 }
 
-func protectedChange(name string) error {
-	return fmt.Errorf("service %s is protected and its configuration or staged secrets changed; explicitly deploy it with vamos deploy --service %s --yes", name, name)
+type protectedChange string
+
+func (name protectedChange) Error() string {
+	return fmt.Sprintf("service %s is protected and its configuration or staged secrets changed", string(name))
+}
+
+// Use the existing error_code string: older API-v1 clients strictly decode
+// response fields and would reject a new field even on a definitive refusal.
+func (name protectedChange) code() string { return "protected_change:" + string(name) }
+
+// ProtectedService returns only a service from this manifest. Also recognize
+// the exact v0.5.0 refusal, so upgrading the client first does not reintroduce
+// that version's unpinned approval command.
+func (r Response) ProtectedService(app *config.App) string {
+	if r.Version != 1 || r.Error == "" || app == nil {
+		return ""
+	}
+	for name := range app.Services {
+		p := protectedChange(name)
+		if r.ErrorCode == p.code() || (r.ErrorCode == "" && r.Error == p.Error()+"; explicitly deploy it with vamos deploy --service "+name+" --yes") {
+			return name
+		}
+	}
+	return ""
 }
 
 func keepService(r Request, name string, cfg config.Service, current *release, state *secrets.State) (bool, error) {

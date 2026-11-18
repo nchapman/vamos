@@ -83,9 +83,7 @@ than relying on a mutable tag on resume.
 
 `update: manual` creates a missing service on ordinary deploy, but an existing
 manual service is never refreshed or restarted by that deploy. Protected config,
-policy or staged-secret changes fail preflight with the exact
-`vamos deploy --service NAME --yes` command. Selecting an existing manual service
-without `--yes` previews; `--yes` requires `--service`. Initial selected database
+policy or staged-secret changes fail preflight. Follow the suggested scoped preview (it keeps your server and manifest); only run the preview's approval command if that target and its downtime are intended. `--preview --service NAME` requires an existing protected update: a missing or now-automatic service will not be deployed. Like the ordinary protected-service preflight, the preview submits the selected build context and may create a coordinator queue record. It uses the deploy wait deadline (25 minutes by default), not the short status-query deadline. It does not create a resumable deployment. Older agents without this capability refuse the request; schedule a host upgrade rather than removing the guard. Without `--preview`, selecting an existing manual service without `--yes` previews, while selecting an undeployed service may create it. `--yes` requires `--service`. Initial selected database
 creation needs no approval. A normal whole-app deploy can still archive the build
 context of a manually built protected service; protection is not a promise to
 skip local source capture.
@@ -137,7 +135,7 @@ volumes and secrets. These are bounded records, not a complete audit-log service
 
 ## Deployment and recovery
 
-App mutations submitted through `vamos-agent` are durably queued under `/var/lib/vamos/queue/operations/` and executed inside supervised transient `vamos-op-<id>.service` systemd units (`/usr/local/lib/vamos/executor internal-agent worker`), surviving client/SSH disconnection. Hierarchical `flock` locks (`/run/lock/vamos-host.lock`, `/run/lock/vamos/host-op.lock`, `/run/lock/vamos/app-<app>.lock`, `/run/lock/vamos/ingress.lock`) isolate per-app concurrency while serializing host-wide and Caddy route changes. Read-only `status`/`logs` requests run directly via `vamos-agent` `read` RPCs (probing locks for active-operation state) without creating queue records. When `--executor FILE` is explicitly supplied, `root` SSH stages that matching executor directly under `vamos-host-operation.service`. Client mutation deadlines default to 25 minutes, executor work to 20 minutes, and the systemd hard limit to 21 minutes.
+App mutations submitted through `vamos-agent` are durably queued under `/var/lib/vamos/queue/operations/` and executed inside supervised transient `vamos-op-<id>.service` systemd units (`/usr/local/lib/vamos/executor internal-agent worker`), surviving client/SSH disconnection. Hierarchical `flock` locks (`/run/lock/vamos-host.lock`, `/run/lock/vamos/host-op.lock`, `/run/lock/vamos/app-<app>.lock`, `/run/lock/vamos/ingress.lock`) isolate per-app concurrency while serializing host-wide and Caddy route changes. Read-only `status`/`logs` requests run directly via `vamos-agent` `read` RPCs (probing locks for active-operation state) without creating queue records. Ordinary app commands use the installed agent; an explicit `--executor FILE` override is not supported on this transport. Client mutation deadlines default to 25 minutes, executor work to 20 minutes, and the systemd hard limit to 21 minutes.
 
 Before building, a private versioned journal under `/var/lib/vamos/apps/<app>/state.json` records the operation, its operation-specific source archive, and immutable secret-version references. Required secrets are resolved before build or supersede; values stay outside release history. Builds produce immutable image IDs. Every required build and image validation completes before runtime changes. Public services retain their old container and route while checking candidate HTTP readiness; private replacement has explicit downtime.
 
@@ -153,6 +151,8 @@ Promotion records its old/new Caddy intent durably, verifies the existing file a
 # If a build or pre-promotion candidate needs corrected inputs:
 ./bin/vamos deploy -f examples/hello/vamos.yaml --supersede OPERATION_ID
 ```
+
+A submission rejected by the agent has not started a deployment; check the app and access grant rather than trying to resume the request. After a lost connection, inspect the selected server/app before deciding whether an operation was recorded.
 
 A new deploy refuses an incomplete operation unless `--supersede` names it exactly. Supersede preserves effective services, including any already-promoted services from a partially successful operation, and removes only verified unserved candidates. Retired private containers are never restarted implicitly. It never supersedes an active worker, uncertain or already-promoted routing, or public drain. A pending promotion whose recorded intent matches the journals can be cancelled only after both the durable Caddyfile and live configuration are proven old, distinct from the new routes; verified candidate removal precedes clearing intent. This also supports corrected single-web supersede for legacy version-1 journals. A disk-before-reload interruption requires resume to reconcile the durable file first. Repeat supersede if cancellation is interrupted; this is not rollback of an effective service. Old captured archives remain intact, so interruption while selecting new inputs cannot silently change what an old operation resumes.
 

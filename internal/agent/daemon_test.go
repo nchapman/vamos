@@ -22,6 +22,7 @@ import (
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/session"
+	"github.com/nchapman/vamos/internal/transport"
 )
 
 // stampAgentBuild gives the test binary a valid embedded bundle identity so
@@ -137,6 +138,24 @@ func TestDaemonReadExecutesAuthorizedRequestsDirectly(t *testing.T) {
 	}
 	if records, err := filepath.Glob(filepath.Join(queueRoot, "operations", "*.json")); err != nil || len(records) != 0 {
 		t.Fatalf("read persisted queue records: %v %v", records, err)
+	}
+}
+
+func TestScopedSubmitForbiddenBeforeAdmission(t *testing.T) {
+	stampAgentBuild(t)
+	client, root, stop := testDaemon(t, nil, nil)
+	defer stop()
+	r := statusRequest("other")
+	r.Action = "resume"
+	r.Operation = strings.Repeat("c", 32)
+	_, err := client.Submit(context.Background(), r, strings.Repeat("d", 32), nil)
+	var remote *agentclient.RemoteError
+	if !errors.Is(err, transport.ErrNotSubmitted) || !errors.As(err, &remote) || remote.Code != "forbidden" {
+		t.Fatalf("wrong refusal: %v", err)
+	}
+	records, err := filepath.Glob(filepath.Join(root, "operations", "*.json"))
+	if err != nil || len(records) != 0 {
+		t.Fatalf("unexpected records: %v %v", records, err)
 	}
 }
 

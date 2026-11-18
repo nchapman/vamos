@@ -14,6 +14,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/nchapman/vamos/internal/agentclient"
 	"github.com/nchapman/vamos/internal/buildcontext"
 	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/deploy"
@@ -21,6 +22,7 @@ import (
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/registry"
 	"github.com/nchapman/vamos/internal/ssh"
+	"github.com/nchapman/vamos/internal/transport"
 )
 
 type appDeps struct {
@@ -48,7 +50,7 @@ func defaultAppDeps() appDeps {
 func runAppTransport(ctx context.Context, target, executorFile string, request deploy.Request, payload []byte, deps appDeps) (deploy.Response, error) {
 	if deps.Agent != nil {
 		if executorFile != "" {
-			return deploy.Response{}, errors.New("--executor override requires the uploaded-executor transport; recover the server with 'vamos server upgrade'")
+			return deploy.Response{}, transport.NotSubmitted(errors.New("--executor override requires the uploaded-executor transport; recover the server with 'vamos server upgrade'"))
 		}
 		return deps.Agent(ctx, target, request, payload)
 	}
@@ -56,14 +58,14 @@ func runAppTransport(ctx context.Context, target, executorFile string, request d
 	report, err := deps.Inspect(inspectCtx, target)
 	stop()
 	if err != nil {
-		return deploy.Response{}, err
+		return deploy.Response{}, transport.NotSubmitted(err)
 	}
 	if err := host.RequireAdmin(report); err != nil {
-		return deploy.Response{}, err
+		return deploy.Response{}, transport.NotSubmitted(err)
 	}
 	binary, err := deps.Artifact(executorFile, report.Architecture)
 	if err != nil {
-		return deploy.Response{}, err
+		return deploy.Response{}, transport.NotSubmitted(err)
 	}
 	return deps.Run(ctx, target, request, binary, payload)
 }
@@ -109,6 +111,10 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	reuseData := flags.Bool("reuse-data", false, "authorize exact retained volume reuse after destroy (deploy only)")
 	yes := flags.Bool("yes", false, "approve the selected update or apply a previewed operation")
 	allowDowntime := flags.Bool("allow-downtime", false, "authorize stop/start rollback (rollback only)")
+	var previewOnly bool
+	if action == "deploy" {
+		flags.BoolVar(&previewOnly, "preview", false, "require an existing protected service preview; never start a deployment")
+	}
 	reAdd := flags.Bool("re-add", false, "re-create a removed service (requires --service and --yes)")
 	allowProtected := flags.Bool("allow-protected", false, "approve removal of a manual service")
 	maintenance := action == "cleanup" || action == "destroy" || action == "service-remove"
@@ -119,7 +125,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if mutation {
 		deadline = 25 * time.Minute
 	}
-	timeout := flags.Duration("timeout", deadline, "client deadline; started mutations survive disconnection")
+	timeout := flags.Duration("timeout", deadline, "client wait deadline; does not cancel queued work")
 	flags.Usage = func() { writeAppHelp(flags.Output(), action, flags) }
 	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -129,6 +135,12 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	if (action == "service-bind" || action == "service-remove") && *service == "" {
 		return usageError(stderr, "service bind/remove requires a service name")
+	}
+	// A guarded preview still uploads the selected context and can wait in the
+	// deploy queue, so keep the deploy timeout but never present it as a rollout.
+	mutation = mutation && !previewOnly
+	if previewOnly && (*service == "" || *yes || *supersede != "") {
+		return usageError(stderr, "--preview requires --service and cannot approve or supersede a deployment")
 	}
 	if *reAdd && (action != "deploy" || *service == "" || !*yes) {
 		return usageError(stderr, "--re-add requires deploy --service NAME --yes")
@@ -263,6 +275,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			return lifecycleError(stderr, err)
 		}
 	}
+	request.PreviewOnly = previewOnly
 	request.Apply = *yes
 	request.AllowProtected = *allowProtected
 	request.ReAdd = *reAdd
@@ -350,6 +363,16 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		view = nil
 	}
 	reportView := appReport{action: action, app: name, service: *service, server: server, mutation: mutation, apply: request.Apply, extraFlags: appendSuppliedFlags(nil, flags, "executor", "timeout"), approval: capturedApproval(flags, action, server.Name, name)}
+	if previewOnly {
+		if view != nil {
+			err = view.write(stdout, view.header("preview only", name, server.Name, server.Target)+view.prose("No deployment will start."))
+		} else {
+			_, err = fmt.Fprintln(stdout, "Preview only: no deployment will start.")
+		}
+		if err != nil {
+			return lifecycleError(stderr, err)
+		}
+	}
 	if view != nil && mutation {
 		if err := view.write(stdout, view.header(action, name, server.Name, server.Target)+view.field("Requested operation", request.Operation)+"\n"); err != nil {
 			return lifecycleError(stderr, err)
@@ -413,6 +436,35 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	if err != nil {
+		// An authorization error may also arrive while waiting for an admitted
+		// operation. Do not suggest inspecting an app the principal cannot read.
+		var remote *agentclient.RemoteError
+		if errors.As(err, &remote) && remote.Code == "forbidden" {
+			code := lifecycleError(stderr, err)
+			fmt.Fprintf(stderr, "Verify the selected server (%s), app (%s), and SSH key grant with the administrator.\n", server.Name, name)
+			return code
+		}
+		if errors.Is(err, transport.ErrNotSubmitted) {
+			return lifecycleError(stderr, err)
+		}
+		// A maintenance/rollback preview can have a queue record, but does
+		// not request an app-state mutation that needs deployment recovery.
+		if request.PreviewOnly || (maintenance || action == "rollback") && !request.Apply {
+			return lifecycleError(stderr, err)
+		}
+		if protected := response.ProtectedService(app); action == "deploy" && protected != "" {
+			code := lifecycleError(stderr, fmt.Errorf("service %s is protected and its configuration or staged secrets changed", protected))
+			args := []string{"vamos", "deploy", "--preview", "--service", protected, "-f", manifestPath, "--server", server.Name}
+			// Supersede cannot cross service scopes. Never carry it (or
+			// an approval) from a whole-app refusal into this command.
+			command := suggestedCommand(appendSuppliedFlags(args, flags, "executor", "timeout", "reuse-data")...)
+			if p := presentationFor(stderr); p != nil {
+				_ = p.write(stderr, p.section("Preview protected update")+p.command(command))
+			} else {
+				fmt.Fprintln(stderr, "Preview protected update:", command)
+			}
+			return code
+		}
 		if errorView := presentationFor(stderr); errorView != nil {
 			bindingCommand := ""
 			if action == "deploy" && response.Version == 1 && response.Error != "" && response.ErrorCode == deploy.CodeBindingRequired {
@@ -436,15 +488,21 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			fmt.Fprintf(stderr, "Inspect status first; explicitly adopt only the intended service:\n  %s\n", suggestedCommand(bindingArgs...))
 		}
 		code := lifecycleError(stderr, err)
+		if mutation && unknownAppOutcome(response, err) {
+			fmt.Fprintln(stderr, "Outcome unknown: no valid acknowledgement arrived.")
+		}
 		if response.Status != nil {
 			_ = printReleaseSummary(stderr, response.Status.Release)
 		}
 		if action == "run" {
 			fmt.Fprintf(stderr, "Inspect: vamos status --run %s --server %s --app %s\n", request.Operation, server.Name, name)
 		} else if mutation {
-			fmt.Fprintf(stderr, "Inspect: vamos status --server %s --app %s\nIf recorded, resume: vamos resume --server %s --app %s %s\n", server.Name, name, server.Name, name, request.Operation)
+			fmt.Fprintln(stderr, "Inspect:", reportView.command("status"))
+			if unknownAppOutcome(response, err) || recordedAppFailure(request, response) {
+				fmt.Fprintln(stderr, "If recorded and resumable:", reportView.command("resume", request.Operation))
+			}
 		}
-		if mutation && response.Version == 1 && response.Error != "" && readinessFailed(err) {
+		if mutation && recordedAppFailure(request, response) && readinessFailed(err) {
 			fmt.Fprintln(stderr, readinessRecovery)
 			if args := readinessLogArgs(response.Status, reportView.service); len(args) > 0 {
 				fmt.Fprintln(stderr, "Inspect candidate:", reportView.command("logs", args...))

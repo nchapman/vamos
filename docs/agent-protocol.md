@@ -16,7 +16,7 @@ Every client connection begins with `hello` before submitting mutations:
 2. Agent responds with `HelloResponse` containing:
    - `agent_version` and `agent_build_id` (from `internal/buildmeta`)
    - `api_min..api_max`
-   - `capabilities` (`app-deploy`, `durable-queue`, `per-app-concurrency`, `scoped-acl`, `secrets`, `backups`, `sessions`)
+   - `capabilities` (`app-deploy`, `protected-preview`, `durable-queue`, `per-app-concurrency`, `scoped-acl`, `secrets`, `backups`, `sessions`)
    - `host_id`, `host_name`, `domain`
    - `concurrency` (`max_queue_depth`, `max_staged_bytes`, `max_concurrent_builds`, `max_concurrent_deploys`)
 3. Compatibility check:
@@ -26,14 +26,15 @@ Every client connection begins with `hello` before submitting mutations:
 ## Methods
 
 - `hello` — capability handshake; required first.
-- `submit` — mutating operations only. Persists admission, accepts the declared payload stream, and returns a reconnectable operation ID. Read-only actions are refused.
-- `read` — authorized non-mutating requests (status, logs, previews, listings) executed directly without queue records, so observation never fences teardown.
+- `submit` — mutating operations only. Persists admission, accepts the declared payload stream, and returns a reconnectable operation ID. Read-only RPC actions are refused. A guarded deploy preview uses `submit` to validate its build inputs under the normal deployment lock; its queue entry does not authorize a rollout.
+- `read` — authorized non-mutating requests (such as status, logs, and listings) executed directly without queue records, so observation never fences teardown.
 - `status` / `wait` — reattach to a recorded operation; `wait` blocks server-side until a terminal phase.
 - `session` — one interactive exec or followed log stream. After the validated preparation response the connection switches to typed length-prefixed frames (`0x01` stdout, `0x04` stderr, `0x05` client stdin, `0x03` stdin EOF, `0x06` TTY window resize); the terminal exit status is a distinct `0x02` control frame, so workload output cannot forge it. Interactive TTY sessions allocate a host PTY and forward initial window size and `SIGWINCH` resizes over `0x06`. A session consumes the connection.
 
 ## Durable queueing and idempotency
 
 - `submit` carries a 32–64 hex `idempotency_key` alongside a validated `deploy.Request` and, when needed, the size and SHA-256 of its following out-of-band payload.
+- `forbidden` or `not_submitted` **in the submit response** means this request was not admitted. In contrast, a failure to confirm queue-record durability (`admission_uncertain`) or a lost submit acknowledgement does not prove nothing ran. Authorization can also fail later at `wait`, after admission. Do not turn any of those cases into an automatic retry.
 - Retrying `submit` with the same `idempotency_key` returns the existing `OperationRecord` (`deduplicated: true`) rather than creating a duplicate operation.
 - Allowed lifecycle transitions:
   - `queued` → `running` | `cancelled`

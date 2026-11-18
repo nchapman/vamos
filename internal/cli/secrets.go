@@ -16,21 +16,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nchapman/vamos/internal/agentclient"
 	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/deploy"
-	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/secrets"
 	"github.com/nchapman/vamos/internal/ssh"
+	"github.com/nchapman/vamos/internal/transport"
 	"golang.org/x/term"
 )
+
+const stageIntent = "Store new values only. Running services are unchanged."
+const setIntent = "Store new values and replace deployed consumers. Replacement can interrupt service; the rollout is not atomic."
 
 const secretsHelp = `Usage:
   vamos secrets stage|set [-f vamos.yaml | --server NAME --app APP] [--stdin] [--json] NAME [NAME...]
   vamos secrets stage|set [-f vamos.yaml | --server NAME --app APP] [--json] NAME=VALUE [NAME=VALUE...]
   vamos secrets list [-f vamos.yaml | --server NAME --app APP] [--json]
 All flags precede NAME. All commands accept --executor FILE and --timeout DURATION.
+stage: ` + stageIntent + `
+set: ` + setIntent + `
+Omit --stdin for hidden terminal prompts; --stdin requires redirected or piped input.
 Stage/set prompt separately without echo. Singleton --stdin reads one bounded value;
 batch --stdin reads literal NAME=value lines, exactly once per requested name.
 Use either names or NAME=VALUE pairs, never a mixture; pairs cannot use --stdin.
@@ -42,6 +47,11 @@ The terminal editor accepts fewer than 4096 input bytes; --stdin accepts 8192 va
 type secretInputFunc func(context.Context, io.Reader, io.Writer, bool) ([]byte, error)
 
 func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout, stderr io.Writer, deps appDeps, read secretInputFunc) int {
+	f, ok := input.(*os.File)
+	return secretsCommandInteractive(ctx, args, input, stdout, stderr, deps, read, ok && term.IsTerminal(int(f.Fd())))
+}
+
+func secretsCommandInteractive(ctx context.Context, args []string, input io.Reader, stdout, stderr io.Writer, deps appDeps, read secretInputFunc, terminal bool) int {
 	if len(args) == 0 {
 		return usageError(stderr, secretsHelp)
 	}
@@ -73,6 +83,10 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		var selector selectorUsageError
+		if errors.As(err, &selector) {
+			return usageError(stderr, selector.Error())
+		}
 		return usageError(stderr, "invalid secret command flags; flags must precede secret names")
 	}
 	stdinSet := false
@@ -87,6 +101,14 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 	names, inlineValues, err := secretArguments(f.Args(), stdinSet)
 	if err != nil {
 		return usageError(stderr, err.Error())
+	}
+	if action != "list" && inlineValues == nil {
+		if terminal && *fromStdin {
+			return usageError(stderr, "--stdin cannot read a terminal; omit it for hidden prompts or redirect private input")
+		}
+		if !terminal && !*fromStdin {
+			return usageError(stderr, "hidden prompts require a terminal; use --stdin with redirected or piped private input")
+		}
 	}
 	if *appName != "" && *serverName == "" {
 		return usageError(stderr, "--app requires --server")
@@ -152,8 +174,15 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 		if *asJSON {
 			targetOut = stderr
 		}
+		intent := stageIntent
+		if action == "set" {
+			intent = setIntent
+		}
+		if _, err := fmt.Fprintln(targetOut, intent); err != nil {
+			return 1
+		}
 		for _, n := range names {
-			if err := writeSecretStageStart(targetOut, server.Name, server.Target, name, n, secretVersion(r, n)); err != nil {
+			if err := writeSecretStart(targetOut, action, server.Name, server.Target, name, n, secretVersion(r, n)); err != nil {
 				return 1
 			}
 		}
@@ -194,23 +223,25 @@ func secretsCommand(ctx context.Context, args []string, input io.Reader, stdout,
 
 	}
 	response, err := runAppTransport(ctx, server.Target, *artifact, r, value, deps)
-	if err != nil {
-		var remote *agentclient.RemoteError
-		if errors.As(err, &remote) && (remote.Code == "forbidden" || remote.Code == "invalid_request" || remote.Code == "handshake_required" || remote.Code == "unsupported_version" || remote.Code == "host_unavailable" || remote.Code == "submission_refused" || remote.Code == "read_failed") {
-			return lifecycleError(stderr, err)
+	if msg := privateAdmissionMessage(err); msg != "" {
+		return lifecycleError(stderr, errors.New(msg))
+	}
+	if action != "list" && errors.Is(err, transport.ErrOperationFailed) {
+		fmt.Fprintf(stderr, "The coordinator recorded a failure for operation %s. Inspect retained versions before retrying: vamos secrets list --server %s --app %s\n", r.Operation, server.Name, name)
+		if action == "set" {
+			fmt.Fprintf(stderr, "Inspect deployment status: vamos status --server %s --app %s\n", server.Name, name)
 		}
-		if errors.Is(err, host.ErrAdminPrerequisite) || strings.Contains(err.Error(), "--executor override requires") || strings.Contains(err.Error(), "server agent handshake failed") || strings.Contains(err.Error(), "server agent bridge rejected") || strings.Contains(err.Error(), "connect to ") || strings.Contains(err.Error(), "artifact:") || strings.Contains(err.Error(), "executor:") {
-			return lifecycleError(stderr, err)
-		}
+		return 1
 	}
 	if err != nil || response.Error != "" || response.ErrorCode != "" || response.Version != 1 || (action != "list" && !validSecretAck(r, response)) {
 		if action == "set" {
 			if response.Version == 1 && response.Error != "" {
 				if message := deploy.RefusalMessage(r.Action, response.ErrorCode); message != "" {
-					fmt.Fprintln(stderr, message)
+					fmt.Fprintln(stderr, "Secret set refused:", message)
+					return 1
 				}
 			}
-			fmt.Fprintf(stderr, "Secret set did not complete; inspect staged versions and deployment status before retrying. Operation: %s\n", r.Operation)
+			fmt.Fprintf(stderr, "Secret set outcome unknown; inspect staged versions and deployment status before retrying. Operation: %s\n", r.Operation)
 			fmt.Fprintf(stderr, "Inspect: vamos secrets list --server %s --app %s\nInspect: vamos status --server %s --app %s\nResume with vamos resume --server %s --app %s %s only if status records this incomplete operation.\n", server.Name, name, server.Name, name, server.Name, name, r.Operation)
 			return 1
 		}

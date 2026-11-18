@@ -58,13 +58,14 @@ vamos run --service web -- ./bin/migrate
 vamos deploy
 curl --fail "$URL/entries"
 
-# Intentional existing protected db update; inspect the plan and accept downtime:
-vamos deploy --service db --yes
+# Preview an existing protected db update, including downtime:
+vamos deploy --preview --service db
+# If intended, run the exact approval command from that preview.
 vamos status
 curl --fail "$URL/readyz"
 ```
 
-The final command explicitly acknowledges updates to db, including intentionally
+The approval command targets only db, including intentionally
 refreshing `postgres:17`; it does not update web. No configuration edits are
 needed to exercise this sequence. Ordinary deploy leaves an unchanged protected
 db alone and never pulls its mutable tag. Configured image, environment, command,

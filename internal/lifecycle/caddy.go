@@ -228,24 +228,7 @@ func (m *Manager) ensureCaddy(ctx context.Context, s *State) error {
 	if err != nil {
 		return err
 	}
-	if c != nil && !c.current() {
-		// Pull first so a slow or failed download never leaves ingress down.
-		if _, err := m.command(ctx, "docker", "pull", "--quiet", CaddyImage); err != nil {
-			return err
-		}
-		if _, err := m.command(ctx, "docker", "container", "rm", "--force", c.ID); err != nil {
-			return err
-		}
-		previous := digestRef(c.Config.Image)
-		c = nil
-		defer func() {
-			// Best effort: an image still used elsewhere is retained by Docker.
-			if previous != "" && previous != caddyImageRef {
-				_, _ = m.Run(ctx, "docker", []string{"image", "rm", previous})
-			}
-		}()
-	}
-	if c == nil {
+	if c == nil || !c.current() {
 		for _, dir := range []string{caddyDataDir, caddyConfigDir} {
 			if err := rejectSymlink(m.path(dir)); err != nil {
 				return err
@@ -256,6 +239,17 @@ func (m *Manager) ensureCaddy(ctx context.Context, s *State) error {
 		}
 		if _, err := m.command(ctx, "docker", "pull", "--quiet", CaddyImage); err != nil {
 			return err
+		}
+		// Prepare directories and pull before taking an existing ingress offline.
+		if c != nil {
+			if _, err := m.command(ctx, "docker", "container", "rm", "--force", c.ID); err != nil {
+				return err
+			}
+			previous := digestRef(c.Config.Image)
+			if previous != "" && previous != caddyImageRef {
+				// Best effort: Docker retains images still used elsewhere.
+				defer func() { _, _ = m.Run(ctx, "docker", []string{"image", "rm", previous}) }()
+			}
 		}
 		if _, err := m.command(ctx, "docker", caddyRunArgs(s.ID)...); err != nil {
 			return err

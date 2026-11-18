@@ -223,15 +223,16 @@ Host upgrades are an explicit root administrative command:
 2. Acquire the host lifecycle barrier (`/run/lock/vamos-host.lock`), verify an
    idle coordinator queue (`verifyQueueIdle`), stop `vamos-agent.service`, and
    re-verify the queue is idle.
-3. Atomically replace `/usr/local/lib/vamos/executor` and
-   `/usr/local/lib/vamos/vamos-agent` while preserving live Caddy routes and
+3. Reconcile the managed Caddy configuration and container and, when enabled, the managed firewall. Caddy replacement can interrupt public traffic; the host upgrade is a maintenance operation, not merely a binary copy.
+4. Atomically replace `/usr/local/lib/vamos/executor` and
+   `/usr/local/lib/vamos/vamos-agent` while preserving the saved Caddy routes and
    operator-managed `/etc/vamos/principals.json`, update recorded digests in
    `/var/lib/vamos/host.json`, reload systemd, restart `vamos-agent.service`
    (restoring the prior service on mid-upgrade failure), and verify post-upgrade
    health checks.
 
-Distro APT / Docker / Caddy package upgrades remain a separate concern from Vamos
-binary upgrades and can later build on the same drain-and-barrier primitive.
+Distro APT / Docker package upgrades remain a separate concern from Vamos
+host upgrades and can later build on the same drain-and-barrier primitive.
 
 ## 6. Seam preserved for future local dev (deferred)
 

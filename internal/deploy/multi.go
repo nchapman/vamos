@@ -174,6 +174,9 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		if resp.DeployPreview != nil && resp.DeployPreview.NeedsConfirmation {
 			return resp, nil
 		}
+		if r.PreviewOnly {
+			return resp, errors.New("selected service has no protected update to preview; no deployment started")
+		}
 		volumeState, volumeErr := m.planVolumes(r, j, next)
 		if volumeErr != nil {
 			return resp, volumeErr

@@ -27,7 +27,7 @@ on first contact. An explicit `--server` overrides only this invocation. Command
 that support `--server NAME --app APP` can operate without loading a local manifest.
 `apps` and `backup repository` are deliberately different: they ignore project
 bindings and use the registered default unless `--server` is supplied. Repository
-setup is host-level; it does not load an application manifest.
+setup is host-level; it does not load an application manifest. Defaults apply to **omitted** selectors, not an explicitly empty `--server`, `--app`, or `--service`. Supply each identity selector once. For `service bind` and `service remove`, use either a positional name or `--service`, never both.
 
 If missing or invalid YAML blocks observation or recovery, use an explicit target:
 
@@ -41,12 +41,13 @@ These hints do not trust partially parsed YAML or choose an app identity for you
 Deploy and `run` still require valid local inputs. Recovery hints preserve observation
 selectors but do not carry destructive approval into a placeholder-target command.
 
-Deploy approval suggestions include the resolved server and absolute manifest path,
-plus supplied executor, deadline, supersede and retained-data options. Binding advice
+If a deploy encounters a changed protected service, first preview that service on the **same server with the same manifest**. The suggested `deploy --preview --service NAME` cannot start a rollout, even if the service has since disappeared or lost its protection. A compatible agent returns the exact approval command when a protected update is available; do not add `--yes` to the original unscoped deploy. Deploy suggestions preserve the resolved server, absolute manifest path, and relevant invocation options. Binding advice
 is emitted only for a classified adoption refusal, not arbitrary build/SSH failures;
 it uses `-f` so the binding is saved beside the original manifest, not the current
 directory. Inspect the intended service identity before adopting it. An approval
 invocation rechecks current inputs and state; a preview is not an immutable transaction.
+
+If the agent rejects submission (for example, an app outside a key's scope), correct the target or access; that request was not admitted. A connection loss is different: inspect the original app on the original server before retrying. Resume only an incomplete deployment recorded by status. For one-off runs, inspect `status --run OPERATION` instead of replaying the command.
 
 ### Output and exit contracts
 
@@ -114,7 +115,7 @@ Enumeration is limited to 256 apps/entries per store and the normal 64 KiB RPC
 response. Oversized, unsafe, corrupt or foreign metadata produces an explicit
 error, not an incomplete list presented as complete. Concurrent metadata changes
 may require another explicit read. `--timeout` defaults to 15 seconds;
-`--executor FILE` selects a matching Linux artifact as for other remote commands.
+the normal client queries the installed agent without uploading an executor. Omit `--executor` on app commands.
 
 ## Create a minimal configuration
 

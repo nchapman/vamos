@@ -8,6 +8,7 @@ import (
 	"github.com/nchapman/vamos/internal/backup"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/host"
+	"github.com/nchapman/vamos/internal/transport"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -90,7 +91,7 @@ sets:
 }
 
 func TestBackupPlanPreviewAndCAS(t *testing.T) {
-	for _, mode := range []string{"preview", "default-file", "apply", "apply-error", "wrong-target", "wrong-digest"} {
+	for _, mode := range []string{"preview", "default-file", "apply", "apply-error", "apply-not-submitted", "wrong-target", "wrong-digest"} {
 		t.Run(mode, func(t *testing.T) {
 			_, _, deps := appFixture(t)
 			filename := filepath.Join(t.TempDir(), "backup.yaml")
@@ -148,6 +149,9 @@ sets:
 				if r.BackupPlan.Action != "apply" || r.BackupPlan.ExpectedRevision != "none" || r.BackupPlan.ExpectedDigest != digest || !reflect.DeepEqual(r.BackupPlan.Plan, &p) {
 					t.Fatalf("bad CAS: %+v", r.BackupPlan)
 				}
+				if mode == "apply-not-submitted" {
+					return deploy.Response{}, transport.NotSubmitted(errors.New("secret diagnostic"))
+				}
 				if mode == "apply-error" {
 					return deploy.Response{Version: 1, Error: "remote-secret"}, errors.New("ssh-secret")
 				}
@@ -170,7 +174,7 @@ sets:
 				t.Fatalf("code %d: %s", code, &diagnostic)
 			}
 			want := 1
-			if mode == "apply" || mode == "apply-error" {
+			if mode == "apply" || mode == "apply-error" || mode == "apply-not-submitted" {
 				want = 2
 			}
 			if calls != want || inspects != want || artifacts != want {
@@ -178,6 +182,9 @@ sets:
 			}
 			if strings.Contains(out.String()+diagnostic.String(), "secret") {
 				t.Fatal("remote error leaked")
+			}
+			if mode == "apply-not-submitted" && (!strings.Contains(diagnostic.String(), "not submitted") || strings.Contains(diagnostic.String(), "vamos backup plan")) {
+				t.Fatal(diagnostic.String())
 			}
 			if mode == "apply-error" && !strings.Contains(diagnostic.String(), "vamos backup plan --server home --app hello") {
 				t.Fatal("missing safe inspection guidance")

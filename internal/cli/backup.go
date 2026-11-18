@@ -33,7 +33,7 @@ Flags precede positional arguments. All commands accept --server, --executor,
 --timeout and --json. Add requires --recovery-file FILE and confirmation (--yes).
 Add options: --mode new|connect --endpoint URL --bucket NAME --prefix PREFIX
 --region REGION (default us-east-1) --lookup path|dns --repository-id FULL_ID
---credentials-stdin.
+--credentials-stdin (redirect or pipe private JSON; omit for hidden terminal prompts).
 Credentials stdin is one bounded JSON object: access_key_id, secret_access_key,
 session_token, password (connect only), ca_certificate. No secret value flags.
 New repositories use an operation-scoped prefix (base default: vamos).
@@ -106,11 +106,16 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 		f.BoolVar(&fromStdin, "credentials-stdin", false, "private JSON")
 	}
 	f.Usage = func() { fmt.Fprint(f.Output(), backupHelp) }
-	if e := parseFlags(f, args[2:], stdout, stderr); e != nil {
+	// Flag parse errors may quote an accidentally supplied credential.
+	if e := parseFlags(f, args[2:], stdout, io.Discard); e != nil {
 		if errors.Is(e, flag.ErrHelp) {
 			return 0
 		}
-		return 2
+		var selector selectorUsageError
+		if errors.As(e, &selector) {
+			return usageError(stderr, selector.Error())
+		}
+		return usageError(stderr, "invalid repository flags; flags must precede the repository name")
 	}
 	count := 1
 	if action == "list" {
@@ -153,8 +158,12 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
+	var admissionMessage string
 	run := func(r backup.Request, private []byte) (*backup.Response, error) {
 		response, e := runAppTransport(ctx, server.Target, *executor, deploy.Request{Version: 1, Action: "backup-repository", Host: lifecycle.Config{Name: server.Name, Domain: server.Domain}, Backup: &r}, private, deps)
+		if admissionMessage = privateAdmissionMessage(e); admissionMessage != "" {
+			return nil, errors.New(admissionMessage)
+		}
 		if response.Version == 1 && response.ErrorCode != "" {
 			if message := deploy.RefusalMessage("backup-repository", response.ErrorCode); message != "" {
 				fmt.Fprintln(stderr, message)
@@ -201,6 +210,9 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 		if (!terminal || fromStdin) && !yes {
 			fmt.Fprintf(stderr, "Preview only: target %s (%s), repository %s; no credentials read or remote calls. Re-run with --yes and complete setup flags. No application backups exist.\n", server.Name, server.Target, name)
 			return 0
+		}
+		if terminal && fromStdin {
+			return usageError(stderr, "--credentials-stdin cannot read a terminal; redirect private JSON or omit the flag for hidden prompts")
 		}
 		if mode != "new" && mode != "connect" {
 			return usageError(stderr, "--mode must be new or connect")
@@ -315,6 +327,9 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 		}
 		if mode == "connect" && id == "" {
 			observed, e := run(backup.Request{Action: "probe", Name: name, Config: &cfg}, private)
+			if admissionMessage != "" {
+				return lifecycleError(stderr, e)
+			}
 			if e != nil || observed.Repository == nil || !backupFullID(observed.Repository.RepositoryID) {
 				return lifecycleError(stderr, errors.New("repository probe failed; no registration attempted"))
 			}
@@ -337,7 +352,13 @@ func backupCommandInteractive(ctx context.Context, args []string, input io.Reade
 		return usageError(stderr, "invalid repository request")
 	}
 	result, e := run(req, private)
+	if admissionMessage != "" {
+		return lifecycleError(stderr, e)
+	}
 	if e != nil {
+		if action == "list" || action == "show" {
+			return lifecycleError(stderr, errors.New("repository metadata unavailable; no change requested"))
+		}
 		fmt.Fprintf(stderr, "Repository outcome unknown: target %s (%s), name %s, operation %s. Keep the recovery kit. Inspect: vamos backup repository show --server %s %s\n", server.Name, server.Target, name, req.Operation, server.Name, name)
 		if req.Operation != "" {
 			fmt.Fprintf(stderr, "Resume: vamos backup repository resume --server %s %s %s\n", server.Name, name, req.Operation)

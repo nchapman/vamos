@@ -92,7 +92,7 @@ func (d *Daemon) defaults() {
 		}
 	}
 	if len(d.Capabilities) == 0 {
-		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapDurableQueue, agentproto.CapPerAppConcurrency, agentproto.CapScopedACL, agentproto.CapSecrets, agentproto.CapBackups, agentproto.CapSessions}
+		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapProtectedPreview, agentproto.CapDurableQueue, agentproto.CapPerAppConcurrency, agentproto.CapScopedACL, agentproto.CapSecrets, agentproto.CapBackups, agentproto.CapSessions}
 	}
 	if d.Sessions == nil {
 		d.Sessions = session.NewManager()
@@ -290,7 +290,13 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 			}
 			response, err := d.Queue.Submit(ctx, principal, request)
 			if err != nil {
-				_ = writeError(conn, "submission_refused", err.Error())
+				code := "not_submitted"
+				if errors.Is(err, errRecordSync) {
+					code = "admission_uncertain"
+				} else if errors.Is(err, errSubmitForbidden) {
+					code = "forbidden"
+				}
+				_ = writeError(conn, code, err.Error())
 				continue
 			}
 			if err := writeOK(conn, response); err != nil {

@@ -552,7 +552,7 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 		caddyUpdated = true
 	}
 	// Routes and certificates live on the host, so replacing the container to
-	// adopt a new pinned image keeps them; only in-flight requests are cut.
+	// adopt a new pinned image keeps them, but can interrupt public traffic.
 	if err = m.ensureCaddy(ctx, s); err != nil {
 		return nil, err
 	}

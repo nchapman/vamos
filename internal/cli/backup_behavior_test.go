@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestBackupAddBehavior(t *testing.T) {
-	for _, kind := range []string{"preview", "malformed", "oversized", "duplicate", "case-field", "terminal-stdin", "connect-no-id", "ssh", "wrong-config", "wrong-name", "wrong-operation", "wrong-id", "malformed-response", "unverified-response", "default-region", "success"} {
+	for _, kind := range []string{"preview", "terminal-preview", "hidden", "missing-flag", "invalid-flag", "malformed", "oversized", "duplicate", "case-field", "terminal-stdin", "connect-no-id", "ssh", "wrong-config", "wrong-name", "wrong-operation", "wrong-id", "malformed-response", "unverified-response", "default-region", "success"} {
 		t.Run(kind, func(t *testing.T) {
 			dir, store, reg := initFixture(t)
 			if err := store.Put(registry.Server{Name: "home", Target: "root@home", Domain: "example.com"}); err != nil {
@@ -27,7 +28,12 @@ func TestBackupAddBehavior(t *testing.T) {
 			args := []string{"repository", "add", "--yes", "--mode", "new", "--endpoint", "https://s3.example.com", "--bucket", "archive", "--region", "us-east-1", "--recovery-file", path, "--credentials-stdin"}
 			input := `{"access_key_id":"private-access","secret_access_key":"private-secret"}`
 			switch kind {
-			case "preview":
+			case "hidden", "missing-flag":
+				args = args[:len(args)-1]
+				args = append(args, "--prefix", "vamos")
+			case "invalid-flag":
+				args[len(args)-1] = "--credentials-stdin=private-secret"
+			case "preview", "terminal-preview":
 				args = append(args[:2], args[3:]...)
 			case "default-region":
 				args = append(args[:9], args[11:]...)
@@ -47,7 +53,7 @@ func TestBackupAddBehavior(t *testing.T) {
 					args = append(args, "--repository-id", strings.Repeat("b", 64))
 				}
 			}
-			args = append(args, "archive")
+			args = append(args, "--json", "archive")
 			calls := 0
 			var pending []byte
 			var staged backup.RecoveryKit
@@ -97,16 +103,37 @@ func TestBackupAddBehavior(t *testing.T) {
 			}}
 			var out, diag bytes.Buffer
 			reader := strings.NewReader(input)
-			code := backupCommandInteractive(context.Background(), args, reader, &out, &diag, deps, nil, kind == "terminal-stdin")
-			success := kind == "success" || kind == "terminal-stdin" || kind == "default-region"
+			hiddenReads := 0
+			read := func(_ context.Context, _ io.Reader, _ io.Writer, raw bool) ([]byte, error) {
+				if kind != "hidden" || raw {
+					t.Fatal("unexpected prompt mode")
+				}
+				hiddenReads++
+				return []byte("private-secret"), nil
+			}
+			code := backupCommandInteractive(context.Background(), args, reader, &out, &diag, deps, read, strings.HasPrefix(kind, "terminal-") || kind == "hidden")
+			if kind == "hidden" && hiddenReads != 2 {
+				t.Fatal("expected two hidden prompts")
+			}
+			if kind == "missing-flag" && (reader.Len() != len(input) || !strings.Contains(diag.String(), "--credentials-stdin")) {
+				t.Fatal("missing automation hint")
+			}
+			if kind == "terminal-stdin" && (reader.Len() != len(input) || calls != 0 || !strings.Contains(diag.String(), "terminal")) {
+				t.Fatal("terminal stdin must be refused before reading or kit creation")
+			}
+			preview := kind == "preview" || kind == "terminal-preview"
+			success := kind == "success" || kind == "default-region" || kind == "hidden"
+			if success && !json.Valid(out.Bytes()) || !success && out.Len() != 0 {
+				t.Fatalf("unexpected machine output %q", out.String())
+			}
 			if success {
 				if code != 0 {
 					t.Fatalf("%d %s", code, &diag)
 				}
-			} else if kind != "preview" && code == 0 {
+			} else if !preview && code == 0 {
 				t.Fatal("accepted invalid input/response")
 			}
-			if kind == "preview" {
+			if preview {
 				if code != 0 || reader.Len() != len(input) {
 					t.Fatal("preview read credentials")
 				}

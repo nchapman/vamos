@@ -135,6 +135,9 @@ func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer
 	if flags.NArg() > 1 || *timeout <= 0 {
 		return usageError(stderr, "firewall accepts optional NAME and a positive timeout")
 	}
+	if flags.NArg() == 1 && strings.TrimSpace(flags.Arg(0)) == "" {
+		return usageError(stderr, "NAME must not be empty")
+	}
 	if op == "status" && provided["yes"] || op != "status" && (provided["json"] || !*yes) {
 		return usageError(stderr, "firewall mutations require --yes; --json applies only to status")
 	}

@@ -32,8 +32,11 @@ def exercise(h, app, source):
         h.cli('deploy', '--service', 'web', '--server', 'local', cwd=checkout)
         manifest['app'] = app + '-sibling'
         (checkout / 'sibling.yaml').write_text(json.dumps(manifest))
-        h.cli('deploy', '-f', 'sibling.yaml', '--server', 'local', cwd=checkout,
-              expect_error='not authorized')
+        denied = h.cli('deploy', '-f', 'sibling.yaml', '--server', 'local', cwd=checkout,
+                       expect_error='not authorized')
+        if b'not submitted' not in denied.stderr.lower() or any(
+                cmd in denied.stderr for cmd in (b'vamos status', b'vamos resume')):
+            raise AssertionError('known scope refusal suggested deployment recovery')
         h.env = owner
         h.cli('server', 'principal', 'revoke', '--yes', 'ci')
         h.env = runner

@@ -207,6 +207,9 @@ func AgentHello(ctx context.Context, target string) (agentproto.HelloResponse, e
 
 func requiredCapabilities(request deploy.Request) []string {
 	caps := []string{agentproto.CapAppDeploy}
+	if request.PreviewOnly {
+		caps = append(caps, agentproto.CapProtectedPreview)
+	}
 	if request.Mutating() {
 		caps = append(caps, agentproto.CapDurableQueue)
 	}
@@ -226,14 +229,14 @@ func requiredCapabilities(request deploy.Request) []string {
 // transport archives.
 func AgentRunApp(ctx context.Context, target string, request deploy.Request, payload []byte) (deploy.Response, error) {
 	if err := ValidateTarget(target); err != nil {
-		return deploy.Response{}, err
+		return deploy.Response{}, transport.NotSubmitted(err)
 	}
 	if err := deploy.ValidateRequest(request); err != nil {
-		return deploy.Response{}, err
+		return deploy.Response{}, transport.NotSubmitted(err)
 	}
 	client, closeConn, err := connectAgent(ctx, target, requiredCapabilities(request))
 	if err != nil {
-		return deploy.Response{}, err
+		return deploy.Response{}, transport.NotSubmitted(err)
 	}
 	defer closeConn()
 	if request.Mutating() {
@@ -249,7 +252,7 @@ func AgentRunApp(ctx context.Context, target string, request deploy.Request, pay
 func runMutation(ctx context.Context, client *agentclient.Client, request deploy.Request, payload []byte) (deploy.Response, error) {
 	key, err := idempotencyKeyFor(request)
 	if err != nil {
-		return deploy.Response{}, err
+		return deploy.Response{}, transport.NotSubmitted(err)
 	}
 	submitted, err := client.Submit(ctx, request, key, payload)
 	if err != nil {
@@ -257,7 +260,7 @@ func runMutation(ctx context.Context, client *agentclient.Client, request deploy
 	}
 	record, err := client.Wait(ctx, submitted.OperationID)
 	if err != nil {
-		return deploy.Response{}, fmt.Errorf("operation %s was admitted; reattach with 'vamos status': %w", submitted.OperationID, err)
+		return deploy.Response{}, fmt.Errorf("operation %s was admitted; result unavailable: %w", submitted.OperationID, err)
 	}
 	switch record.Phase {
 	case agentproto.PhaseSucceeded, agentproto.PhaseFailed:
@@ -271,9 +274,11 @@ func runMutation(ctx context.Context, client *agentclient.Client, request deploy
 		if message == "" {
 			message = fmt.Sprintf("operation %s failed", submitted.OperationID)
 		}
-		return deploy.Response{}, fmt.Errorf("remote %s failed: %q", request.Action, message)
+		return deploy.Response{}, fmt.Errorf("%w (%s %s): %q", transport.ErrOperationFailed, request.Action, submitted.OperationID, message)
+	case agentproto.PhaseCancelled:
+		return deploy.Response{}, fmt.Errorf("%w (%s %s): cancelled", transport.ErrOperationFailed, request.Action, submitted.OperationID)
 	case agentproto.PhaseUncertain:
-		return deploy.Response{}, fmt.Errorf("operation %s outcome is uncertain: %s; inspect 'vamos status' before resuming or superseding", submitted.OperationID, record.Error)
+		return deploy.Response{}, fmt.Errorf("coordinator operation %s outcome is uncertain: %s", submitted.OperationID, record.Error)
 	default:
 		message := record.Error
 		if message == "" {

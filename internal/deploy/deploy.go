@@ -31,6 +31,7 @@ import (
 type Request struct {
 	BackupPlan     *backup.PlanRequest `json:"backup_plan,omitempty"`
 	Backup         *backup.Request     `json:"backup,omitempty"`
+	PreviewOnly    bool                `json:"preview_only,omitempty"`
 	Partial        bool                `json:"partial,omitempty"`
 	Bindings       map[string]string   `json:"bindings,omitempty"`
 	HostIdentity   string              `json:"host_identity,omitempty"`
@@ -333,6 +334,9 @@ func ValidateRequest(r Request) error {
 		if _, ok := r.Config.Services[name]; !ok || (r.Service != "" && name != r.Service) {
 			return errors.New("binding is outside the selected services")
 		}
+	}
+	if r.PreviewOnly && (r.Action != "deploy" || r.Service == "" || r.Apply || r.Supersede != "" || r.ContextFormat != BundleFormat) {
+		return errors.New("protected preview requires a scoped deploy without apply or supersede")
 	}
 	if r.ReAdd && (!r.Partial || r.Service == "" || !r.Apply) {
 		return errors.New("re-add requires deploy --service NAME --yes")

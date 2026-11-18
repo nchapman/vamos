@@ -154,7 +154,7 @@ the operation, including an admitted operation that later fails. A preflight
 failure against an existing service does not silently adopt it.
 
 Before deploying an existing service from a new directory, inspect it and bind
-explicitly from that directory:
+explicitly from that directory. Give the service name once: a name-first command must not also specify `--service`.
 
 ```sh
 vamos status --app workspace --server home

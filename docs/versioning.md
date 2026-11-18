@@ -3,8 +3,7 @@
 Ordinary CLI app commands route through the installed `vamos-agent` coordinator
 over the restricted `vamos` SSH bridge using a framed API/capability handshake
 ([agent protocol](agent-protocol.md)). Host lifecycle operations (`server add`,
-`server upgrade`, `server teardown`) and explicit `--executor FILE` overrides
-connect as `root` and enforce an **exact matching local bundle** before
+`server upgrade`, `server teardown`, firewall and principal administration) use root or passwordless sudo and enforce an **exact matching local bundle** before
 uploading or installing the Linux binary. Read-only SSH host inspection may
 happen first to discover the host architecture.
 
@@ -57,7 +56,7 @@ same bounded bytes. It never executes the foreign-architecture artifact locally.
 
 A raw `go build ./cmd/vamos` or `go run ./cmd/vamos` is unversioned and cannot issue
 commands requiring an executor. Such builds can still validate manifests and use
-host inspect/status/connect. Use the bundle builder for app operations (including
+host inspect/status and administrative connect. Bridge-only connect needs a compatible versioned client. Use the bundle builder for app operations (including
 app status/logs) and host setup/teardown. The old `-X main.version=...` recipe does
 not produce a supported bundle.
 
@@ -80,7 +79,7 @@ This build identity also supplies the deterministic `agent_build_id` /
 `vamos server add` installs the paired `executor` and `vamos-agent` under
 `/usr/local/lib/vamos/`; `vamos server upgrade --yes NAME` replaces that pair
 after strict ownership, idle-queue, and health checks. Host inspect/status/connect
-still require no executor artifact. Within a compatible API range and capability
+still require no executor artifact. Unlike the local `vamos upgrade`, the host upgrade restarts the agent and may replace Caddy or update the managed firewall. Schedule it when a public traffic interruption is acceptable. Within a compatible API range and capability
 set, the CLI and `vamos-agent` interoperate across patch builds; incompatible
 API ranges or missing capabilities fail fast with an explicit upgrade message.
 See [the agent protocol](agent-protocol.md) for compatibility and reattachment

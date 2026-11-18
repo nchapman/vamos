@@ -112,8 +112,11 @@ func backupPlanCommand(ctx context.Context, args []string, stdin io.Reader, stdo
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
+	var admissionMessage string
 	fail := func(apply bool) int {
-		if apply {
+		if admissionMessage != "" {
+			fmt.Fprintln(stderr, admissionMessage)
+		} else if apply {
 			fmt.Fprintf(stderr, "Backup plan apply outcome is unknown or refused. Inspect recorded metadata with: vamos backup plan --server %s --app %s\n", server.Name, *app)
 		} else {
 			fmt.Fprintln(stderr, "Backup plan observation failed; no apply requested.")
@@ -122,6 +125,9 @@ func backupPlanCommand(ctx context.Context, args []string, stdin io.Reader, stdo
 	}
 	run := func(r backup.PlanRequest) (*backup.PlanResponse, bool) {
 		response, e := runAppTransport(ctx, server.Target, *executor, deploy.Request{Version: 1, Action: "backup-plan", App: *app, Host: hostConfig, BackupPlan: &r}, nil, deps)
+		if admissionMessage = privateAdmissionMessage(e); admissionMessage != "" {
+			return nil, false
+		}
 		if response.ErrorCode != "" {
 			if message := deploy.RefusalMessage("backup-plan", response.ErrorCode); message != "" {
 				fmt.Fprintln(stderr, message)

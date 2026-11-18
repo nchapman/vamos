@@ -51,6 +51,8 @@ refusal. Do not flush tables or remove unrelated files to bypass ownership check
 
 ## Deployment failures
 
+A request the agent did **not admit** has no deployment to resume. For an access refusal, check the selected server, manifest app name, and SSH key/grant with the administrator. If the connection was lost and admission is uncertain, inspect the original app on the same server; only resume an operation that status reports as incomplete. Do not retry a one-off command solely because SSH disconnected.
+
 Recognized Docker failures expose static, secret-free categories for occupied
 ports, unavailable Docker, inaccessible images, and full storage. Check the
 reported category and app status before retrying. Unknown runtime diagnostics

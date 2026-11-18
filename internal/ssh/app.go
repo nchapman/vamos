@@ -15,6 +15,7 @@ import (
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/process"
 	"github.com/nchapman/vamos/internal/secrets"
+	"github.com/nchapman/vamos/internal/transport"
 )
 
 //go:embed app.sh
@@ -30,31 +31,31 @@ func RunApp(ctx context.Context, target string, request deploy.Request, binary, 
 func runApp(ctx context.Context, target string, request deploy.Request, binary, archive []byte, run runProcess) (deploy.Response, error) {
 	var response deploy.Response
 	if err := ValidateTarget(target); err != nil {
-		return response, err
+		return response, transport.NotSubmitted(err)
 	}
 	if err := deploy.ValidateRequest(request); err != nil {
-		return response, err
+		return response, transport.NotSubmitted(err)
 	}
 	if request.Action == "backup-repository" {
 		if request.Backup.NeedsCredentials() {
 			if _, err := backup.DecodeCredentials(archive); err != nil {
-				return response, errors.New("invalid private repository credentials")
+				return response, transport.NotSubmitted(errors.New("invalid private repository credentials"))
 			}
 		} else if len(archive) != 0 {
-			return response, errors.New("repository action does not accept credentials")
+			return response, transport.NotSubmitted(errors.New("repository action does not accept credentials"))
 		}
 	}
 	encoded, err := json.Marshal(request)
 	if err != nil {
-		return response, err
+		return response, transport.NotSubmitted(err)
 	}
 	if len(encoded) > 64*1024 {
-		return response, errors.New("app request exceeds 64 KiB")
+		return response, transport.NotSubmitted(errors.New("app request exceeds 64 KiB"))
 	}
 	mutation := request.Mutating()
 	payload, err := actionArchive(encoded, binary, archive, request.Action)
 	if err != nil {
-		return response, err
+		return response, transport.NotSubmitted(err)
 	}
 	script := appReadScript
 	if mutation {
@@ -76,7 +77,13 @@ func runApp(ctx context.Context, target string, request deploy.Request, binary, 
 // installed agent) share these refusal and acknowledgment rules.
 func appOutcome(request deploy.Request, response deploy.Response, decodeErr, connErr error) (deploy.Response, error) {
 	runErr := connErr
-	mutation := request.Mutating()
+	// The protected preview needs the normal queued deploy preflight (including
+	// the captured build context), but never authorizes a rollout.
+	mutation := request.Mutating() && !request.PreviewOnly
+	switch request.Action {
+	case "cleanup", "destroy", "rollback", "service-remove":
+		mutation = request.Apply // previews can be queued but do not apply changes
+	}
 	if request.Action == "backup-plan" {
 		if decodeErr == nil && response.Version == 1 && response.Error != "" {
 			if message := deploy.RefusalMessage(request.Action, response.ErrorCode); message != "" {
@@ -139,15 +146,18 @@ func appOutcome(request deploy.Request, response deploy.Response, decodeErr, con
 	if runErr != nil {
 		err := runErr
 		if mutation {
-			return response, fmt.Errorf("deployment outcome may be unknown; use vamos status before retrying: %w", err)
+			return response, fmt.Errorf("deployment outcome may be unknown: %w", err)
 		}
 		return response, err
 	}
 	if decodeErr != nil {
-		return response, fmt.Errorf("invalid app response; inspect status before retrying (decode error: %w)", decodeErr)
+		return response, fmt.Errorf("invalid app response (decode error: %w)", decodeErr)
+	}
+	if request.PreviewOnly && (response.DeployPreview == nil || !response.DeployPreview.NeedsConfirmation || response.DeployPreview.Service != request.Service) {
+		return deploy.Response{}, errors.New("no matching protected-service preview received")
 	}
 	if response.Version != 1 || (request.Action == "apps" && response.Apps == nil) || (request.Action != "apps" && request.Action != "logs" && response.Status == nil && response.Plan == nil && response.Run == nil && response.DeployPreview == nil && response.RollbackPreview == nil) {
-		return response, errors.New("invalid app response; inspect status before retrying")
+		return response, errors.New("invalid app response")
 	}
 	return response, nil
 }

@@ -18,11 +18,13 @@ curl -fsSL https://raw.githubusercontent.com/nchapman/vamos/main/install.sh | sh
 
 Or download an archive from [GitHub Releases](https://github.com/nchapman/vamos/releases) (macOS, Linux, or Windows) and place all three binaries (`vamos`, `vamos-linux-amd64`, and `vamos-linux-arm64`) together in a directory on your `PATH`.
 
-To upgrade later, run:
+To upgrade the **local CLI and its bundled executors** later, run:
 
 ```sh
 vamos upgrade
 ```
+
+This does not change any server. A separate `vamos server upgrade --yes NAME` restarts the agent and may replace Caddy or update the managed firewall. Schedule host upgrades when a public traffic interruption is acceptable.
 
 ### 2. Inspect and bootstrap a server
 
@@ -78,13 +80,13 @@ vamos destroy -f examples/hello/vamos.yaml --yes   # Remove the app and its rout
 - **Zero-downtime public rollouts** — New containers must pass HTTP readiness checks before Caddy switches traffic; failed rollouts leave the previous release serving.
 - **TCP/UDP service ports** — Public IPv4 Docker port bindings, including equal-sized ranges for services such as coturn. Fixed-port services use one replica and stop-first replacement. See [service ports](docs/ports.md).
 - **Persistent volumes** — One named local volume per service (`volume: {name: data, mount: /data}`) with single-writer stop/start replacement, durable 503 maintenance routing during updates, and retained data across cleanup/destroy.
-- **Staged runtime secrets** — Stage app-scoped secrets without restarting (`vamos secrets stage`), then apply them on the next `vamos deploy` or `vamos secrets set`. Secret values are never printed in status output or logs.
+- **Runtime secrets** — `vamos secrets stage` stores new values without restarting services; deploy the intended services to apply staged values. `vamos secrets set` stores new values and rolls out replacements to their deployed consumers, which can interrupt service. Secret-management output reports metadata, not values. Applications can log their own credentials; inspect workload logs before sharing them. See [runtime secrets](docs/secrets.md).
 - **Release & one-off commands** — Run pre-rollout release hooks (`release: {service: web, command: [...]}`) or ad-hoc noninteractive jobs (`vamos run --service web -- ...`) inside the captured image and network.
 - **Preview-first rollbacks** — Inspect and apply code/config rollbacks with `vamos rollback`.
 - **Custom domains** — Add `http.domains` aliases (up to 8 per service) alongside the generated app URL; Caddy manages TLS certificates automatically.
 - **Independent service directories** — Deploy services from separate repositories/folders into one app using `--service` and `vamos service bind` / `vamos service remove`.
 - **Encrypted backup repositories & plans** — Configure S3-compatible restic repositories (`vamos backup repository`) and shared backup plans (`vamos backup configure` / `vamos backup plan`). *(Application capture, restore, and scheduling are not yet implemented.)*
-- **Crash-safe remote execution** — Mutations run inside systemd units supervised by `vamos-agent`. Disconnecting SSH does not abort an in-progress deploy; inspect with `vamos status` and continue with `vamos resume <operation-id>` or replace with `vamos deploy --supersede <operation-id>`.
+- **Crash-safe remote execution** — Mutations run inside systemd units supervised by `vamos-agent`. Disconnecting SSH does not abort an admitted deploy. Check `vamos status`; resume a recorded incomplete deployment by ID, or replace its inputs with `vamos deploy --supersede <operation-id>`. A request refused before submission has nothing to resume.
 
 ## Everyday commands
 
@@ -101,7 +103,7 @@ vamos secrets stage NAME              # Prompt (no-echo) and stage a secret
 vamos rollback                        # Preview rollback to a previous operation
 vamos apps                            # List apps and retained resources on the server
 vamos upgrade                         # Upgrade vamos and Linux executors from GitHub Releases
-vamos server upgrade --yes prod       # Upgrade vamos-agent on a managed server
+vamos server upgrade --yes prod       # Host maintenance; can interrupt public traffic
 ```
 
 Run `vamos help` or `vamos <command> --help` for full options and flags.

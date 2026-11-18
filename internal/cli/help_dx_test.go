@@ -56,11 +56,11 @@ func TestServerOperationHelpShowsApplicableDefaults(t *testing.T) {
 }
 
 func TestSecretsSubcommandHelpDX(t *testing.T) {
-	for _, action := range []string{"stage", "list"} {
+	for _, action := range []string{"stage", "set", "list"} {
 		for _, option := range []string{"-h", "--help"} {
 			var out, diag bytes.Buffer
 			code := secretsCommand(context.Background(), []string{action, option}, helpUnreadInput{t}, &out, &diag, appDeps{}, nil)
-			if code != 0 || out.Len() == 0 || diag.Len() != 0 {
+			if code != 0 || !strings.Contains(out.String(), "new values") || !strings.Contains(out.String(), "unchanged") || !strings.Contains(out.String(), "replace deployed consumers") || !strings.Contains(out.String(), "not atomic") || diag.Len() != 0 {
 				t.Fatalf("%s %s: %d %q %q", action, option, code, &out, &diag)
 			}
 		}

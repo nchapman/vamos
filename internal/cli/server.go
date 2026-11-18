@@ -14,6 +14,8 @@ import (
 	"github.com/nchapman/vamos/internal/ssh"
 )
 
+const serverUpgradeImpact = "Host upgrade restarts the Vamos agent and may replace Caddy or update the managed firewall. Caddy replacement can interrupt public traffic."
+
 const serverHelp = `Usage:
   vamos server inspect [--json] [--timeout 15s] TARGET
   vamos server add --yes --firewall=true|false [--domain DOMAIN] [--executor FILE] NAME TARGET
@@ -34,7 +36,7 @@ Add and teardown require root or passwordless sudo and explicit --yes.
 Add prompts for a firewall choice on interactive stdin; scripts must pass --firewall=true|false.
 Managed firewall is opt-in dedicated-host protection with automatic Docker public publishing.
 Disable removes protection only; unsupported existing firewall configurations are refused.
-Upgrade replaces only the matching installed coordinator/executor bundle after ownership checks.
+` + serverUpgradeImpact + `
 Teardown refuses workloads and changed managed resources; --purge deletes owned data.
 TARGET is optional for registered names; provide it to recover an unregistered host.
 `
