@@ -136,6 +136,9 @@ func (a App) Validate() error {
 			}
 		}
 		if s.HTTP != nil {
+			if err := s.HTTP.validateIngressRules(); err != nil {
+				add("%s.http.%w", prefix, err)
+			}
 			if name != "web" && len(a.Name+"-"+name) > 63 {
 				add("%s: generated hostname label exceeds 63 bytes", prefix)
 			}

@@ -1,9 +1,9 @@
-# WAF, cache, and compression acceptance
+# HTTP ingress acceptance
 
 Run `mise run test:integration --scenario waf-cache` on macOS with OrbStack.
 The runner creates and deletes an isolated Ubuntu server; no existing server is
-upgraded or mutated. It deploys the pinned production Caddy image and four real
-Vamos services with the default HTTP middleware and each individual opt-out.
+upgraded or mutated. It deploys the pinned production Caddy image and real
+Vamos services with default middleware, individual opt-outs, and path rules.
 
 The origin returns a new UUID on every request, in both its body and a header.
 The suite checks:
@@ -15,6 +15,12 @@ The suite checks:
 - Origin `Cache-Control: no-store` is honored.
 - Gzip is enabled by default and absent with `compression: false`.
 - Nonempty files exist under the persistent Caddy cache directory.
+- `/` matches only the homepage, prefix rate limits count cache hits, and
+  spoofed forwarding headers do not bypass the limit.
+- A `/*` rule shares one budget across different paths, while the service's
+  primary hostname and alias each get their own budget.
+- Blocks take precedence over redirects; more specific redirects win and do
+  not copy the original path suffix or query string.
 - A cached response survives the runner's machine restart, with its original
   origin ID and a cache HIT header. The middleware probes run again afterward.
 

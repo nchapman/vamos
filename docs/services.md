@@ -29,6 +29,58 @@ disables ingress encoding, not compression performed by the application.
 These switches apply to the service's generated hostname and custom domains.
 Replica load balancing and failover remain managed by Vamos.
 
+### Rate limits and redirects
+
+Add rules under a public service's `http` block. Omit both lists to keep the
+existing behavior.
+
+```yaml
+app: website
+services:
+  web:
+    build: .
+    http:
+      port: 8080
+      rate_limit:
+        - path: /login
+          requests: 10
+          window: 1m
+        - path: /api/*
+          requests: 120
+          window: 1m
+        - path: /legacy/*
+          block: true
+      redirects:
+        - path: /old-pricing
+          to: /pricing
+          permanent: true
+        - path: /old-docs/*
+          to: https://docs.example.com/
+```
+
+Both lists require a `path` and use the same syntax. `/` matches only the
+homepage; use `"/*"` for the whole hostname. `/login` matches the exact path,
+and `/api/*` matches `/api/` and its descendants, but not `/api`. Caddy
+normalizes request paths and matches case-insensitively; the query string does
+not affect matching. Use unescaped paths in rules, without regex or placeholders.
+
+- **Rate limits** are per connection IP, per hostname, shared across all service
+  replicas. A request must pass every matching rule. Each rule has a sliding `window` from `1s` to `1h` and allows
+  `1` to `1000` requests; a service can have up to 16 rules. Cache hits and
+  redirects count, and a blocked request gets `429` with `Retry-After`. Behind
+  a CDN or another proxy, the limit applies to that proxy's IP, not to IPs in
+  forwarded request headers. Use `block: true` instead of `requests` and
+  `window` to return `403` before checking rate limits or redirects.
+- **Redirects** go to a fixed same-site path or absolute HTTPS URL. The most
+  specific rule wins, regardless of list order. The original query string and
+  any path suffix are not copied. Redirects default to `302`; set
+  `permanent: true` for `301`. Clients may change `POST` to `GET` when following
+  either status. A service can have up to 32 redirects.
+
+Rules apply to the generated hostname and all custom domains on the service.
+Existing servers need `vamos server upgrade` with the current client before
+using these options.
+
 ## One app, several source folders
 
 Independent folders can each contain a `vamos.yaml` with the **same app name** and

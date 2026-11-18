@@ -198,9 +198,7 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 	type routeEntry struct {
 		upstreams   string
 		unavailable bool
-		waf         bool
-		cache       bool
-		compression bool
+		http        config.HTTP
 	}
 	routes := map[string]routeEntry{}
 	add := func(app, service string, r *release) error {
@@ -226,7 +224,7 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 			if _, exists := routes[host]; exists {
 				return errors.New("duplicate public route")
 			}
-			routes[host] = routeEntry{upstreams: strings.Join(upstreams, " "), waf: httpConfig.WAFEnabled(), cache: httpConfig.CacheEnabled(), compression: httpConfig.CompressionEnabled()}
+			routes[host] = routeEntry{upstreams: strings.Join(upstreams, " "), http: httpConfig}
 		}
 		return nil
 	}
@@ -291,31 +289,17 @@ func (m *Manager) routes(j *journal, candidate bool) (string, error) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	const corazaBlock = "\tcoraza_waf {\n\t\tload_owasp_crs\n\t\tdirectives `\n\t\t\tInclude @coraza.conf-recommended\n\t\t\tInclude @crs-setup.conf.example\n\t\t\tInclude @owasp_crs/*.conf\n\t\t\tSecRuleEngine On\n\t\t`\n\t}\n"
-	out := baseCaddy
+	var out strings.Builder
+	out.WriteString(baseCaddy)
 	for _, k := range keys {
 		entry := routes[k]
 		if entry.unavailable {
-			out += fmt.Sprintf("\n%s {\n\trespond \"Service unavailable\" 503\n}\n", k)
+			fmt.Fprintf(&out, "\n%s {\n\trespond \"Service unavailable\" 503\n}\n", k)
 			continue
 		}
-		directives := ""
-		if entry.waf {
-			directives += corazaBlock
-		}
-		if entry.cache {
-			directives += "\tcache\n"
-		}
-		if entry.compression {
-			directives += "\tencode zstd gzip\n"
-		}
-		if strings.Contains(entry.upstreams, " ") {
-			out += fmt.Sprintf("\n%s {\n%s\treverse_proxy %s {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}\n", k, directives, entry.upstreams)
-			continue
-		}
-		out += fmt.Sprintf("\n%s {\n%s\treverse_proxy %s\n}\n", k, directives, entry.upstreams)
+		writeCaddySite(&out, k, entry.upstreams, entry.http)
 	}
-	return out, nil
+	return out.String(), nil
 }
 
 // verifyRoutes checks the stable effective routes, not an uncommitted intent.

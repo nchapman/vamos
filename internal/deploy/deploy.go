@@ -264,6 +264,9 @@ func validateLegacyApp(a *config.App) error {
 		if service.Resources != nil {
 			return errors.New("legacy protocol does not support resources; use a current client with a captured build bundle")
 		}
+		if h := service.HTTP; h != nil && (len(h.RateLimit) != 0 || len(h.Redirects) != 0) {
+			return errors.New("rate limits and redirects require a current client with a captured build bundle")
+		}
 	}
 	s, ok := a.Services["web"]
 	if !ok || len(a.Services) != 1 || s.HTTP == nil || s.Volume != nil || len(s.Ports) != 0 || s.Build == nil || s.ReplicaCount() != 1 || s.Update == config.UpdateManual || len(s.HTTP.Domains) != 0 {

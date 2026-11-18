@@ -138,12 +138,14 @@ func (b *Build) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type HTTP struct {
-	Port        int      `yaml:"port"`
-	Health      string   `yaml:"health"`
-	Domains     []string `yaml:"domains,omitempty"`
-	WAF         *bool    `yaml:"waf,omitempty" json:"WAF,omitempty"`
-	Cache       *bool    `yaml:"cache,omitempty" json:"Cache,omitempty"`
-	Compression *bool    `yaml:"compression,omitempty" json:"Compression,omitempty"`
+	Port        int        `yaml:"port"`
+	Health      string     `yaml:"health"`
+	Domains     []string   `yaml:"domains,omitempty"`
+	WAF         *bool      `yaml:"waf,omitempty" json:"WAF,omitempty"`
+	Cache       *bool      `yaml:"cache,omitempty" json:"Cache,omitempty"`
+	Compression *bool      `yaml:"compression,omitempty" json:"Compression,omitempty"`
+	RateLimit   []RateRule `yaml:"rate_limit,omitempty" json:"RateLimit,omitempty"`
+	Redirects   []Redirect `yaml:"redirects,omitempty" json:"Redirects,omitempty"`
 }
 
 // WAFEnabled reports whether the OWASP Coraza WAF is enabled; omission is true.
@@ -180,16 +182,18 @@ func (h *HTTP) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: http must be a mapping", value.Line)
 	}
-	if err := checkMappingKeys(value, "config.HTTP", "port", "health", "domains", "waf", "cache", "compression"); err != nil {
+	if err := checkMappingKeys(value, "config.HTTP", "port", "health", "domains", "waf", "cache", "compression", "rate_limit", "redirects"); err != nil {
 		return err
 	}
 	var raw struct {
-		Port        int      `yaml:"port"`
-		Health      *string  `yaml:"health"`
-		Domains     []string `yaml:"domains,omitempty"`
-		WAF         *bool    `yaml:"waf,omitempty"`
-		Cache       *bool    `yaml:"cache,omitempty"`
-		Compression *bool    `yaml:"compression,omitempty"`
+		Port        int        `yaml:"port"`
+		Health      *string    `yaml:"health"`
+		Domains     []string   `yaml:"domains,omitempty"`
+		WAF         *bool      `yaml:"waf,omitempty"`
+		Cache       *bool      `yaml:"cache,omitempty"`
+		Compression *bool      `yaml:"compression,omitempty"`
+		RateLimit   []RateRule `yaml:"rate_limit,omitempty"`
+		Redirects   []Redirect `yaml:"redirects,omitempty"`
 	}
 	if err := value.Decode(&raw); err != nil {
 		return err
@@ -203,6 +207,8 @@ func (h *HTTP) UnmarshalYAML(value *yaml.Node) error {
 	h.WAF = raw.WAF
 	h.Cache = raw.Cache
 	h.Compression = raw.Compression
+	h.RateLimit = raw.RateLimit
+	h.Redirects = raw.Redirects
 	h.NormalizeFeatures()
 	return nil
 }
