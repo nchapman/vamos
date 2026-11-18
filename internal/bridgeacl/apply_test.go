@@ -23,6 +23,9 @@ func fixture(t *testing.T, keys string) string {
 }
 
 func TestGrantRevokeReplay(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("host-side ACL replacement requires Unix directory fsync; Windows clients send grants over SSH")
+	}
 	const retained = "# bootstrap keys\r\n\n" + `restrict,command="/usr/local/lib/vamos/executor internal-agent bridge --principal default-deployer" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f bootstrap` + "\r\n"
 	dir := fixture(t, retained)
 	grant := Request{Action: "grant", Name: "ci", App: "api", PublicKey: publicKey}
