@@ -170,7 +170,7 @@ func runLifecycle(ctx context.Context, target string, request executor.Request, 
 	return response.HostState, nil
 }
 
-func archiveRequest(request executor.Request, binary []byte) ([]byte, error) {
+func archiveAdminRequest(request any, binary []byte, limit int) ([]byte, error) {
 	if len(binary) == 0 || len(binary) > 64*1024*1024 {
 		return nil, errors.New("invalid executor artifact size")
 	}
@@ -178,8 +178,8 @@ func archiveRequest(request executor.Request, binary []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(encoded) > 4096 {
-		return nil, errors.New("request exceeds 4 KiB")
+	if len(encoded) > limit {
+		return nil, fmt.Errorf("request exceeds %d KiB", limit/1024)
 	}
 	hash := sha256.Sum256(binary)
 	var archive bytes.Buffer
@@ -217,10 +217,14 @@ func decodeJSON(data []byte, value any) error {
 
 // runStagedRequest opens a new, non-multiplexed SSH connection for each call.
 func runStagedRequest(ctx context.Context, target string, request executor.Request, binary []byte, run runProcess) (process.Result, error) {
+	return runStagedAdminRequest(ctx, target, request, binary, 4096, run)
+}
+
+func runStagedAdminRequest(ctx context.Context, target string, request any, binary []byte, limit int, run runProcess) (process.Result, error) {
 	if err := ValidateTarget(target); err != nil {
 		return process.Result{}, err
 	}
-	payload, err := archiveRequest(request, binary)
+	payload, err := archiveAdminRequest(request, binary, limit)
 	if err != nil {
 		return process.Result{}, err
 	}

@@ -17,9 +17,10 @@ implemented features.
   App networks and local identity bindings are not a hostile multi-tenant
   security boundary. Coordinate firewall changes with builds; do not remove
   their network guards while a builder is running.
-- Keep the client and matching Linux executor artifacts together. App operations,
-  including status/logs, stage the matching executor; they do not upgrade the
-  bootstrap-owned installed binary. Host inspect/status/connect need no artifact.
+- Keep the client and matching Linux executor artifacts together for host administration.
+  Ordinary app operations, including status/logs, use the installed agent via the
+  restricted SSH bridge. Host inspect/status/connect need no artifact. For a separate
+  app-scoped CI identity, follow the [deploy-key guide](deploy-keys.md).
 - Treat the host, disk, Docker, Caddy, and network as shared failure domains.
   **Same-host replicas are not HA.** They can spread traffic and assist public
   replacement, but cannot survive loss of the host. Private groups stop all old

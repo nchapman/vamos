@@ -5,16 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"os"
 	"os/user"
-	"path/filepath"
-	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/bridgeacl"
 )
 
 const (
@@ -24,8 +20,6 @@ const (
 	DefaultConfig         = "/etc/vamos/agent.json"
 	DefaultAuthorizedKeys = "/etc/vamos/authorized_keys"
 )
-
-var forcedKeyRE = regexp.MustCompile(`^restrict,command="(?:/usr/local/lib/vamos/vamos-agent|/usr/local/lib/vamos/executor) internal-agent bridge --principal ([A-Za-z0-9][A-Za-z0-9._:@/-]{0,127})" (?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/=]{68,}(?: [ -~]{0,511})?$`)
 
 type Config struct {
 	Concurrency agentproto.ConcurrencyPolicy `json:"concurrency"`
@@ -39,11 +33,8 @@ func ServeSystem(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	principals, err := ReadPrincipals(DefaultPrincipals)
+	principals, err := bridgeacl.KeyedPrincipals(DefaultPrincipals, DefaultAuthorizedKeys)
 	if err != nil {
-		return err
-	}
-	if err := ValidateAuthorizedKeys(DefaultAuthorizedKeys, principals); err != nil {
 		return err
 	}
 	queue, err := NewQueue(DefaultQueueRoot, config.Concurrency)
@@ -68,34 +59,13 @@ func ServeSystem(ctx context.Context) error {
 	}).Serve(ctx)
 }
 
-// ValidateAuthorizedKeys permits only restricted forced bridge commands whose
-// principal IDs exist in the root-owned ACL. This makes key-to-principal
-// attribution an sshd-enforced boundary rather than client-provided input.
 func ValidateAuthorizedKeys(path string, principals map[string]agentproto.Principal) error {
-	data, err := readRegularFile(path, 1<<20, "authorized_keys")
-	if err != nil {
-		return err
-	}
-	for lineNo, rawLine := range strings.Split(string(data), "\n") {
-		line := strings.TrimSuffix(rawLine, "\r")
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		match := forcedKeyRE.FindStringSubmatch(line)
-		if match == nil {
-			return fmt.Errorf("authorized key line %d is not a restricted Vamos bridge key", lineNo+1)
-		}
-		if _, ok := principals[match[1]]; !ok {
-			return fmt.Errorf("authorized key line %d names unknown principal %q", lineNo+1, match[1])
-		}
-	}
-	return nil
+	return bridgeacl.ValidateAuthorizedKeys(path, principals)
 }
 
 func ReadConfig(path string) (Config, error) {
 	var config Config
-	data, err := readRegularFile(path, 1<<20, "agent configuration")
+	data, err := bridgeacl.ReadRegularFile(path, 1<<20, "agent configuration")
 	if err != nil {
 		return config, err
 	}
@@ -114,69 +84,6 @@ func ReadConfig(path string) (Config, error) {
 	return config, nil
 }
 
-// ReadPrincipals strictly loads the root-owned ACL file. Empty ACLs are valid:
-// they make the bridge fail closed until an administrator provisions a scoped
-// deploy key and matching principal.
 func ReadPrincipals(path string) (map[string]agentproto.Principal, error) {
-	data, err := readRegularFile(path, 1<<20, "principals file")
-	if err != nil {
-		return nil, err
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	var principals []agentproto.Principal
-	if err := dec.Decode(&principals); err != nil {
-		return nil, err
-	}
-	var extra any
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, errors.New("principals file must contain exactly one JSON document")
-	}
-	result := make(map[string]agentproto.Principal, len(principals))
-	for _, principal := range principals {
-		if err := principal.Validate(); err != nil {
-			return nil, err
-		}
-		if _, exists := result[principal.ID]; exists {
-			return nil, errors.New("duplicate principal ID")
-		}
-		result[principal.ID] = principal
-	}
-	return result, nil
-}
-
-func readRegularFile(path string, maxBytes int64, label string) ([]byte, error) {
-	parent := filepath.Dir(filepath.Clean(path))
-	if parentInfo, err := os.Lstat(parent); err != nil {
-		return nil, err
-	} else if parentInfo.Mode()&os.ModeSymlink != 0 || !parentInfo.IsDir() {
-		return nil, fmt.Errorf("refusing symlinked parent directory for %s", label)
-	}
-	before, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || before.Size() > maxBytes || !ownedByProcess(before) {
-		return nil, fmt.Errorf("%s must be a non-writable owned regular file no larger than %d bytes", label, maxBytes)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	after, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(before, after) || !after.Mode().IsRegular() || after.Size() > maxBytes || !ownedByProcess(after) {
-		return nil, fmt.Errorf("%s changed or exceeded size limit while reading", label)
-	}
-	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, fmt.Errorf("%s must be a regular file no larger than %d bytes", label, maxBytes)
-	}
-	return data, nil
+	return bridgeacl.ReadPrincipals(path)
 }

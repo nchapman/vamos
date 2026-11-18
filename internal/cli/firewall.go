@@ -3,7 +3,6 @@ package cli
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/nchapman/vamos/internal/executor"
 	"github.com/nchapman/vamos/internal/firewall"
-	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"golang.org/x/term"
 )
@@ -158,29 +156,10 @@ func serverFirewall(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	hostStatus, err := deps.Status(ctx, server.Target)
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
 	cfg := lifecycle.Config{Name: name, Domain: server.Domain}
-	if hostStatus == nil || hostStatus.Active || hostStatus.State == nil || hostStatus.State.Config != cfg || hostStatus.State.Phase != "ready" {
-		return lifecycleError(stderr, errors.New("firewall requires an idle ready host with matching ownership identity"))
-	}
-	inspectCtx, cancelInspect := context.WithTimeout(ctx, 15*time.Second)
-	report, err := deps.Inspect(inspectCtx, server.Target)
-	cancelInspect()
+	binary, err := matchingAdminArtifact(ctx, deps, server.Target, cfg, *artifact)
 	if err != nil {
 		return lifecycleError(stderr, err)
-	}
-	if err := host.RequireAdmin(report); err != nil {
-		return lifecycleError(stderr, err)
-	}
-	binary, err := deps.Artifact(*artifact, report.Architecture)
-	if err != nil {
-		return lifecycleError(stderr, err)
-	}
-	if fmt.Sprintf("%x", sha256.Sum256(binary)) != hostStatus.State.ExecutorSHA {
-		return lifecycleError(stderr, errors.New("executor artifact does not match the installed host bundle; use a matching --executor or server upgrade"))
 	}
 	var status *firewall.Status
 	if op == "enable" {

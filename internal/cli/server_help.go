@@ -23,9 +23,9 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		notes = "Upgrade the installed coordinator and executor bundle as root. Requires explicit --yes.\nNAME defaults to the registered default server; TARGET is optional for registered names.\nStarted mutations survive client disconnection."
 		names = append(names, "yes", "executor")
 	case "connect":
-		usage = "vamos server connect [OPTIONS] [--domain DOMAIN] NAME TARGET"
-		notes = "Verify an existing ready installation and register it locally. Requires root or passwordless-sudo SSH access.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME (and optional DOMAIN) must match the installed identity; SSH host keys must already be trusted."
-		names = append(names, "domain")
+		usage = "vamos server connect [OPTIONS] [--bridge] [--domain DOMAIN] NAME TARGET"
+		notes = "Verify an existing ready installation and register it locally. By default, verify readiness using root or passwordless-sudo SSH.\nWith --bridge, verify only the agent identity and deploy protocol through the restricted deploy key; no admin access is used.\nNo bootstrap, executor upload, app changes or project binding is performed.\nNAME (and optional DOMAIN) must match the installed identity; SSH host keys must already be trusted."
+		names = append(names, "bridge", "domain")
 	case "status":
 		usage = "vamos server status [OPTIONS] [NAME [TARGET]]"
 		notes = "Read the host lifecycle journal. NAME defaults to the registered default server;\nTARGET is optional for registered names; provide it to recover an unregistered host."

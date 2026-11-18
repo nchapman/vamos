@@ -38,9 +38,10 @@ Usage:
   vamos server add [flags] NAME TARGET   Bootstrap a dedicated Ubuntu host
   vamos server upgrade [flags] --yes [NAME [TARGET]]
                                       Upgrade the coordinator and executor on a server
-  vamos server connect [--domain DOMAIN] NAME TARGET
+  vamos server connect [--bridge] [--domain DOMAIN] NAME TARGET
                                       Register an existing host without remote changes
   vamos server status [NAME [TARGET]]   Read the host lifecycle journal
+  vamos server principal grant|list|revoke [flags]    Manage single-app deploy keys
   vamos server firewall enable|disable|status [flags]  Manage opt-in host firewall
   vamos server teardown [flags] NAME    Remove an unused owned installation
   vamos backup repository [COMMAND]      Register and inspect backup repositories

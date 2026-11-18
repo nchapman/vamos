@@ -18,8 +18,9 @@ const serverHelp = `Usage:
   vamos server inspect [--json] [--timeout 15s] TARGET
   vamos server add --yes --firewall=true|false [--domain DOMAIN] [--executor FILE] NAME TARGET
   vamos server upgrade --yes [--executor FILE] [NAME [TARGET]]
-  vamos server connect [--domain DOMAIN] NAME TARGET
+  vamos server connect [--bridge] [--domain DOMAIN] NAME TARGET
   vamos server status [--json] [NAME [TARGET]]
+  vamos server principal grant|list|revoke [flags]
   vamos server firewall enable|disable --yes [NAME]
   vamos server firewall status [--json] [NAME]
   vamos server teardown --yes --purge [--executor FILE] NAME [TARGET]
@@ -28,7 +29,7 @@ TARGET is an SSH alias or [user@]host (unbracketed IPv6 is supported).
 Use SSH config for ports, identities, and jump hosts. Flags precede TARGET.
 Requires an already trusted host key and noninteractive key/agent authentication.
 Inspect is read-only. Connect verifies an existing ready host and registers it locally;
-it requires root or passwordless sudo but makes no setup changes.
+use --bridge to connect with only a deploy key instead of administrator SSH.
 Add and teardown require root or passwordless sudo and explicit --yes.
 Add prompts for a firewall choice on interactive stdin; scripts must pass --firewall=true|false.
 Managed firewall is opt-in dedicated-host protection with automatic Docker public publishing.
@@ -48,6 +49,8 @@ func serverWithInput(ctx context.Context, args []string, stdin io.Reader, stdout
 	switch args[0] {
 	case "inspect":
 		return inspectServer(ctx, args[1:], stdout, stderr, ssh.Inspect)
+	case "principal":
+		return serverPrincipal(ctx, args[1:], stdout, stderr, deps)
 	case "firewall":
 		return serverFirewall(ctx, args[1:], stdout, stderr, deps)
 	case "add", "upgrade", "connect", "status", "teardown":

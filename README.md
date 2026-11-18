@@ -40,7 +40,7 @@ Use `--firewall=true` for automatic firewall management, or `--firewall=false`
 to manage it yourself. Interactive setup asks when the option is omitted. See
 [managed firewall](docs/firewall.md) for the policy and safety checks.
 
-Once bootstrapped, `vamos server add` installs a restricted non-root SSH bridge key for `vamos-agent` so day-to-day app commands (`deploy`, `logs`, `exec`, `secrets`, etc.) do not require root SSH.
+Once bootstrapped, `vamos server add` installs a restricted non-root SSH bridge key for `vamos-agent` so day-to-day app commands (`deploy`, `logs`, `exec`, `secrets`, etc.) do not require root SSH. To give a second laptop or CI runner access to just one app, see [single-app deploy keys](docs/deploy-keys.md).
 
 ### 3. Deploy an app
 
@@ -113,7 +113,7 @@ Run `vamos help` or `vamos <command> --help` for full options and flags.
 | Local CLI (`vamos`) | macOS, Linux, Windows |
 | Target server (`vamos-agent` & executor) | Ubuntu 24.04+ with systemd (`amd64` or `arm64`) |
 
-The local CLI does not require Docker, systemd, or Linux. Server lifecycle commands (`server add`, `server upgrade`, `server teardown`, `server connect`) require root or passwordless-sudo SSH access; normal app commands use the restricted `vamos` SSH bridge configured by `server add`.
+The local CLI does not require Docker, systemd, or Linux. Server lifecycle commands (`server add`, `server upgrade`, `server teardown`, `server principal`, and the default `server connect`) require root or passwordless-sudo SSH access; normal app commands use the restricted `vamos` SSH bridge configured by `server add`.
 
 ## Examples
 

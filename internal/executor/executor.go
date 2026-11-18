@@ -23,6 +23,7 @@ const Version = 1
 const maxRequest = 4096
 
 type Request struct {
+	principal *PrincipalRequest // decoded only with the separate principal schema
 	Version   int               `json:"version"`
 	Operation string            `json:"operation"`
 	Config    *lifecycle.Config `json:"config,omitempty"`
@@ -64,6 +65,10 @@ func serve(ctx context.Context, stdin io.Reader, stdout io.Writer, collect host.
 	}
 	if request.Version != Version {
 		return failure(stdout, "unsupported_version", "supported protocol version is 1", 2)
+	}
+	if request.principal != nil {
+		cancelRead()
+		return runPrincipal(ctx, *request.principal, stdout, collect)
 	}
 	if isFirewallOperation(request.Operation) {
 		cancelRead()
@@ -182,15 +187,31 @@ func readRequestContext(ctx context.Context, r io.Reader) (Request, error) {
 
 func readRequest(r io.Reader) (Request, error) {
 	var request Request
-	data, err := io.ReadAll(io.LimitReader(r, maxRequest+1))
+	data, err := io.ReadAll(io.LimitReader(r, MaxPrincipalRequest+1))
 	if err != nil {
 		return request, fmt.Errorf("read request: %w", err)
 	}
-	if len(data) > maxRequest {
+	if len(data) > MaxPrincipalRequest {
+		return request, errors.New("request too large")
+	}
+	var header struct {
+		Operation string `json:"operation"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return request, fmt.Errorf("decode request: %w", err)
+	}
+	if header.Operation != "principal" && len(data) > maxRequest {
 		return request, errors.New("request exceeds 4 KiB")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
+	if header.Operation == "principal" {
+		p := new(PrincipalRequest)
+		if err := decodePrincipalJSON(data, p); err != nil {
+			return request, err
+		}
+		return Request{Version: p.Version, Operation: p.Operation, principal: p}, nil
+	}
 	if err := decoder.Decode(&request); err != nil {
 		return request, fmt.Errorf("decode request: %w", err)
 	}

@@ -35,6 +35,8 @@ A repeated add with the same name/domain can verify an unchanged, bootstrap-only
 
 ## Reconnect from a fresh client
 
+For a laptop or CI runner with only a restricted deploy key, use [`server connect --bridge`](deploy-keys.md). The administrative recovery path below does not grant or replace keys.
+
 Use this when the host still exists with its Vamos ownership state, but the local server registry is missing. Obtain the expected installed server name, base domain, and installation ID from trusted operational records. Establish the SSH host key independently and restore noninteractive root key/agent access; connect does not accept unknown or changed keys. An SSH alias may supply the user, key, port, and jump host.
 
 ```sh
@@ -53,7 +55,7 @@ Connect uses read-only inspection to require root on supported Ubuntu, then host
 
 The host can remain `ready` while apps have incomplete operations. Connect does not require apps to be settled and does not inspect or repair their runtimes. It does not bootstrap, replace an executor, upgrade packages, repair drift, deploy, or create project service bindings. A successful connection and installation ID are identity evidence, **not proof of application health**. Host status fails when it cannot establish worker state (for example a system-bus error); a failed query is not permission to assume inactivity.
 
-For app inventory/status/logs and service binding, supply the matching trusted client/Linux executor bundle for the host architecture. These commands stage an executor; connect itself does not. Inspect the remote service identity before acknowledging it in **each** source directory:
+App inventory/status/logs and service binding use the installed coordinator over the restricted SSH bridge, not an executor upload. Use a compatible CLI and a provisioned deploy key. Inspect the remote service identity before acknowledging it in **each** source directory:
 
 ```sh
 # These manifests declare the existing workspace app and their respective services.

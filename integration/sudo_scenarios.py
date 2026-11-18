@@ -63,6 +63,8 @@ def prepare(h):
     require(h.https(f'{app}.vamos.localhost'), 'app not served')
     result = h.cli('exec', '--server', 'local', '--app', app, '--', 'python', '-c', 'print("agent-exec-ok")')
     require(b'agent-exec-ok' in result.stdout, 'restricted coordinator session failed')
+    from principal_scenario import exercise
+    exercise(h, app, directory)
     h.command(['go', 'run', './integration/sudo_transport', app])
     h.cli('server', 'upgrade', '--yes', 'local')
     (h.artifacts / 'sudo-checkpoint.json').write_text(json.dumps({'app': app, 'init': init_identity()}))
@@ -100,6 +102,7 @@ def verify_restart(h):
         'passed': True,
         'verified': ['root SSH disabled', 'password-required sudo rejected before setup',
                      'passwordless sudo setup and firewall fresh-SSH confirmation',
+                     'scoped runner grant, bind, deploy, sibling refusal, revoke and owner continuity',
                      'restricted coordinator deploy and exec', 'uploaded administrative status and binary-stdin session',
                      'sudo upgrade with app and firewall enabled', 'machine restart',
                      'sudo firewall disable/re-enable', 'interrupted firewall cleanup retry preserves Docker', 'sudo teardown'],

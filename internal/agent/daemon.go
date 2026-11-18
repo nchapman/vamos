@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/bridgeacl"
 	"github.com/nchapman/vamos/internal/buildmeta"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/executor"
@@ -199,16 +200,10 @@ func (d *Daemon) resolvePrincipals() (map[string]agentproto.Principal, error) {
 	if d.PrincipalsPath == "" {
 		return d.Principals, nil
 	}
-	principals, err := ReadPrincipals(d.PrincipalsPath)
-	if err != nil {
-		return nil, err
-	}
 	if d.AuthorizedKeysPath != "" {
-		if err := ValidateAuthorizedKeys(d.AuthorizedKeysPath, principals); err != nil {
-			return nil, err
-		}
+		return bridgeacl.KeyedPrincipals(d.PrincipalsPath, d.AuthorizedKeysPath)
 	}
-	return principals, nil
+	return ReadPrincipals(d.PrincipalsPath)
 }
 
 func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
@@ -241,14 +236,6 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 	if !bridgePrincipalRE.MatchString(principalID) || (d.BridgePrincipal != "" && principalID != d.BridgePrincipal) {
 		return errors.New("invalid bridge principal")
 	}
-	principals, err := d.resolvePrincipals()
-	if err != nil {
-		return err
-	}
-	principal, ok := principals[principalID]
-	if !ok || principal.ID != principalID || principal.Validate() != nil {
-		return errors.New("unknown bridge principal")
-	}
 	helloDone := false
 	for {
 		var frame agentproto.RPCRequest
@@ -265,6 +252,16 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 		if !helloDone && frame.Method != agentproto.MethodHello {
 			_ = writeError(conn, "handshake_required", "hello is required before other agent methods")
 			return nil
+		}
+		// A persistent bridge must not keep admitting work with a revoked ACL.
+		// Requests already admitted (including interactive sessions) may finish.
+		principals, err := d.resolvePrincipals()
+		if err != nil {
+			return writeError(conn, "host_unavailable", "agent access configuration is unavailable")
+		}
+		principal, ok := principals[principalID]
+		if !ok || principal.ID != principalID || principal.Validate() != nil {
+			return writeError(conn, "forbidden", "unknown bridge principal")
 		}
 		switch frame.Method {
 		case agentproto.MethodHello:

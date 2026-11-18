@@ -61,6 +61,12 @@ func commandHelpArgs(path []string) ([]string, bool) {
 		}
 		return append(append([]string{}, path...), "--help"), true
 	}
+	if len(path) >= 2 && path[0] == "server" && path[1] == "principal" {
+		if len(path) == 3 && !slices.Contains([]string{"grant", "list", "revoke"}, path[2]) {
+			return nil, false
+		}
+		return append(append([]string{}, path...), "--help"), true
+	}
 	if len(path) >= 2 && path[0] == "server" && path[1] == "firewall" {
 		if len(path) == 3 && !slices.Contains([]string{"enable", "disable", "status"}, path[2]) {
 			return nil, false

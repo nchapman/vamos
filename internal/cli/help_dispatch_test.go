@@ -8,7 +8,7 @@ import (
 )
 
 func TestPublicHelpDispatchAndStreams(t *testing.T) {
-	for _, path := range []string{"apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "service", "service bind", "service remove", "secrets", "secrets stage", "secrets list", "validate", "server", "server inspect", "server add", "server upgrade", "server connect", "server status", "server teardown", "server firewall", "server firewall enable", "server firewall disable", "server firewall status", "upgrade", "version"} {
+	for _, path := range []string{"apps", "init", "exec", "console", "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy", "service", "service bind", "service remove", "secrets", "secrets stage", "secrets list", "validate", "server", "server inspect", "server add", "server upgrade", "server connect", "server status", "server teardown", "server principal", "server principal grant", "server principal list", "server principal revoke", "server firewall", "server firewall enable", "server firewall disable", "server firewall status", "upgrade", "version"} {
 		for _, prefix := range []bool{false, true} {
 			t.Run(path+map[bool]string{true: "/help-command", false: "/flag"}[prefix], func(t *testing.T) {
 				args := strings.Fields(path)

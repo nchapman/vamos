@@ -35,9 +35,10 @@ queueing, hierarchical host/app/ingress locking, supervised `vamos-op-<id>.servi
 workers, explicit version handshakes + `vamos server upgrade`, and a shared
 container engine boundary.
 
+[Post-bootstrap deploy keys](docs/deploy-keys.md) let an administrator grant and revoke single-app keys independently of the bootstrap key. A fresh runner can register through the restricted bridge.
+
 Current gaps and deferred items:
 - **Phase 4 (`vamos dev`)** is deferred; local development stacks are not implemented yet.
-- **Post-bootstrap ACL/key management CLI:** `/etc/vamos/principals.json` and `/etc/vamos/authorized_keys` are validated by `vamos-agent` and preserved across `vamos server upgrade`, and `vamos server add` provisions the initial `default-deployer` key (`--deploy-key` or local SSH key), but there is not yet a CLI subcommand (`vamos server principal ...`) to add, rotate, or revoke scoped CI keys after bootstrap.
 - **Pre-agent hosts:** Servers bootstrapped before the coordinator existed require a `root` `vamos server upgrade` before ordinary CLI app commands can connect over the `vamos` SSH bridge.
 - **Native Windows & distro package upgrades:** Native Windows live acceptance remains unverified, and unattended OS/Docker/Caddy package upgrades remain outside `vamos server upgrade`.
 

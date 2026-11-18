@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/bridgeacl"
 	"github.com/nchapman/vamos/internal/executor"
 	"github.com/nchapman/vamos/internal/firewall"
 	"github.com/nchapman/vamos/internal/host"
@@ -26,8 +28,10 @@ import (
 type lifecycleDeps struct {
 	Input         io.Reader
 	IsTerminal    func(io.Reader) bool
+	Principal     func(context.Context, string, lifecycle.Config, bridgeacl.Request, []byte) ([]bridgeacl.Entry, error)
 	Firewall      func(context.Context, string, executor.Request, []byte) (*firewall.Status, error)
 	Registry      func() (*registry.Store, error)
+	AgentHello    func(context.Context, string) (agentproto.HelloResponse, error)
 	Inspect       func(context.Context, string) (*host.Report, error)
 	Artifact      func(string, string) ([]byte, error)
 	Run           func(context.Context, string, executor.Request, []byte) (*lifecycle.State, error)
@@ -37,7 +41,7 @@ type lifecycleDeps struct {
 }
 
 func defaultLifecycleDeps() lifecycleDeps {
-	return lifecycleDeps{Input: os.Stdin, IsTerminal: firewallTerminalInput, Firewall: ssh.RunFirewall, Registry: registry.Default, Inspect: ssh.InspectAdmin, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey, ResolveDomain: defaultServerDomain}
+	return lifecycleDeps{Input: os.Stdin, IsTerminal: firewallTerminalInput, Principal: ssh.RunPrincipal, Firewall: ssh.RunFirewall, Registry: registry.Default, Inspect: ssh.InspectAdmin, AgentHello: ssh.AgentHello, Artifact: ssh.Artifact, Run: ssh.RunLifecycle, Status: ssh.HostStatus, DeployKey: discoverDeployKey, ResolveDomain: defaultServerDomain}
 }
 
 func serverLifecycle(ctx context.Context, operation string, args []string, stdout, stderr io.Writer, deps lifecycleDeps) int {

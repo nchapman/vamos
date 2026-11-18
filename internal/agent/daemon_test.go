@@ -50,7 +50,7 @@ func stampAgentBuild(t *testing.T) {
 // testDaemon starts one daemon on a real Unix socket with a stub principal and
 // returns a dialed, handshake-complete client. peerUID is unavailable on this
 // path, matching the localhost test expectation.
-func testDaemon(t *testing.T, execute func(context.Context, deploy.Request, []byte) (deploy.Response, error), sessions SessionManager) (*agentclient.Client, string, func()) {
+func testDaemon(t *testing.T, execute func(context.Context, deploy.Request, []byte) (deploy.Response, error), sessions SessionManager, options ...func(*Daemon)) (*agentclient.Client, string, func()) {
 	t.Helper()
 	queueRoot := filepath.Join(t.TempDir(), "queue")
 	// macOS temp directories exceed the 104-byte unix socket path limit.
@@ -76,6 +76,9 @@ func testDaemon(t *testing.T, execute func(context.Context, deploy.Request, []by
 		Principals: map[string]agentproto.Principal{"ci:billing": {ID: "ci:billing", Role: agentproto.RoleDeployer, Apps: []string{"billing"}}},
 		Execute:    execute,
 		Sessions:   sessions,
+	}
+	for _, option := range options {
+		option(d)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -134,6 +137,42 @@ func TestDaemonReadExecutesAuthorizedRequestsDirectly(t *testing.T) {
 	}
 	if records, err := filepath.Glob(filepath.Join(queueRoot, "operations", "*.json")); err != nil || len(records) != 0 {
 		t.Fatalf("read persisted queue records: %v %v", records, err)
+	}
+}
+
+func TestOpenBridgeRechecksPrincipalAfterRevocation(t *testing.T) {
+	stampAgentBuild(t)
+	path := filepath.Join(t.TempDir(), "principals.json")
+	if err := os.WriteFile(path, []byte(`[{"id":"ci:billing","role":"deployer","apps":["billing"]}]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	keys := writeKeys(t, `restrict,command="/usr/local/lib/vamos/vamos-agent internal-agent bridge --principal ci:billing" `+testEd25519Key)
+	client, _, stop := testDaemon(t, nil, nil, func(d *Daemon) { d.PrincipalsPath, d.AuthorizedKeysPath = path, keys })
+	defer stop()
+	// The first durable revoke write removes the key, even if a crash leaves the ACL.
+	if err := os.WriteFile(keys, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Read(context.Background(), statusRequest("billing")); err == nil || !strings.Contains(err.Error(), "unknown bridge principal") {
+		t.Fatalf("expected revoked bridge rejection, got %v", err)
+	}
+}
+
+func TestOpenBridgeReportsACLReadFailure(t *testing.T) {
+	stampAgentBuild(t)
+	path := filepath.Join(t.TempDir(), "principals.json")
+	if err := os.WriteFile(path, []byte(`[{"id":"ci:billing","role":"deployer","apps":["billing"]}]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	client, _, stop := testDaemon(t, nil, nil, func(d *Daemon) { d.PrincipalsPath = path })
+	defer stop()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	_, err := client.Read(context.Background(), statusRequest("billing"))
+	var remote *agentclient.RemoteError
+	if !errors.As(err, &remote) || remote.Code != "host_unavailable" || strings.Contains(remote.Message, path) {
+		t.Fatalf("expected redacted host_unavailable, got %v", err)
 	}
 }
 

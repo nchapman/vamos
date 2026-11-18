@@ -195,6 +195,16 @@ func connectAgent(ctx context.Context, target string, required []string) (*agent
 	return client, func() { _ = conn.Close() }, nil
 }
 
+// AgentHello verifies deploy protocol compatibility without submitting an app request.
+func AgentHello(ctx context.Context, target string) (agentproto.HelloResponse, error) {
+	client, closeConn, err := connectAgent(ctx, target, []string{agentproto.CapAppDeploy, agentproto.CapDurableQueue})
+	if err != nil {
+		return agentproto.HelloResponse{}, err
+	}
+	defer closeConn()
+	return client.Hello(), nil
+}
+
 func requiredCapabilities(request deploy.Request) []string {
 	caps := []string{agentproto.CapAppDeploy}
 	if request.Mutating() {

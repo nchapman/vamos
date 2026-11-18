@@ -7,11 +7,66 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nchapman/vamos/internal/agentproto"
 	"github.com/nchapman/vamos/internal/host"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/registry"
 	"github.com/nchapman/vamos/internal/ssh"
 )
+
+func TestConnectBridge(t *testing.T) {
+	for _, mode := range []string{"register", "adopt-domain", "wrong-name", "wrong-domain", "handshake-error", "invalid-target"} {
+		t.Run(mode, func(t *testing.T) {
+			store := registry.New(t.TempDir())
+			target := "ci-host"
+			if mode == "invalid-target" {
+				target = "-bad"
+			}
+			args := []string{"--bridge"}
+			if mode != "adopt-domain" {
+				args = append(args, "--domain", "apps.example.com")
+			}
+			args = append(args, "home", target)
+			calls := 0
+			// Admin inspection, status, and all mutation hooks intentionally nil.
+			deps := lifecycleDeps{Registry: func() (*registry.Store, error) { return store, nil }, AgentHello: func(ctx context.Context, got string) (agentproto.HelloResponse, error) {
+				calls++
+				if _, ok := ctx.Deadline(); !ok || got != target {
+					t.Fatal("unexpected hello target or deadline")
+				}
+				h := agentproto.HelloResponse{HostName: "home", Domain: "apps.example.com", HostID: strings.Repeat("a", 32)}
+				switch mode {
+				case "wrong-name":
+					h.HostName = "other"
+				case "wrong-domain":
+					h.Domain = "other.example.com"
+				case "handshake-error":
+					return h, errors.New("incompatible agent")
+				}
+				return h, nil
+			}}
+			var out, diag bytes.Buffer
+			code := serverConnect(context.Background(), args, &out, &diag, deps)
+			got, err := store.Read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCode, wantCalls := 1, 1
+			switch mode {
+			case "register", "adopt-domain":
+				wantCode = 0
+				if got.Default != "home" || got.Servers["home"] != (registry.Server{Name: "home", Target: target, Domain: "apps.example.com"}) {
+					t.Fatalf("registration: %+v", got)
+				}
+			case "invalid-target":
+				wantCode, wantCalls = 2, 0
+			}
+			if code != wantCode || calls != wantCalls || (wantCode != 0 && len(got.Servers) != 0) {
+				t.Fatalf("code=%d calls=%d registry=%+v: %s", code, calls, got, &diag)
+			}
+		})
+	}
+}
 
 func connectState() *lifecycle.State {
 	return &lifecycle.State{Version: 1, ID: strings.Repeat("a", 32), Config: lifecycle.Config{Name: "home", Domain: "apps.example.com"}, Phase: "ready", Step: "complete", Configured: true, ExecutorSHA: strings.Repeat("b", 64), AgentSHA: strings.Repeat("c", 64), CaddyContainerID: strings.Repeat("d", 64), Accounts: map[string]string{"group:docker": "owned", "passwd:vamos": "owned", "group:vamos": "owned"}, Packages: []string{"docker.io"}}
