@@ -14,7 +14,7 @@ import (
 // the ingress version independently of the distribution's archive. Upgrading
 // Vamos is how Caddy is upgraded.
 const (
-	caddyDigest = "sha256:1dddaa9c22513a986aa77b5da388aa0016d6a2eda97f592da6008d968bae823e"
+	caddyDigest = "sha256:b6a94eb93915955ea6df57a16dd69b80274fc21b188713d998261b49e4975eea"
 	// CaddyImage keeps the tag for readability; Docker resolves the digest.
 	CaddyImage = "ghcr.io/nchapman/vamos/caddy:2.11.9@" + caddyDigest
 	// caddyImageRef is the form Docker's image inventory and removal accept.
