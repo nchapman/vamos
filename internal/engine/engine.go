@@ -189,7 +189,7 @@ func ResourceArgs(r *config.Resources) []string {
 	if r.CPUs != nil {
 		args = append(args, "--cpus", strconv.FormatFloat(*r.CPUs, 'f', -1, 64))
 	}
-	if r.MemoryMB != nil {
+	if r.Memory != nil {
 		memory := strconv.FormatInt(r.MemoryBytes(), 10)
 		// Docker defines MemorySwap as the total memory+swap budget. Equal values
 		// disable additional swap; leaving it unset would permit extra swap.
@@ -224,8 +224,8 @@ func (c *Client) RequireResourceSupport(ctx context.Context, r *config.Resources
 	}{
 		{r.CPUs != nil, info.CPUCfsQuota, "CpuCfsQuota"},
 		{r.CPUs != nil, info.CPUCfsPeriod, "CpuCfsPeriod"},
-		{r.MemoryMB != nil, info.MemoryLimit, "MemoryLimit"},
-		{r.MemoryMB != nil, info.SwapLimit, "SwapLimit"},
+		{r.Memory != nil, info.MemoryLimit, "MemoryLimit"},
+		{r.Memory != nil, info.SwapLimit, "SwapLimit"},
 	}
 	for _, check := range checks {
 		if check.requested && !check.supported {

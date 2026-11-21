@@ -296,9 +296,9 @@ func TestReleaseCommandReplicaGroupSharesLimitsAndOneExecution(t *testing.T) {
 	cfg := a.Services["web"]
 	count := 2
 	cpu := 0.5
-	memory := int64(64)
+	memory := int64(64 << 20)
 	cfg.Replicas = &count
-	cfg.Resources = &config.Resources{CPUs: &cpu, MemoryMB: &memory}
+	cfg.Resources = &config.Resources{CPUs: &cpu, Memory: &memory}
 	a.Services["web"] = cfg
 	if _, err := f.deploy(a, strings.Repeat("1", 32)); err != nil {
 		t.Fatal(err)

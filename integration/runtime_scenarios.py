@@ -16,7 +16,7 @@ import time
 from scenarios import require
 
 
-LIMITS = {"cpus": 0.5, "memory_mb": 512}
+LIMITS = {"cpus": 0.5, "memory": "512m"}
 # Do not dump docker inspect wholesale: Config.Env contains injected secrets.
 INSPECT = '{' + ','.join('"' + key + '":{{json ' + field + '}}' for key, field in (
     ('id', '.Id'), ('image', '.Image'), ('hostname', '.Config.Hostname'),

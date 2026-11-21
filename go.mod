@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/distribution/reference v0.6.0
+	github.com/docker/go-units v0.5.0
 	github.com/gofrs/flock v0.13.2
 	github.com/moby/patternmatcher v0.6.1
 	go.yaml.in/yaml/v3 v3.0.6

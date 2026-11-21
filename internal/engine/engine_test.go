@@ -119,8 +119,8 @@ func TestWaitHTTPReady(t *testing.T) {
 
 func TestResourceChecks(t *testing.T) {
 	cpus := 1.0
-	mem := int64(256)
-	res := &config.Resources{CPUs: &cpus, MemoryMB: &mem}
+	mem := int64(256 << 20)
+	res := &config.Resources{CPUs: &cpus, Memory: &mem}
 	args := ResourceArgs(res)
 	if !slices.Equal(args, []string{"--cpus", "1", "--memory", "268435456", "--memory-swap", "268435456"}) {
 		t.Fatalf("unexpected args %q", args)

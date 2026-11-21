@@ -5,52 +5,43 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/docker/go-units"
 	"go.yaml.in/yaml/v3"
 )
 
 // Resources are runtime hard caps, not build limits or reservations.
-// MemoryMB is expressed in MiB (1024 * 1024 bytes).
+// Memory is normalized to bytes before comparison, capture, or execution.
 type Resources struct {
-	CPUs     *float64 `yaml:"cpus,omitempty" json:",omitempty"`
-	MemoryMB *int64   `yaml:"memory_mb,omitempty" json:",omitempty"`
+	CPUs   *float64 `yaml:"cpus,omitempty" json:",omitempty"`
+	Memory *int64   `yaml:"memory,omitempty" json:",omitempty"`
 }
 
-// YAML normally truncates floating-point values when decoding into integers.
-// Decode memory separately so a fractional MiB request is never rounded down.
+// Parse memory at the manifest boundary using Docker's --memory grammar.
 func (r *Resources) UnmarshalYAML(node *yaml.Node) error {
 	var wire struct {
-		CPUs     *float64 `yaml:"cpus"`
-		MemoryMB any      `yaml:"memory_mb"`
+		CPUs   *float64  `yaml:"cpus"`
+		Memory yaml.Node `yaml:"memory"`
 	}
 	if node.Kind != yaml.MappingNode {
 		return errors.New("resources must be a mapping")
 	}
-	for i := 0; i < len(node.Content); i += 2 {
-		key := node.Content[i].Value
-		if key != "cpus" && key != "memory_mb" {
-			return fmt.Errorf("unknown resources field %q", key)
-		}
+	if err := checkMappingKeys(node, "config.Resources", "cpus", "memory"); err != nil {
+		return err
 	}
 	if err := node.Decode(&wire); err != nil {
 		return err
 	}
 	*r = Resources{CPUs: wire.CPUs}
-	if wire.MemoryMB != nil {
-		var n int64
-		switch v := wire.MemoryMB.(type) {
-		case int:
-			n = int64(v)
-		case int64:
-			n = v
-		case uint64:
-			if v > math.MaxInt64 {
-				return errors.New("memory_mb exceeds integer range")
-			}
-			n = int64(v)
-		default:
-			return errors.New("memory_mb must be an integer MiB count")
+	if wire.Memory.Kind != 0 {
+		var size string
+		if err := wire.Memory.Decode(&size); err != nil {
+			return fmt.Errorf("memory must be a Docker size (for example 512m): %w", err)
 		}
-		r.MemoryMB = &n
+		n, err := units.RAMInBytes(size)
+		if err != nil {
+			return fmt.Errorf("invalid memory size: %w", err)
+		}
+		r.Memory = &n
 	}
 	return nil
 }
@@ -59,8 +50,8 @@ func (r *Resources) Validate() error {
 	if r == nil {
 		return nil
 	}
-	if r.CPUs == nil && r.MemoryMB == nil {
-		return errors.New("must specify cpus or memory_mb")
+	if r.CPUs == nil && r.Memory == nil {
+		return errors.New("must specify cpus or memory")
 	}
 	if r.CPUs != nil {
 		c := *r.CPUs
@@ -68,8 +59,8 @@ func (r *Resources) Validate() error {
 			return errors.New("cpus must be between 0.01 and 1024 in increments of 0.001")
 		}
 	}
-	if r.MemoryMB != nil && (*r.MemoryMB < 6 || *r.MemoryMB > 1048576) {
-		return errors.New("memory_mb must be between 6 and 1048576 MiB")
+	if r.Memory != nil && (*r.Memory < 6<<20 || *r.Memory > 1<<40) {
+		return errors.New("memory must be between 6 MiB and 1 TiB (bare numbers are bytes)")
 	}
 	return nil
 }
@@ -84,8 +75,8 @@ func (r *Resources) NanoCPUs() int64 {
 }
 
 func (r *Resources) MemoryBytes() int64 {
-	if r == nil || r.MemoryMB == nil {
+	if r == nil || r.Memory == nil {
 		return 0
 	}
-	return *r.MemoryMB * 1024 * 1024
+	return *r.Memory
 }

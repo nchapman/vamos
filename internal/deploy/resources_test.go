@@ -14,8 +14,9 @@ import (
 	"github.com/nchapman/vamos/internal/process"
 )
 
-func testResources(cpus float64, memory int64) *config.Resources {
-	return &config.Resources{CPUs: &cpus, MemoryMB: &memory}
+func testResources(cpus float64, memoryMiB int64) *config.Resources {
+	bytes := memoryMiB << 20
+	return &config.Resources{CPUs: &cpus, Memory: &bytes}
 }
 
 func TestResourcesAdmissionPreservesExistingRuntimes(t *testing.T) {
@@ -94,7 +95,7 @@ func TestResourcesUnsupportedBeforeExecution(t *testing.T) {
 }
 
 func TestResourcesCapabilitiesAreRequestedOnly(t *testing.T) {
-	cpu, memory := 0.01, int64(6)
+	cpu, memory := 0.01, int64(6<<20)
 	for _, test := range []struct {
 		name   string
 		limits *config.Resources
@@ -102,7 +103,7 @@ func TestResourcesCapabilitiesAreRequestedOnly(t *testing.T) {
 		want   []string
 	}{
 		{"cpu", &config.Resources{CPUs: &cpu}, `{"CpuCfsQuota":true,"CpuCfsPeriod":true,"NCPU":4}`, []string{"--cpus", "0.01"}},
-		{"memory", &config.Resources{MemoryMB: &memory}, `{"MemoryLimit":true,"SwapLimit":true}`, []string{"--memory", "6291456", "--memory-swap", "6291456"}},
+		{"memory", &config.Resources{Memory: &memory}, `{"MemoryLimit":true,"SwapLimit":true}`, []string{"--memory", "6291456", "--memory-swap", "6291456"}},
 		{"nil", nil, "", nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {

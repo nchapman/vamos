@@ -13,11 +13,11 @@ Optional per-service configuration:
 ```yaml
 resources:
   cpus: 0.5
-  memory_mb: 512
+  memory: 512m
 ```
 
 `cpus` is a CPU-time ceiling, in increments of 0.001, from 0.01 through
-1024 (also bounded by the deployment host's CPU count). `memory_mb` is an integer count of MiB, from 6 through 1048576. At least
+1024 (also bounded by the deployment host's CPU count). `memory` accepts Docker sizes (e.g. `512m`, `1.5g`, or bare bytes), from 6 MiB through 1 TiB. At least
 one must be supplied; explicit zero is not an unlimited alias. Omission retains
 the existing unlimited behavior. These are per-container limits, not reservations
 or service-wide budgets. They apply to ordinary runtimes, one-off commands, and

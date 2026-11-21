@@ -9,7 +9,7 @@ services:
   database:
     image: postgres:17
     update: manual
-    resources: {cpus: 0.5, memory_mb: 512}
+    resources: {cpus: 0.5, memory: 512m}
     env:
       POSTGRES_DB: rails_ledger
       POSTGRES_USER: rails_ledger
@@ -23,7 +23,7 @@ services:
     build: {context: ., dockerfile: Dockerfile}
     command: [bundle, exec, puma, -C, config/puma.rb]
     replicas: 2
-    resources: {cpus: 0.5, memory_mb: 512}
+    resources: {cpus: 0.5, memory: 512m}
     env:
       RAILS_ENV: production
       DB_HOST: database
@@ -40,7 +40,7 @@ services:
   worker:
     build: {context: ., dockerfile: Dockerfile}
     command: [bin/jobs]
-    resources: {cpus: 0.5, memory_mb: 512}
+    resources: {cpus: 0.5, memory: 512m}
     env:
       RAILS_ENV: production
       DB_HOST: database

@@ -9,8 +9,22 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+func TestMemoryAcceptsDockerSizesAsBytes(t *testing.T) {
+	for input, want := range map[string]int64{"512m": 512 << 20, "512MiB": 512 << 20, "524288k": 512 << 20, "0.5g": 512 << 20, "536870912": 512 << 20, "'6 MB'": 6 << 20, "6291457b": 6291457, "1.5g": 1536 << 20} {
+		t.Run(input, func(t *testing.T) {
+			a, err := Decode(strings.NewReader("app: test\nservices:\n  worker:\n    image: alpine\n    resources: {memory: " + input + "}\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := a.Services["worker"].Resources.MemoryBytes(); got != want {
+				t.Errorf("memory bytes = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
 func TestResourcesRoundTrip(t *testing.T) {
-	for _, resources := range []string{"{cpus: 0.5}", "{memory_mb: 512}", "{cpus: 0.01, memory_mb: 6}", "{cpus: 1024, memory_mb: 1048576}"} {
+	for _, resources := range []string{"{cpus: 0.5}", "{memory: 512m}", "{cpus: 0.01, memory: 6m}", "{cpus: 1024, memory: 1t}"} {
 		t.Run(resources, func(t *testing.T) {
 			a, err := Decode(strings.NewReader("app: test\nservices:\n  worker:\n    image: alpine\n    resources: " + resources + "\n"))
 			if err != nil {
@@ -45,14 +59,14 @@ func TestResourcesRoundTrip(t *testing.T) {
 }
 
 func TestResourcesInvalid(t *testing.T) {
-	for _, resources := range []string{"{}", "{cpus: 0}", "{cpus: -1}", "{cpus: .nan}", "{cpus: .inf}", "{cpus: -.inf}", "{cpus: 0.0009}", "{cpus: 1024.001}", "{cpus: 0.1234}", "{cpus: 0.5000000000000001}", "{memory_mb: 0}", "{memory_mb: -1}", "{memory_mb: 5}", "{memory_mb: 1048577}", "{memory_mb: 6.5}", "{memory_mb: 9223372036854775808}", "{cpu: 1}"} {
+	for _, resources := range []string{"{}", "{cpus: 0}", "{cpus: -1}", "{cpus: .nan}", "{cpus: .inf}", "{cpus: -.inf}", "{cpus: 0.0009}", "{cpus: 1024.001}", "{cpus: 0.1234}", "{cpus: 0.5000000000000001}", "{cpus: 1, memory_mb: 512}", "{memory: 0}", "{memory: -1}", "{memory: 512}", "{memory: 6291455}", "{memory: 1099511627777}", "{memory: 1z}", "{memory: 9223372036854775808}", "{memory: [512m]}", "{cpu: 1}"} {
 		t.Run(resources, func(t *testing.T) {
 			if _, err := Decode(strings.NewReader("app: test\nservices:\n  worker:\n    image: alpine\n    resources: " + resources + "\n")); err == nil {
 				t.Fatal("accepted invalid resources")
 			}
 		})
 	}
-	for _, resources := range []string{`{}`, `{"CPUs":0}`, `{"MemoryMB":0}`, `{"CPUs":0.1234}`, `{"MemoryMB":5}`, `{"typo":1}`} {
+	for _, resources := range []string{`{}`, `{"CPUs":0}`, `{"CPUs":1,"MemoryMB":512}`, `{"CPUs":0.1234}`, `{"Memory":5}`, `{"typo":1}`} {
 		var a App
 		err := json.Unmarshal([]byte(`{"Name":"test","Services":{"worker":{"Image":"alpine","Update":"auto","Resources":`+resources+`}}}`), &a)
 		if err == nil {
@@ -75,13 +89,13 @@ func TestResourcesExactConversionAndOptionalJSON(t *testing.T) {
 			t.Fatalf("inexact conversion for %d", milli)
 		}
 	}
-	cpu, memory := 0.5, int64(512)
+	cpu, memory := 0.5, int64(512<<20)
 	for _, test := range []struct {
 		r    Resources
 		want string
 	}{
 		{Resources{CPUs: &cpu}, `{"CPUs":0.5}`},
-		{Resources{MemoryMB: &memory}, `{"MemoryMB":512}`},
+		{Resources{Memory: &memory}, `{"Memory":536870912}`},
 	} {
 		b, err := json.Marshal(test.r)
 		if err != nil || string(b) != test.want {

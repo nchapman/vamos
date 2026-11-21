@@ -123,7 +123,7 @@ class RuntimeAssertionTests(unittest.TestCase):
     def test_database_is_private_manual_singleton_with_volume(self):
         db = runtime.database('ledger', 'ledger')
         self.assertEqual(db['update'], 'manual')
-        self.assertEqual(db['resources'], {'cpus': 0.5, 'memory_mb': 512})
+        self.assertEqual(db['resources'], {'cpus': 0.5, 'memory': '512m'})
         self.assertEqual(db['volume']['mount'], '/var/lib/postgresql/data')
         self.assertNotIn('replicas', db)
         self.assertNotIn('http', db)

@@ -8,7 +8,7 @@ services:
     build: {context: ., dockerfile: Dockerfile}
     resources:
       cpus: 0.5
-      memory_mb: 512
+      memory: 512m
     http: {port: 3000, health: /readyz}
 ```
 
@@ -20,7 +20,7 @@ Explicit zero is rejected rather than interpreted as unlimited.
   worth of execution time, not a dedicated core. Deployment also rejects a value
   above Docker's reported CPU count. Docker uses a 100ms CFS period; Linux's 1ms
   minimum quota makes 0.01 the smallest supported value through `--cpus`.
-- `memory_mb`: an integer count of **MiB** (1024² bytes), from 6 to 1048576.
+- `memory`: a Docker `--memory` size from **6 MiB to 1 TiB**. Bare numbers are bytes; unit suffixes use powers of 1024. For example, `512m`, `0.5g`, and `536870912` set exactly the same cap. `memory: 512` is too small, not 512 MiB.
   The combined memory/swap limit is set to the same byte count, allowing no
   additional swap. Exceeding the memory limit may cause the kernel to kill a
   process; Vamos does not disable the OOM killer.

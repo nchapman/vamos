@@ -76,7 +76,7 @@ vamos destroy -f examples/hello/vamos.yaml --yes   # Remove the app and its rout
 
 ## What Vamos supports
 
-- **Multi-service apps** — Up to 8 services per app (Dockerfile-built or prebuilt image) sharing a private Docker network, with public HTTP routing on selected services, private service-to-service DNS, and per-service `replicas` (up to 8 stateless instances behind Caddy load balancing) and `resources` (`cpus`, `memory_mb`).
+- **Multi-service apps** — Up to 8 services per app (Dockerfile-built or prebuilt image) sharing a private Docker network, with public HTTP routing on selected services, private service-to-service DNS, and per-service `replicas` (up to 8 stateless instances behind Caddy load balancing) and [`resources`](docs/resources.md) (e.g. `cpus: 0.5`, `memory: 512m`).
 - **Zero-downtime public rollouts** — New containers must pass HTTP readiness checks before Caddy switches traffic; failed rollouts leave the previous release serving.
 - **TCP/UDP service ports** — Public IPv4 Docker port bindings, including equal-sized ranges for services such as coturn. Fixed-port services use one replica and stop-first replacement. See [service ports](docs/ports.md).
 - **Persistent volumes** — One named local volume per service (`volume: {name: data, mount: /data}`) with single-writer stop/start replacement, durable 503 maintenance routing during updates, and retained data across cleanup/destroy.

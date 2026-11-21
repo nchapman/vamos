@@ -12,7 +12,7 @@ services:
     build: {context: ., dockerfile: Dockerfile}
     command: [bin/web]
     http: {port: 3000, health: /readyz}
-    resources: {cpus: 0.5, memory_mb: 512}
+    resources: {cpus: 0.5, memory: 512m}
     env: {DB_HOST: database, DB_NAME: ledger, DB_USER: ledger}
     secrets: {DB_PASSWORD: database-password}
 ```
