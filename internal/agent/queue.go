@@ -430,7 +430,7 @@ func (q *Queue) Finish(id string, response deploy.Response, runErr error) error 
 		return err
 	}
 	_ = os.Remove(q.payloadPath(id))
-	if op.Phase == agentproto.PhaseSucceeded && resolvesUncertain(op.Request) {
+	if op.Phase == agentproto.PhaseSucceeded && resolvesUncertain(op.Request, response) {
 		if err := q.resolveUncertainLocked(op.App, op.OperationID); err != nil {
 			return err
 		}
@@ -438,9 +438,11 @@ func (q *Queue) Finish(id string, response deploy.Response, runErr error) error 
 	return nil
 }
 
-func resolvesUncertain(req deploy.Request) bool {
+func resolvesUncertain(req deploy.Request, response deploy.Response) bool {
 	switch req.Action {
-	case "deploy", "resume", "service-remove", "secrets-set", "backup-repository":
+	case "deploy":
+		return !req.PreviewOnly && (response.DeployPreview == nil || !response.DeployPreview.NeedsConfirmation)
+	case "resume", "service-remove", "secrets-set", "backup-repository":
 		return true
 	case "rollback", "destroy", "cleanup":
 		return req.Apply

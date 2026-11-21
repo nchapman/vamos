@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
 )
@@ -161,6 +162,67 @@ func TestQueueRejectsPrincipalScopeAndIdempotencyCollision(t *testing.T) {
 	forbidden.Apps = []string{"other"}
 	if _, err := q.Submit(context.Background(), forbidden, testSubmit("cccccccccccccccccccccccccccccccc")); err == nil {
 		t.Fatal("out-of-scope operation was admitted")
+	}
+}
+
+func TestQueueFinishDeployResolution(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		previewOnly, apply bool
+		preview            *deploy.DeploymentPreview
+		resolve            bool
+	}{
+		{"explicit preview request", true, false, nil, false},
+		{"implicit confirmation preview", false, false, &deploy.DeploymentPreview{NeedsConfirmation: true}, false},
+		{"ordinary deploy", false, false, nil, true},
+		{"confirmed deploy", false, true, &deploy.DeploymentPreview{}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := NewQueue(t.TempDir(), agentproto.DefaultConcurrencyPolicy())
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := testPrincipal()
+			p.Actions = nil
+			start := func(sub agentproto.SubmitRequest) string {
+				t.Helper()
+				op, err := q.Submit(context.Background(), p, sub)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := q.Start(op.OperationID); err != nil {
+					t.Fatal(err)
+				}
+				return op.OperationID
+			}
+			sub := testSubmit(strings.Repeat("a", 32))
+			sub.Request.Action = "resume"
+			sub.Request.Operation = sub.IdempotencyKey
+			older := start(sub)
+			if err := q.Fence(older, "worker killed"); err != nil {
+				t.Fatal(err)
+			}
+			sub.IdempotencyKey = strings.Repeat("b", 32)
+			r := &sub.Request
+			r.Operation, r.Action, r.Service = sub.IdempotencyKey, "deploy", "web"
+			r.ContextFormat, r.PreviewOnly, r.Apply = deploy.BundleFormat, tc.previewOnly, tc.apply
+			r.Config = &config.App{Name: r.App, Services: map[string]config.Service{"web": {Update: config.UpdateManual, Image: "nginx@sha256:" + strings.Repeat("e", 64)}}}
+			id := start(sub)
+			if err := q.Finish(id, deploy.Response{Version: 1, DeployPreview: tc.preview}, nil); err != nil {
+				t.Fatal(err)
+			}
+			got, err := q.Get(older)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := ""
+			if tc.resolve {
+				want = id
+			}
+			if got.ResolvedBy != want {
+				t.Errorf("ResolvedBy = %q, want %q", got.ResolvedBy, want)
+			}
+		})
 	}
 }
 
