@@ -94,7 +94,8 @@ vamos destroy -f examples/hello/vamos.yaml --yes   # Remove the app and its rout
 vamos init myapp --port 8080          # Create a minimal vamos.yaml
 vamos validate                        # Check vamos.yaml syntax and constraints
 vamos deploy                          # Build, push/load, and roll out
-vamos status                          # Show service health, routes, TLS, and pending work
+vamos status                          # In a project: app status. Outside: list registered servers.
+vamos status --server example         # Outside a project: list this server's apps
 vamos logs --service web --follow     # Stream logs from a verified container
 vamos exec --service web -- CMD...    # Run a command in a live container
 vamos console --service web           # Interactive shell in a live container

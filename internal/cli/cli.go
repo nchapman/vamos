@@ -24,7 +24,7 @@ Usage:
   vamos console [--service NAME]          Open an interactive shell in an existing service
   vamos run [--service NAME] -- COMMAND  Run a noninteractive command
   vamos deploy [-f vamos.yaml]             Build and deploy the app's services
-  vamos status [--json]                   Inspect the app's actual running state
+  vamos status [--server NAME] [--json]   List servers or apps; in a project, inspect app status
   vamos logs [--tail 100] [--follow]      Read a snapshot or follow one container's logs
   vamos rollback [--service NAME] [--allow-downtime] [--yes]
                                         Preview or restore captured service images

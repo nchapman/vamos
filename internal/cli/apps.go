@@ -37,6 +37,10 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	if flags.NArg() != 0 || *timeout <= 0 {
 		return usageError(stderr, "apps accepts no positional arguments and requires a positive timeout")
 	}
+	return showServerApps(ctx, stdout, stderr, deps, *serverName, *executor, *timeout, *asJSON)
+}
+
+func showServerApps(ctx context.Context, stdout, stderr io.Writer, deps appDeps, serverName, executor string, timeout time.Duration, asJSON bool) int {
 	store, err := deps.Registry()
 	if err != nil {
 		return lifecycleError(stderr, err)
@@ -45,7 +49,7 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
-	server, err := selectAppServer(state, "", "", *serverName)
+	server, err := selectAppServer(state, "", "", serverName)
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
@@ -56,16 +60,16 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	if err := ssh.ValidateTarget(server.Target); err != nil {
 		return lifecycleError(stderr, err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	response, err := runAppTransport(ctx, server.Target, *executor, request, nil, deps)
+	response, err := runAppTransport(ctx, server.Target, executor, request, nil, deps)
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
 	if response.Version != 1 || response.Error != "" || response.Apps == nil {
 		return lifecycleError(stderr, errors.New("invalid apps response"))
 	}
-	if *asJSON {
+	if asJSON {
 		if err := json.NewEncoder(stdout).Encode(response.Apps); err != nil {
 			return lifecycleError(stderr, err)
 		}

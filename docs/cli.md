@@ -29,6 +29,14 @@ that support `--server NAME --app APP` can operate without loading a local manif
 bindings and use the registered default unless `--server` is supplied. Repository
 setup is host-level; it does not load an application manifest. Defaults apply to **omitted** selectors, not an explicitly empty `--server`, `--app`, or `--service`. Supply each identity selector once. For `service bind` and `service remove`, use either a positional name or `--service`, never both.
 
+Outside a project (no `vamos.yaml` in the current directory), `vamos status` lists
+registered server names, SSH targets, and domains and marks the default. It works
+offline. Use `vamos status --server home` there for that server’s recorded app
+inventory, then `vamos status --server home --app notes` for live observations.
+Inside a project, `status` still inspects the current app, including when `--server`
+overrides its target. Use `vamos apps --server home` for inventory from any directory.
+An invalid manifest or an explicit `-f` is never treated as an absent project.
+
 If missing or invalid YAML blocks observation or recovery, use an explicit target:
 
 ```sh
@@ -54,7 +62,8 @@ If the agent rejects submission (for example, an app outside a key's scope), cor
 | Command | Machine-readable output |
 | --- | --- |
 | `apps --json` | Inventory object containing `entries` |
-| `status --json` | Status object, including instance observations, release-command metadata and recorded run metadata when selected |
+| `status --json` outside a project, no app selected | Local `{default, servers}` (servers sorted by name); with `--server`, inventory object containing `entries` |
+| `status --json` with a project or explicit app | Status object, including instance observations, release-command metadata and recorded run metadata when selected |
 | `cleanup/destroy/service remove --json` | Full response envelope, including the plan |
 | `secrets stage/set/list --json` | Metadata response envelope; never secret values |
 | `backup repository ... --json` | Recorded/verified repository metadata; never credentials or recovery-kit contents |

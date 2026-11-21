@@ -24,7 +24,7 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 		},
 		"status": {
 			"vamos status [OPTIONS]", "app service run json",
-			"Inspect recorded operation and runtime state. --run selects a captured one-off operation\nand cannot be combined with --service. --json emits the status object, not a response envelope.",
+			"Outside a project, list registered servers locally; add --server NAME for its recorded app inventory.\nIn a project, or with --server NAME --app APP, inspect live app status. --run selects a captured\none-off operation and cannot be combined with --service.",
 			"vamos status --server home --app notes --json",
 		},
 		"logs": {

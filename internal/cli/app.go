@@ -228,6 +228,9 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		var err error
 		app, err = config.Load(*filename)
 		if err != nil {
+			if action == "status" && outsideStatusProject(flags, err) {
+				return statusOverview(ctx, stdout, stderr, deps, *serverFlag, *executorFile, *timeout, *asJSON)
+			}
 			code := lifecycleError(stderr, err)
 			configRecoveryHint(stderr, action, flags)
 			return code
