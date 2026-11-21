@@ -273,15 +273,18 @@ func TestPresentationVisualFixtures(t *testing.T) {
 			failureReport.action = "deploy"
 			failureReport.mutation = true
 			cases := map[string]string{
-				"status":   p.statusReport(status, r),
-				"server":   p.renderServerInspect(r.server.Target, &host.Report{OS: "ubuntu", Version: "24.04", Kernel: "Linux", Architecture: "arm64", Systemd: true, Root: true, Supported: true}),
-				"secrets":  p.renderSecretList(r.server.Name, r.server.Target, r.app, []secrets.Entry{{Name: "database-password", Version: visualOperation, Latest: true}}),
-				"preview":  prefix + p.maintenanceReport(deploy.Response{Plan: plan}, previewReport),
-				"unknown":  p.appFailure(failureReport, deploy.Request{Operation: visualOperation}, deploy.Response{}, errors.New("SSH connection ended before an acknowledgement arrived"), ""),
-				"help":     p.renderMainHelp(),
-				"apps":     p.renderApps(r.server.Name, r.server.Target, helpAppsInventoryFixture()),
-				"rollback": p.header("rollback", r.app, r.server.Name, r.server.Target) + p.rollbackPreview(&deploy.RollbackPreview{TargetOperation: visualOperation, NeedsConfirmation: true, Services: []deploy.RollbackService{{Name: "web", CurrentImage: "registry.example.net/ledger:v7", TargetImage: "registry.example.net/ledger:v6", Downtime: true, SecretVersions: map[string]string{"database-password": "secret-version-old"}}, {Name: "database", ExcludedReason: "manual service excluded"}}}),
-				"staged":   p.statusReport(&deploy.Status{App: r.app, Phase: "staged", Secrets: status.Secrets}, r),
+				"status":           p.statusReport(status, r),
+				"server":           p.renderServerInspect(r.server.Target, &host.Report{OS: "ubuntu", Version: "24.04", Kernel: "Linux", Architecture: "arm64", Systemd: true, Root: true, Supported: true}),
+				"secrets":          p.renderSecretList(r.server.Name, r.server.Target, r.app, []secrets.Entry{{Name: "database-password", Version: visualOperation, Latest: true}}),
+				"preview":          prefix + p.maintenanceReport(deploy.Response{Plan: plan}, previewReport),
+				"unknown":          p.appFailure(failureReport, deploy.Request{Operation: visualOperation}, deploy.Response{}, errors.New("SSH connection ended before an acknowledgement arrived"), ""),
+				"help":             p.renderMainHelp(),
+				"apps":             p.renderApps(r.server.Name, r.server.Target, helpAppsInventoryFixture()),
+				"servers-overview": p.serverOverview([]registry.Server{r.server, {Name: "staging", Target: "deploy@staging.example.net", Domain: "staging.example.net"}}, r.server.Name),
+				"servers-empty":    p.serverOverview(nil, ""),
+				"status-inventory": p.renderApps(r.server.Name, r.server.Target, helpAppsInventoryFixture()) + p.appStatusHint(r.server.Name, helpAppsInventoryFixture()),
+				"rollback":         p.header("rollback", r.app, r.server.Name, r.server.Target) + p.rollbackPreview(&deploy.RollbackPreview{TargetOperation: visualOperation, NeedsConfirmation: true, Services: []deploy.RollbackService{{Name: "web", CurrentImage: "registry.example.net/ledger:v7", TargetImage: "registry.example.net/ledger:v6", Downtime: true, SecretVersions: map[string]string{"database-password": "secret-version-old"}}, {Name: "database", ExcludedReason: "manual service excluded"}}}),
+				"staged":           p.statusReport(&deploy.Status{App: r.app, Phase: "staged", Secrets: status.Secrets}, r),
 			}
 			replicated := presentationStatusFixture()
 			replicated.Phase = "ready"
@@ -318,7 +321,7 @@ func TestPresentationVisualFixtures(t *testing.T) {
 			for name, text := range featureVisualCases(t, p, presentationReportFixture()) {
 				cases[name] = text
 			}
-			required := []string{"status", "long-status", "preview", "unknown", "help", "apps", "rollback", "staged", "server", "secrets", "replicas-release", "release-blocked", "firewall-enabled", "firewall-disabled", "firewall-pending", "firewall-degraded", "firewall-enable-failure", "firewall-disable-failure", "server-sudo", "readiness-candidates", "ports-success", "ports-pending", "mixed-success"}
+			required := []string{"status", "long-status", "preview", "unknown", "help", "apps", "servers-overview", "servers-empty", "status-inventory", "rollback", "staged", "server", "secrets", "replicas-release", "release-blocked", "firewall-enabled", "firewall-disabled", "firewall-pending", "firewall-degraded", "firewall-enable-failure", "firewall-disable-failure", "server-sudo", "readiness-candidates", "ports-success", "ports-pending", "mixed-success"}
 			if len(cases) != len(required) {
 				t.Fatalf("visual cases=%d required=%d", len(cases), len(required))
 			}

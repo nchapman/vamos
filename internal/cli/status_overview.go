@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/registry"
 )
 
@@ -45,13 +46,39 @@ func statusOverview(ctx context.Context, stdout, stderr io.Writer, deps appDeps,
 		}
 		return showServerOverview(stdout, stderr, deps, asJSON)
 	}
-	code := showServerApps(ctx, stdout, stderr, deps, server, executor, timeout, asJSON)
-	if code == 0 && !asJSON {
-		if _, err := fmt.Fprintf(stdout, "\nInspect live app status (replace APP):\n  vamos status --server %s --app APP\n", server); err != nil {
-			return lifecycleError(stderr, err)
-		}
+	return showServerApps(ctx, stdout, stderr, deps, server, inventoryOptions{executor: executor, timeout: timeout, asJSON: asJSON, statusHints: true})
+}
+
+func (p *presentation) serverOverview(servers []registry.Server, defaultName string) string {
+	var text strings.Builder
+	text.WriteString(p.header("servers", "", "", ""))
+	if len(servers) == 0 {
+		text.WriteString(p.section("No registered servers"))
+		text.WriteString(p.prose("Connect an existing host or add a new one:"))
+		text.WriteString(p.command("vamos help server connect"))
+		text.WriteString(p.command("vamos help server add"))
+		return text.String()
 	}
-	return code
+	text.WriteString(p.prose("Locally registered servers."))
+	for _, server := range servers {
+		label := server.Name
+		if label == defaultName {
+			label += " (default)"
+		}
+		text.WriteString(p.section(label))
+		text.WriteString(p.field("SSH target", server.Target))
+		text.WriteString(p.field("Domain", server.Domain))
+	}
+	text.WriteString(p.section("List apps on a server"))
+	text.WriteString(p.command(suggestedCommand("vamos", "status", "--server", defaultName)))
+	return text.String()
+}
+
+func (p *presentation) appStatusHint(server string, apps *deploy.AppList) string {
+	if len(apps.Entries) == 0 {
+		return ""
+	}
+	return p.section("Inspect app status") + p.command(suggestedCommand("vamos", "status", "--server", server, "--app", apps.Entries[0].App))
 }
 
 func showServerOverview(stdout, stderr io.Writer, deps appDeps, asJSON bool) int {
@@ -72,6 +99,8 @@ func showServerOverview(stdout, stderr io.Writer, deps appDeps, asJSON bool) int
 			Default string            `json:"default"`
 			Servers []registry.Server `json:"servers"`
 		}{state.Default, servers})
+	} else if p := presentationFor(stdout); p != nil {
+		err = p.write(stdout, p.serverOverview(servers, state.Default))
 	} else {
 		var text strings.Builder
 		if len(servers) == 0 {

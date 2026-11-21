@@ -65,7 +65,7 @@ func TestStatusOutsideProjectSelectsServerInventory(t *testing.T) {
 	}}
 	var out, diag bytes.Buffer
 	args := []string{"--server", "example"}
-	if code := appCommand(t.Context(), "status", args, &out, &diag, deps); code != 0 || !strings.Contains(out.String(), "not live health") || !strings.Contains(out.String(), "hello") || !strings.Contains(out.String(), "vamos status --server example --app") {
+	if code := appCommand(t.Context(), "status", args, &out, &diag, deps); code != 0 || !strings.Contains(out.String(), "not live health") || !strings.Contains(out.String(), "hello") || !strings.HasSuffix(out.String(), "Inspect live app status (replace APP):\n  vamos status --server example --app APP\n") {
 		t.Fatalf("%d: %s %s", code, &out, &diag)
 	}
 	out.Reset()
@@ -75,6 +75,43 @@ func TestStatusOutsideProjectSelectsServerInventory(t *testing.T) {
 	}
 	if _, err := os.Stat(".vamos"); !os.IsNotExist(err) {
 		t.Fatalf("unexpected project metadata: %v", err)
+	}
+}
+
+func TestStatusOverviewTerminalLayoutAndDrillDown(t *testing.T) {
+	dir, store, reg := initFixture(t)
+	t.Chdir(dir)
+	apps := &deploy.AppList{}
+	deps := appDeps{Registry: reg, Agent: func(context.Context, string, deploy.Request, []byte) (deploy.Response, error) {
+		return deploy.Response{Version: 1, Apps: apps}, nil
+	}}
+	show := func(args ...string) string {
+		t.Helper()
+		out := newHelpAppsTerminal(48, true)
+		var diag bytes.Buffer
+		if code := appCommand(t.Context(), "status", args, out, &diag, deps); code != 0 {
+			t.Fatalf("status %v: %d: %s", args, code, &diag)
+		}
+		return out.String()
+	}
+	if text := show(); !strings.Contains(text, "SERVERS") || !strings.Contains(text, "No registered servers") || !strings.Contains(text, "\nvamos help server connect\n") || !strings.Contains(text, "\nvamos help server add\n") {
+		t.Fatal(text)
+	}
+	if err := store.Put(registry.Server{Name: "example", Target: "root@home", Domain: "home.example.org"}); err != nil {
+		t.Fatal(err)
+	}
+	text := show()
+	for _, want := range []string{"\x1b[", "example (default)", "SSH target", "Domain", "\nvamos status --server example\n"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q: %s", want, text)
+		}
+	}
+	if text := show("--server", "example"); !strings.Contains(text, "No registered apps") || strings.Contains(text, "--app") {
+		t.Fatal(text)
+	}
+	apps.Entries = []deploy.AppEntry{{App: "hello", Phase: "ready"}, {App: "notes", Phase: "ready"}}
+	if text := show("--server", "example"); !strings.Contains(text, "\nvamos status --server example --app hello\n") || strings.Contains(text, "replace APP") {
+		t.Fatal(text)
 	}
 }
 

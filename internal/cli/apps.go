@@ -37,10 +37,17 @@ func appsCommand(ctx context.Context, args []string, stdout, stderr io.Writer, d
 	if flags.NArg() != 0 || *timeout <= 0 {
 		return usageError(stderr, "apps accepts no positional arguments and requires a positive timeout")
 	}
-	return showServerApps(ctx, stdout, stderr, deps, *serverName, *executor, *timeout, *asJSON)
+	return showServerApps(ctx, stdout, stderr, deps, *serverName, inventoryOptions{executor: *executor, timeout: *timeout, asJSON: *asJSON})
 }
 
-func showServerApps(ctx context.Context, stdout, stderr io.Writer, deps appDeps, serverName, executor string, timeout time.Duration, asJSON bool) int {
+type inventoryOptions struct {
+	executor    string
+	timeout     time.Duration
+	asJSON      bool
+	statusHints bool
+}
+
+func showServerApps(ctx context.Context, stdout, stderr io.Writer, deps appDeps, serverName string, opts inventoryOptions) int {
 	store, err := deps.Registry()
 	if err != nil {
 		return lifecycleError(stderr, err)
@@ -60,23 +67,27 @@ func showServerApps(ctx context.Context, stdout, stderr io.Writer, deps appDeps,
 	if err := ssh.ValidateTarget(server.Target); err != nil {
 		return lifecycleError(stderr, err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, opts.timeout)
 	defer cancel()
-	response, err := runAppTransport(ctx, server.Target, executor, request, nil, deps)
+	response, err := runAppTransport(ctx, server.Target, opts.executor, request, nil, deps)
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
 	if response.Version != 1 || response.Error != "" || response.Apps == nil {
 		return lifecycleError(stderr, errors.New("invalid apps response"))
 	}
-	if asJSON {
+	if opts.asJSON {
 		if err := json.NewEncoder(stdout).Encode(response.Apps); err != nil {
 			return lifecycleError(stderr, err)
 		}
 		return 0
 	}
 	if p := presentationFor(stdout); p != nil {
-		if err := p.write(stdout, p.renderApps(server.Name, server.Target, response.Apps)); err != nil {
+		text := p.renderApps(server.Name, server.Target, response.Apps)
+		if opts.statusHints {
+			text += p.appStatusHint(server.Name, response.Apps)
+		}
+		if err := p.write(stdout, text); err != nil {
 			return lifecycleError(stderr, err)
 		}
 		return 0
@@ -94,6 +105,9 @@ func showServerApps(ctx context.Context, stdout, stderr io.Writer, deps appDeps,
 			}
 			_, err = fmt.Fprintf(stdout, "%s\t%s\t%s (%d)\t%t\t%d\t%t\n", entry.App, entry.Phase, strings.Join(entry.Services, ","), entry.ServiceCount, entry.RetainedSecrets, entry.VolumeRecords, entry.RetainedVolumes)
 		}
+	}
+	if err == nil && opts.statusHints {
+		_, err = fmt.Fprintf(stdout, "\nInspect live app status (replace APP):\n  vamos status --server %s --app APP\n", server.Name)
 	}
 	if err != nil {
 		return lifecycleError(stderr, err)
