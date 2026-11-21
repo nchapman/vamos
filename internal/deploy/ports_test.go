@@ -277,7 +277,7 @@ func TestPortsClaimsPublicationSerializesApps(t *testing.T) {
 	}
 	results := make(chan error, 2)
 	for _, j := range plans {
-		go func() { results <- f.m.savePortClaims(context.Background(), j) }()
+		go func() { results <- f.m.saveClaims(context.Background(), j) }()
 	}
 	successes := 0
 	for range plans {
@@ -289,6 +289,31 @@ func TestPortsClaimsPublicationSerializesApps(t *testing.T) {
 	}
 	if successes != 1 {
 		t.Fatalf("expected one reservation winner, got %d", successes)
+	}
+}
+
+func TestHostnameClaimsPublication(t *testing.T) {
+	f := newMultiFlow(t)
+	var plans []*journal
+	for _, name := range []string{"first", "first-backend"} {
+		q := f.req
+		q.Config = multiApp()
+		q.App, q.Config.Name = name, name
+		q.Config.Services["backend"] = q.Config.Services["web"]
+		j, err := multiPlan(q, &lifecycle.State{ID: strings.Repeat("a", 32)}, nil, &secrets.State{}, f.bundle(q.Config))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.m.reserveHostnames(t.Context(), j); err != nil {
+			t.Fatal(err)
+		}
+		plans = append(plans, j)
+	}
+	if err := f.m.saveClaims(t.Context(), plans[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.m.saveClaims(t.Context(), plans[1]); err == nil || !strings.Contains(err.Error(), "first-backend.example.com") {
+		t.Fatalf("expected publication conflict, got %v", err)
 	}
 }
 

@@ -251,13 +251,13 @@ func (m *Manager) executeRollback(ctx context.Context, r Request, old *journal, 
 			return resp, err
 		}
 	}
-	if err = m.savePortClaims(ctx, next); err != nil {
+	if err = m.saveClaims(ctx, next); err != nil {
 		return resp, err
 	}
 	defer func() {
 		if err != nil {
 			next.LastError = diagnostic(err.Error())
-			err = errors.Join(err, m.savePortClaims(ctx, next))
+			err = errors.Join(err, m.saveClaims(ctx, next))
 		}
 		s := m.multiStatus(ctx, next, state, false, "")
 		resp.Status = &s

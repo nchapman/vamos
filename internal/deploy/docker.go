@@ -267,7 +267,7 @@ func (m *Manager) advance(c context.Context, j *journal) error {
 				}
 				r.PublishPort = port
 				// Persist intent before Docker can create anything, including a lost response.
-				if err := m.savePortClaims(c, j); err != nil {
+				if err := m.saveClaims(c, j); err != nil {
 					r.PublishPort = ""
 					return err
 				}

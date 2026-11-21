@@ -470,7 +470,7 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 					return errors.New("allocate candidate port failed")
 				}
 				*r.PublishPort = port
-				if m.savePortClaims(ctx, j) != nil {
+				if m.saveClaims(ctx, j) != nil {
 					*r.PublishPort = ""
 					return errors.New("save candidate publish intent failed")
 				}

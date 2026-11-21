@@ -216,7 +216,7 @@ func (m *Manager) executeSecrets(ctx context.Context, r Request, input []byte, o
 			return resp, err
 		}
 	}
-	if err = m.savePortClaims(ctx, next); err != nil {
+	if err = m.saveClaims(ctx, next); err != nil {
 		return resp, err
 	}
 	resumed := r

@@ -942,10 +942,9 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			previous = j.Previous
 		}
 		j = &journal{Status: Status{App: r.App, URL: "https://" + r.App + "." + r.Host.Domain, Phase: "building", Operation: r.Operation}, HostID: h.ID, Config: r.Config, SecretRefs: refs, Current: current, Previous: previous, Archive: r.Operation + ".context.tar"}
-		if err = atomic(filepath.Join(m.dir(r.App), j.Archive), tar, 0600); err != nil {
-			return
-		}
-		if err = m.save(j); err != nil {
+		if err = m.publishClaims(ctx, j, func() error {
+			return atomic(filepath.Join(m.dir(r.App), j.Archive), tar, 0600)
+		}); err != nil {
 			return
 		}
 	} else if j == nil || j.Operation != r.Operation {

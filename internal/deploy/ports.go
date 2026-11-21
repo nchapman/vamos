@@ -177,10 +177,14 @@ func (m *Manager) reservePorts(ctx context.Context, j *journal) error {
 	return m.reserveManagedPorts(all, j.HostID)
 }
 
-// Publish claims atomically under the existing host-wide ingress lock. Other
-// apps can build concurrently, but cannot capture conflicting fixed/HTTP ports
-// between admission and the journal write. Docker handles unmanaged conflicts.
-func (m *Manager) savePortClaims(ctx context.Context, j *journal) error {
+func (m *Manager) saveClaims(ctx context.Context, j *journal) error {
+	return m.publishClaims(ctx, j, nil)
+}
+
+// Check host-wide claims and publish the journal under one ingress lock.
+// Prepare durable inputs only after admission so a losing first deploy does
+// not leave an archive in an unjournaled app directory.
+func (m *Manager) publishClaims(ctx context.Context, j *journal, prepare func() error) error {
 	unlock, err := m.lockIngress(ctx)
 	if err != nil {
 		return err
@@ -189,12 +193,20 @@ func (m *Manager) savePortClaims(ctx context.Context, j *journal) error {
 	// The app mutation lock protects our own journal. At publication the new
 	// journal contains all live own slots; superseded candidates have already
 	// been removed. Preflight separately checks the persisted own claims.
-	all, _, err := m.appJournals(j, false)
+	all, domain, err := m.appJournals(j, false)
 	if err != nil {
 		return err
 	}
 	if err = m.reserveManagedPorts(all, j.HostID); err != nil {
 		return err
+	}
+	if err = reserveJournalHostnames(all, domain); err != nil {
+		return err
+	}
+	if prepare != nil {
+		if err = prepare(); err != nil {
+			return err
+		}
 	}
 	return m.save(j)
 }

@@ -203,15 +203,15 @@ func (m *Manager) executeMulti(ctx context.Context, r Request, data []byte, j *j
 		} else if err = m.verifyRoutes(ctx, next); err != nil {
 			return
 		}
-		if err = atomic(filepath.Join(m.dir(r.App), next.Archive), data, 0600); err != nil {
-			return
-		}
-		if volumeState != nil {
-			if err = m.volumeStore().Save(volumeState); err != nil {
-				return
+		if err = m.publishClaims(ctx, next, func() error {
+			if err := atomic(filepath.Join(m.dir(r.App), next.Archive), data, 0600); err != nil {
+				return err
 			}
-		}
-		if err = m.savePortClaims(ctx, next); err != nil {
+			if volumeState != nil {
+				return m.volumeStore().Save(volumeState)
+			}
+			return nil
+		}); err != nil {
 			return
 		}
 		j = next
