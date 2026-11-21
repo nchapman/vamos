@@ -135,7 +135,7 @@ Prerequisites: [mise](https://mise.jdx.dev/getting-started.html) (pins Go `1.27.
 ```sh
 mise trust && mise install # Install pinned Go toolchain
 mise run build             # Build vamos + Linux amd64/arm64 executors into bin/
-mise run check             # Format check, go vet, go test -race ./..., and build bundle
+mise run check             # Check formatting and module tidiness, vet, race-test, and build bundle
 mise run lint              # Run golangci-lint (if installed)
 mise run fmt               # Format Go source
 mise run test:python       # Run Python example and integration-driver unit tests

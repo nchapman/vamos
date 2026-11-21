@@ -41,6 +41,7 @@ jobs:
       - if: runner.os == 'Windows'
         run: |
           mise run fmt-check
+          mise run mod-check
           mise run vet
           mise exec -- go build ./cmd/vamos
           mise exec -- go list ./... | grep -vE '/internal/(agent|backup|backupbackend|deploy|executor|volumes)$' | xargs mise exec -- go test

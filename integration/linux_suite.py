@@ -187,7 +187,7 @@ def bootstrap(h):
 
 def checks(h):
     h.log('Running Linux formatting, vet, race-enabled tests and builds')
-    result = h.command(['gofmt', '-l', 'cmd', 'internal', 'integration/orbstack'])
+    result = h.command(['sh', 'integration/gofmt.sh', '-l'])
     if result.stdout.strip():
         raise AssertionError('Go files are not formatted: ' + result.stdout.decode())
     h.command(['go', 'vet', './...'])

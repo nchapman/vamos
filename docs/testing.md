@@ -3,9 +3,12 @@
 ## Fast checks (no VM)
 
 ```sh
-mise run check        # Go formatting, vet, race-enabled tests, native and Linux builds
+mise run check        # Go formatting, module tidiness, vet, race-enabled tests, native and Linux builds
 mise run test:python  # Python 3: integration-driver safety tests and both example suites
 ```
+
+If formatting fails, run `mise run fmt`. If `mod-check` reports a diff, run
+`mise exec -- go mod tidy` and review the changes to `go.mod` and `go.sum`.
 
 The Go tests include the OrbStack runner's ownership, cleanup, cancellation,
 archive-selection and failure-path tests, using a fake external command boundary.
