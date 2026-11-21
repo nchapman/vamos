@@ -402,21 +402,29 @@ func (q *Queue) Finish(id string, response deploy.Response, runErr error) error 
 	if err := decode(data, &op); err != nil {
 		return err
 	}
-	if op.Phase != agentproto.PhaseRunning {
-		return errors.New("operation is not running")
-	}
 	if runErr != nil || response.Version == 0 {
 		response = executor.FormatAppResponse(op.Request, response, runErr)
 	}
-	now := q.now().UTC()
-	op.FinishedAt = &now
-	op.Response = &response
-	if runErr != nil || response.Error != "" {
-		op.Phase = agentproto.PhaseFailed
-		op.Error = response.Error
-		op.ErrorCode = response.ErrorCode
-	} else {
-		op.Phase = agentproto.PhaseSucceeded
+	switch op.Phase {
+	case agentproto.PhaseRunning:
+		now := q.now().UTC()
+		op.FinishedAt = &now
+		op.Response = &response
+		if runErr != nil || response.Error != "" {
+			op.Phase = agentproto.PhaseFailed
+			op.Error = response.Error
+			op.ErrorCode = response.ErrorCode
+		} else {
+			op.Phase = agentproto.PhaseSucceeded
+		}
+	case agentproto.PhaseSucceeded, agentproto.PhaseFailed:
+		// A sync or reconciliation error may follow a successful rename. Retry
+		// the same staged worker result, never overwrite it or its timestamp.
+		if !reflect.DeepEqual(op.Response, &response) {
+			return errors.New("operation already has a different result")
+		}
+	default:
+		return errors.New("operation is not running")
 	}
 	if err := q.saveLocked(op); err != nil {
 		return err
@@ -471,6 +479,10 @@ func (q *Queue) Fence(id, message string) error {
 	var op operation
 	if err := decode(data, &op); err != nil {
 		return err
+	}
+	if op.Phase == agentproto.PhaseUncertain && op.Error == message {
+		// A previous rename may have succeeded before directory sync failed.
+		return q.saveLocked(op)
 	}
 	if op.Phase != agentproto.PhaseRunning && op.Phase != agentproto.PhaseQueued {
 		return nil

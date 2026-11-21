@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -194,21 +195,40 @@ func (d *Daemon) runSupervisedWorker(ctx context.Context, id string, request dep
 	d.monitorSupervisedUnit(ctx, id, dir)
 }
 
+// The worker's files are the recovery copy until the queue confirms a terminal record.
+func (d *Daemon) finishExitedWorker(id, dir string) error {
+	resp, ok, readErr := executor.ReadWorkerResponse(dir)
+	var err error
+	if readErr == nil && ok {
+		err = d.Queue.Finish(id, resp, nil)
+	} else {
+		err = d.Queue.Fence(id, "worker exited without a structured response")
+	}
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(dir)
+}
+
 func (d *Daemon) monitorSupervisedUnit(ctx context.Context, id, dir string) {
 	unit := workerUnitName(id)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	const maxFinalizeAttempts = 3
+	attempts := 0
 	for {
 		active, err := queryWorkerUnitActive(ctx, unit)
 		if err == nil && !active {
-			resp, ok, readErr := executor.ReadWorkerResponse(dir)
-			_ = os.RemoveAll(dir)
-			if readErr == nil && ok {
-				_ = d.Queue.Finish(id, resp, nil)
+			err := d.finishExitedWorker(id, dir)
+			if err == nil {
 				return
 			}
-			_ = d.Queue.Fence(id, "worker exited without a structured response")
-			return
+			attempts++
+			if attempts == maxFinalizeAttempts {
+				log.Printf("could not finalize exited worker %s; inspect retained stage and queue before restarting agent: %v", id, err)
+				return
+			}
+			ticker.Reset(time.Second)
 		}
 		select {
 		case <-ctx.Done():
@@ -238,29 +258,11 @@ func (d *Daemon) reconcileSupervisedWorkers(ctx context.Context) (map[string]boo
 	var workers []activeWorker
 	for id, req := range running {
 		dir := workerStageDir(id)
-		active, activeErr := queryWorkerUnitActive(ctx, workerUnitName(id))
-		if activeErr == nil && active {
-			readopted[id] = true
-			releaseSlots, _ := d.tryAcquireOperationSlots(ctx, req, false)
-			workers = append(workers, activeWorker{id: id, dir: dir, req: req, release: releaseSlots})
-			continue
-		}
-		if activeErr == nil && !active {
-			if resp, ok, readErr := executor.ReadWorkerResponse(dir); readErr == nil && ok {
-				_ = os.RemoveAll(dir)
-				if err := d.Queue.Finish(id, resp, nil); err != nil {
-					for _, w := range workers {
-						if w.release != nil {
-							w.release()
-						}
-					}
-					return nil, err
-				}
-				readopted[id] = true
-				continue
-			}
-			_ = os.RemoveAll(dir)
-		}
+		// The monitor handles active units, exited results and transient query
+		// failures alike. Reserve their slots before scheduling new work.
+		readopted[id] = true
+		releaseSlots, _ := d.tryAcquireOperationSlots(ctx, req, false)
+		workers = append(workers, activeWorker{id: id, dir: dir, req: req, release: releaseSlots})
 	}
 	for _, w := range workers {
 		d.workWG.Add(1)
