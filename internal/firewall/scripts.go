@@ -67,14 +67,18 @@ func artifacts(s state) map[string]string {
 // All generated data is validated before this function. The rollback executable
 // is self-contained: no vamos binary, Docker daemon, caller, or JSON tool needed.
 func script(s state) string {
-	return scriptWithRules(s, plan.rules, true)
+	return generateScript(s, plan.rules, true, true)
+}
+
+func previousScript(s state) string {
+	return generateScript(s, plan.rules, true, false)
 }
 
 func legacyV030Script(s state) string {
-	return scriptWithRules(s, plan.legacyV030Rules, false)
+	return generateScript(s, plan.legacyV030Rules, false, false)
 }
 
-func scriptWithRules(s state, rulesFn func(plan, string) []string, includeUpgrade bool) string {
+func generateScript(s state, rulesFn func(plan, string) []string, includeUpgrade, ordered bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `#!/bin/sh
 # Owned by vamos firewall; generation %s
@@ -129,6 +133,9 @@ EOF
 verify_%s() {
     subset_%s
 `, tag, tag)
+		if ordered {
+			b.WriteString(verifyOrder(family, "filter", rules))
+		}
 		for _, r := range rules {
 			fmt.Fprintf(&b, "    %s -w 10 %s\n", family, strings.Replace(r, "-A ", "-C ", 1))
 		}
@@ -173,7 +180,7 @@ remove_%s() {
 		}
 		b.WriteString("}\n")
 	}
-	b.WriteString(earlyScript(s, rulesFn))
+	b.WriteString(earlyScript(s, rulesFn, ordered))
 	b.WriteString(`remove_owned() {
     # Validate BOTH families before mutating either; on failure retain identity
     # and let systemd retry. Partial installs are valid subsets, not foreign rules.
@@ -260,7 +267,30 @@ case "${1:-}" in
         verify_v6_early
         ;;
 `)
-	if includeUpgrade {
+	if ordered {
+		for _, migration := range []struct {
+			action string
+			rules  func(plan, string) []string
+		}{{"upgrade", plan.rules}, {"restore-legacy", plan.legacyV030Rules}} {
+			fmt.Fprintf(&b, "    %s)\n        identity\n        confirmed\n", migration.action)
+			for _, family := range []string{"iptables", "ip6tables"} {
+				for _, table := range []string{"filter", "mangle"} {
+					rules := migration.rules(s.Plan, family)
+					fmt.Fprintf(&b, "%s-restore --wait 10 --noflush <<'EOF'\n*%s\n", family, table)
+					for _, chain := range managedChains(table) {
+						fmt.Fprintf(&b, "-F %s\n", chain)
+						for _, r := range rules {
+							if strings.HasPrefix(r, "-A "+chain+" ") {
+								fmt.Fprintln(&b, r)
+							}
+						}
+					}
+					b.WriteString("COMMIT\nEOF\n")
+				}
+			}
+			b.WriteString("        ;;\n")
+		}
+	} else if includeUpgrade {
 		b.WriteString(`    upgrade)
         identity
         confirmed
@@ -296,7 +326,7 @@ esac
 // A mangle/FORWARD gate precedes filter/FORWARD regardless of Docker's temporary
 // jump reordering during startup. DNAT has already happened in PREROUTING. This
 // gate only DROPs or RETURNs, so it cannot bypass Docker's later isolation rules.
-func earlyScript(s state, rulesFn func(plan, string) []string) string {
+func earlyScript(s state, rulesFn func(plan, string) []string, ordered bool) string {
 	var b strings.Builder
 	for _, family := range []string{"iptables", "ip6tables"} {
 		tag := "v4_early"
@@ -327,6 +357,9 @@ func earlyScript(s state, rulesFn func(plan, string) []string) string {
 }
 `)
 		fmt.Fprintf(&b, "verify_%s() {\n    subset_%s\n", tag, tag)
+		if ordered {
+			b.WriteString(verifyOrder(family, "mangle", rules))
+		}
 		for _, r := range rules {
 			fmt.Fprintf(&b, "    $tool -w 10 %s\n", strings.Replace(r, "-A ", "-C ", 1))
 		}

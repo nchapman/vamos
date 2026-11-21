@@ -187,7 +187,7 @@ func (m *Manager) CheckOwnership(hostID string) error {
 }
 
 func matchesOwnedArtifact(s state, p, got, want string, allowLegacy bool) bool {
-	return got == want || (allowLegacy && p == scriptPath && got == legacyV030Script(s))
+	return got == want || (allowLegacy && p == scriptPath && (got == legacyV030Script(s) || got == previousScript(s)))
 }
 
 func (m *Manager) checkArtifacts(s state) error {
@@ -201,7 +201,7 @@ func (m *Manager) checkArtifactsFor(s state, allowLegacy bool) error {
 			return err
 		}
 		if !matchesOwnedArtifact(s, p, string(got), want, allowLegacy) {
-			if p == scriptPath && string(got) == legacyV030Script(s) {
+			if matchesOwnedArtifact(s, p, string(got), want, true) {
 				return errors.New("managed firewall script does not match this release; run vamos server upgrade")
 			}
 			return fmt.Errorf("owned artifact drift: %s", p)
@@ -253,6 +253,23 @@ func (m *Manager) statusFor(ctx context.Context, s *state, allowLegacy bool) (St
 	}
 	if err == nil {
 		err = m.action(ctx, "verify")
+	}
+	if err == nil && allowLegacy {
+		got, readErr := os.ReadFile(m.path(scriptPath))
+		err = readErr
+		if err == nil && string(got) != script(*s) {
+			rules := plan.rules
+			if string(got) == legacyV030Script(*s) {
+				rules = plan.legacyV030Rules
+			}
+			var check strings.Builder
+			for _, family := range []string{"iptables", "ip6tables"} {
+				for _, table := range []string{"filter", "mangle"} {
+					check.WriteString(verifyOrder(family, table, rules(s.Plan, family)))
+				}
+			}
+			_, err = m.command(ctx, "/bin/sh", "-ec", check.String())
+		}
 	}
 	if err == nil {
 		_, err = m.command(ctx, "systemctl", "is-enabled", "vamos-firewall.service")
@@ -452,7 +469,7 @@ func (m *Manager) cleanRetired(ctx context.Context, hostID string) error {
 		if e != nil {
 			return e
 		}
-		if !matchesOwnedArtifact(*s, p, string(got), want, false) {
+		if !matchesOwnedArtifact(*s, p, string(got), want, true) {
 			return fmt.Errorf("owned artifact drift: %s", p)
 		}
 	}
@@ -558,15 +575,23 @@ func (m *Manager) Upgrade(ctx context.Context, hostID string) (string, error) {
 			oldScript = ""
 			return Status{Degraded: true}, err
 		}
-		if err := m.action(ctx, "upgrade"); err != nil {
-			if restoreErr := m.restoreLocked(ctx, oldScript); restoreErr != nil {
+		if oldScript == legacyV030Script(*s) {
+			err = m.action(ctx, "upgrade")
+		}
+		if err == nil {
+			st, err = m.status(ctx, s)
+		}
+		if err != nil {
+			recovery, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if restoreErr := m.restoreLocked(recovery, *s, oldScript); restoreErr != nil {
 				err = errors.Join(err, fmt.Errorf("failed to restore firewall script after aborted upgrade: %w", restoreErr))
 			} else {
 				oldScript = ""
 			}
 			return Status{Degraded: true}, err
 		}
-		return m.status(ctx, s)
+		return st, nil
 	})
 	return oldScript, err
 }
@@ -579,15 +604,32 @@ func (m *Manager) RestoreScript(ctx context.Context, hostID, oldScript string) e
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	_, err := m.locked(ctx, hostID, func() (Status, error) {
-		return Status{}, m.restoreLocked(ctx, oldScript)
+		s, err := m.load(hostID)
+		if err != nil || s == nil {
+			return Status{}, errors.Join(err, errors.New("missing or invalid firewall state"))
+		}
+		st, err := m.status(ctx, s)
+		if err != nil || st.Pending {
+			return st, errors.Join(err, errors.New("cannot restore unverified firewall"))
+		}
+		return st, m.restoreLocked(ctx, *s, oldScript)
 	})
 	return err
 }
 
-func (m *Manager) restoreLocked(ctx context.Context, oldScript string) error {
-	unhookErr := m.action(ctx, "unhook")
-	if err := m.atomic(scriptPath, []byte(oldScript), 0700); err != nil {
-		return errors.Join(unhookErr, err)
+func (m *Manager) restoreLocked(ctx context.Context, s state, oldScript string) error {
+	switch oldScript {
+	case legacyV030Script(s):
+		if err := m.action(ctx, "restore-legacy"); err != nil {
+			return err
+		}
+	case previousScript(s): // Same rules; only the verifier changed.
+	default:
+		return errors.New("unknown rollback script")
 	}
-	return errors.Join(unhookErr, m.action(ctx, "boot"))
+	if err := m.atomic(scriptPath, []byte(oldScript), 0700); err != nil {
+		return err
+	}
+	_, err := m.statusFor(ctx, &s, true)
+	return err
 }

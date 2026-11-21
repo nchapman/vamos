@@ -74,7 +74,13 @@ server accepted confirmation. Registration is retained if firewall setup fails.
 Status reports enabled/disabled, pending confirmation, degraded state and detected
 SSH allowances. JSON exposes the same state for automation. Degraded means the
 recorded policy cannot be treated as healthy; investigate rather than assuming
-protection. Runtime state is maintained independently in
+protection. Verification compares the order of managed rules against a reference
+ruleset rendered by the host’s own iptables backend in a disposable network
+namespace (`unshare --net`). When an upgrade changes rules, it replaces only the
+managed chains’ contents, one table and IP family per transaction, without
+unhooking the policy. This is not a single transaction across IPv4 and IPv6.
+
+Runtime state is maintained independently in
 `/var/lib/vamos/firewall.json`, not in app YAML or the local registry. The shared
 operation/rollback lock lives at `/run/lock/vamos-firewall.lock`; querying status
 on a never-enabled host does not create a Vamos data directory.

@@ -325,7 +325,12 @@ func TestScriptGeneration(t *testing.T) {
 			t.Errorf("missing safety invariant %q", want)
 		}
 	}
-	for _, bad := range []string{"iptables-restore", "nft flush", "-F INPUT", "-F FORWARD", "-w 10 -P FORWARD", "-F DOCKER"} {
+	for _, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, "tables-restore") && !strings.HasSuffix(line, "-restore --wait 10 --noflush <<'EOF'") {
+			t.Fatalf("restore without scoped transaction: %s", line)
+		}
+	}
+	for _, bad := range []string{"nft flush", "-F INPUT", "-F FORWARD", "-w 10 -P FORWARD", "-F DOCKER"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("foreign mutation %s", bad)
 		}
@@ -562,5 +567,22 @@ func TestUpgradeMigratesConfirmedLegacyV030ScriptAndSupportsRollback(t *testing.
 	got, err = os.ReadFile(h.m.path(scriptPath))
 	if err != nil || string(got) != legacy {
 		t.Fatal("RestoreScript did not restore v0.3.0 firewall script")
+	}
+	shipped := previousScript(*s)
+	if err := h.m.atomic(scriptPath, []byte(shipped), 0700); err != nil {
+		t.Fatal(err)
+	}
+	h.calls = nil
+	oldScript, err = h.m.Upgrade(ctx, "host")
+	if err != nil || oldScript != shipped {
+		t.Fatalf("script-only upgrade: %v", err)
+	}
+	if err := h.m.RestoreScript(ctx, "host", oldScript); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range h.calls {
+		if strings.HasSuffix(call, " upgrade --locked") || strings.HasSuffix(call, " restore-legacy --locked") {
+			t.Fatalf("script-only migration changed rules: %s", call)
+		}
 	}
 }

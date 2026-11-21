@@ -1,6 +1,7 @@
 package firewall
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,7 +28,20 @@ func TestIPTablesHelper(t *testing.T) {
 	args = args[1:]
 	family := filepath.Base(args[0])
 	args = args[1:]
+	restore := strings.HasSuffix(family, "-restore")
+	var input *bufio.Scanner
 	table := "filter"
+	if restore {
+		if !reflect.DeepEqual(args, []string{"--wait", "10", "--noflush"}) {
+			os.Exit(2)
+		}
+		family = strings.TrimSuffix(family, "-restore")
+		input = bufio.NewScanner(os.Stdin)
+		if !input.Scan() {
+			os.Exit(2)
+		}
+		table = strings.TrimPrefix(input.Text(), "*")
+	}
 	for len(args) > 1 && (args[0] == "-w" || args[0] == "-t") {
 		if args[0] == "-t" {
 			table = args[1]
@@ -53,7 +67,32 @@ func TestIPTablesHelper(t *testing.T) {
 		}
 		os.Exit(code)
 	}
+	if restore {
+		for input.Scan() {
+			if input.Text() == "COMMIT" {
+				exit(0)
+			}
+			r := strings.Fields(input.Text())
+			if _, ok := chains[r[1]]; !ok || (r[1] != inputChain && r[1] != forwardChain) {
+				exit(2)
+			}
+			switch r[0] {
+			case "-F":
+				chains[r[1]] = nil
+			case "-A":
+				chains[r[1]] = append(chains[r[1]], r[2:])
+			default:
+				exit(2)
+			}
+		}
+		exit(2)
+	}
 	op := args[0]
+	// Migration may read live chains, but cannot mutate them command by
+	// command (even if its final snapshot would look correct).
+	if os.Getenv("VAMOS_MIGRATION") == "1" && op != "-S" && op != "-C" {
+		exit(2)
+	}
 	chain := ""
 	if len(args) > 1 {
 		chain = args[1]
@@ -157,7 +196,18 @@ func TestGeneratedShellLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tool := range []string{"iptables", "ip6tables"} {
+	if err := os.WriteFile(filepath.Join(bin, "unshare"), []byte(`#!/bin/sh
+set -eu
+[ "$1" = --net ]
+shift
+VAMOS_FIREWALL_DB=$(mktemp -d "$VAMOS_FIREWALL_DB/ref.XXXXXX")
+export VAMOS_FIREWALL_DB
+trap 'rm -rf "$VAMOS_FIREWALL_DB"' EXIT
+"$@"
+`), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"iptables", "ip6tables", "iptables-restore", "ip6tables-restore"} {
 		wrapper := fmt.Sprintf("#!/bin/sh\nexec '%s' -test.run='^TestIPTablesHelper$' -- \"$0\" \"$@\"\n", exe)
 		if err := os.WriteFile(filepath.Join(bin, tool), []byte(wrapper), 0700); err != nil {
 			t.Fatal(err)
@@ -183,6 +233,9 @@ func TestGeneratedShellLifecycle(t *testing.T) {
 		t.Helper()
 		cmd := exec.Command("/bin/sh", scriptFile, action, "--locked")
 		cmd.Env = append(os.Environ(), "VAMOS_FIREWALL_HELPER=1", "VAMOS_FIREWALL_DB="+db, "GORACE=atexit_sleep_ms=0")
+		if action == "upgrade" || action == "restore-legacy" {
+			cmd.Env = append(cmd.Env, "VAMOS_MIGRATION=1")
+		}
 		out, e := cmd.CombinedOutput()
 		if (e == nil) != wantSuccess {
 			t.Fatalf("%s: %v %s", action, e, out)
@@ -234,7 +287,7 @@ func TestGeneratedShellLifecycle(t *testing.T) {
 	legacyBody = strings.ReplaceAll(legacyBody, "/run/lock", filepath.Join(root, "run/lock"))
 	legacyBody = strings.ReplaceAll(legacyBody, "/var/lib/vamos", filepath.Join(root, "var/lib/vamos"))
 	legacyBody = strings.ReplaceAll(legacyBody, "sync -f "+filepath.Join(root, "var/lib/vamos"), ":")
-	run("unhook", true)
+	run("restore-legacy", true)
 	if err = os.WriteFile(scriptFile, []byte(legacyBody), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -255,6 +308,14 @@ func TestGeneratedShellLifecycle(t *testing.T) {
 	if err = json.Unmarshal(data, &chains); err != nil {
 		t.Fatal(err)
 	}
+	rs := chains[inputChain]
+	rs[0], rs[1] = rs[1], rs[0]
+	reordered, _ := json.Marshal(chains)
+	if err = os.WriteFile(file, reordered, 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("verify", false)
+	rs[0], rs[1] = rs[1], rs[0]
 	chains[inputChain] = append(chains[inputChain], []string{"-j", "ACCEPT"})
 	modified, _ := json.Marshal(chains)
 	if err = os.WriteFile(file, modified, 0600); err != nil {
