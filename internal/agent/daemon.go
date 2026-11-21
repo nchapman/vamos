@@ -124,8 +124,7 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		return fmt.Errorf("recover agent queue: %w", err)
 	}
 	for _, id := range readyIDs {
-		d.workWG.Add(1)
-		go func() { defer d.workWG.Done(); d.execute(ctx, id) }()
+		d.schedule(ctx, id)
 	}
 	parent := filepath.Dir(d.SocketPath)
 	if info, err := os.Lstat(parent); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -165,8 +164,9 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		}
 	}
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	// Connection handlers can schedule accepted work until they exit.
 	defer d.workWG.Wait()
+	defer wg.Wait()
 	stopListen := context.AfterFunc(ctx, func() { _ = listener.Close() })
 	defer stopListen()
 	connSem := make(chan struct{}, 64)
@@ -299,24 +299,27 @@ func (d *Daemon) serveConn(ctx context.Context, conn net.Conn) error {
 				_ = writeError(conn, code, err.Error())
 				continue
 			}
-			if err := writeOK(conn, response); err != nil {
-				return err
+			awaitingUpload := !response.Deduplicated && request.PayloadBytes != 0
+			if !response.Deduplicated && !awaitingUpload {
+				// Admission, not delivery of the acknowledgment, owns ready work.
+				d.schedule(ctx, response.OperationID)
 			}
-			if !response.Deduplicated {
-				if request.PayloadBytes != 0 {
-					// The fixed byte count is part of the accepted control frame, so
-					// the following frame remains aligned on a persistent connection.
-					if err := conn.SetReadDeadline(time.Now().Add(5 * time.Minute)); err != nil {
-						return err
-					}
-					err := d.Queue.StorePayload(response.OperationID, reader)
-					_ = conn.SetReadDeadline(time.Time{})
-					if err != nil {
-						return err
-					}
+			err = writeOK(conn, response)
+			if awaitingUpload {
+				if err == nil {
+					err = conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 				}
-				d.workWG.Add(1)
-				go func() { defer d.workWG.Done(); d.execute(ctx, response.OperationID) }()
+				if err == nil {
+					err = d.Queue.StorePayload(response.OperationID, reader)
+					_ = conn.SetReadDeadline(time.Time{})
+				}
+				if err != nil {
+					return errors.Join(err, d.Queue.Fence(response.OperationID, "admitted payload transfer did not complete"))
+				}
+				d.schedule(ctx, response.OperationID)
+			}
+			if err != nil {
+				return err
 			}
 		case agentproto.MethodRead:
 			var request agentproto.ReadRequest
@@ -541,6 +544,11 @@ func mustJSON(v any) []byte {
 		return []byte("{}")
 	}
 	return data
+}
+
+func (d *Daemon) schedule(ctx context.Context, id string) {
+	d.workWG.Add(1)
+	go func() { defer d.workWG.Done(); d.execute(ctx, id) }()
 }
 
 func (d *Daemon) execute(ctx context.Context, id string) {

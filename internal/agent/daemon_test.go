@@ -3,6 +3,8 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -531,6 +533,72 @@ func TestDaemonPreservesQueuedWorkAcrossRestartBeforeAdmission(t *testing.T) {
 	rec2After, err := cl2.Wait(context.Background(), sub2.OperationID)
 	if err != nil || rec2After.Phase != agentproto.PhaseSucceeded || rec2After.Response == nil || rec2After.Response.Status.App != "second" {
 		t.Fatalf("queued op2 did not schedule and succeed after restart: %+v err=%v", rec2After, err)
+	}
+}
+
+func TestLostSubmitAcknowledgmentDoesNotStrandAdmission(t *testing.T) {
+	for _, pendingUpload := range []bool{false, true} {
+		name := "ready"
+		if pendingUpload {
+			name = "awaiting-upload"
+		}
+		t.Run(name, func(t *testing.T) {
+			stampAgentBuild(t)
+			var d *Daemon
+			client, _, stop := testDaemon(t, func(context.Context, deploy.Request, []byte) (deploy.Response, error) {
+				return deploy.Response{Version: 1}, nil
+			}, nil, func(daemon *Daemon) { d = daemon })
+			defer stop()
+			conn, err := net.Dial("unix", d.SocketPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			if _, err := io.WriteString(conn, "VAMOS-BRIDGE ci:billing\n"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := agentclient.Handshake(ctx, conn, nil); err != nil {
+				t.Fatal(err)
+			}
+			req := statusRequest("billing")
+			req.Action, req.Operation = "resume", strings.Repeat("1", 32)
+			submit := agentproto.SubmitRequest{Request: req, IdempotencyKey: req.Operation}
+			var payload []byte
+			want := agentproto.PhaseSucceeded
+			if pendingUpload {
+				payload = []byte("payload")
+				req.Action = "secrets-stage"
+				req.SecretName = "token"
+				submit.Request = req
+				hash := sha256.Sum256(payload)
+				submit.PayloadBytes, submit.PayloadSHA256 = int64(len(payload)), hex.EncodeToString(hash[:])
+				want = agentproto.PhaseUncertain
+			}
+			// Buffer the submit, then disconnect before the queue can admit it.
+			d.Queue.mu.Lock()
+			admitted := d.Queue.changed
+			err = agentproto.EncodeFrame(conn, agentproto.RPCRequest{Version: agentproto.APIVersion, Method: agentproto.MethodSubmit, Payload: mustJSON(submit)})
+			_ = conn.Close()
+			d.Queue.mu.Unlock()
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-admitted:
+			case <-ctx.Done():
+				t.Fatal("submit was not admitted")
+			}
+			again, err := client.Submit(ctx, req, submit.IdempotencyKey, payload)
+			if err != nil || !again.Deduplicated {
+				t.Fatalf("resubmit did not reattach: %+v, %v", again, err)
+			}
+			rec, err := client.Wait(ctx, again.OperationID)
+			if err != nil || rec.Phase != want {
+				t.Fatalf("admitted operation did not reach %s: %+v, %v", want, rec, err)
+			}
+		})
 	}
 }
 
