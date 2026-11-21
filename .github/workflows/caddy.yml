@@ -1,37 +1,58 @@
 name: Caddy Ingress Image
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - "docker/caddy/**"
-      - ".github/workflows/caddy.yml"
+    tags: ['caddy-*']
 
 permissions:
   contents: read
   packages: write
 
+# Serialize registry checks, build and promotion (including older-line fixes).
+concurrency:
+  group: caddy-ghcr-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
-    name: Build and push ghcr.io/nchapman/vamos/caddy
     runs-on: ubuntu-24.04
+    env:
+      IMAGE: ghcr.io/nchapman/vamos/caddy
     steps:
       - uses: actions/checkout@v7
-
       - uses: docker/setup-buildx-action@v4
-
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push multi-arch Caddy image
+      - name: Select release against existing GHCR tags
+        id: plan
         run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --provenance=false \
-            --push \
-            -t ghcr.io/nchapman/vamos/caddy:2.11.9 \
-            docker/caddy
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y skopeo
+          fi
+          skopeo list-tags --authfile "$HOME/.docker/config.json" "docker://$IMAGE" > "$RUNNER_TEMP/tags.json"
+          python3 docker/caddy/release.py "$GITHUB_REF_NAME" < "$RUNNER_TEMP/tags.json" >> "$GITHUB_OUTPUT"
+
+      - name: Build new immutable version
+        if: steps.plan.outputs.build == 'yes'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
+            --push -t "$IMAGE:$VERSION" docker/caddy
+
+      - name: Promote the existing multiarch index without rebuilding
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          LINE: ${{ steps.plan.outputs.line }}
+        run: |
+          digest_of() {
+            skopeo inspect --authfile "$HOME/.docker/config.json" --no-tags \
+              --format '{{.Digest}}' "docker://$IMAGE:$1"
+          }
+          digest=$(digest_of "$VERSION")
+          docker buildx imagetools create -t "$IMAGE:$LINE" "$IMAGE@$digest"
+          test "$(digest_of "$LINE")" = "$digest"

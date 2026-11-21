@@ -210,7 +210,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--owner', required=True)
     parser.add_argument('--phase', choices=('prepare', 'verify-restart'), default='prepare')
-    parser.add_argument('--scenario', choices=('all', 'firewall', 'waf-cache', 'sudo'), default='all')
+    parser.add_argument('--scenario', choices=('all', 'firewall', 'waf-cache', 'sudo', 'caddy-patch'), default='all')
     args = parser.parse_args()
     require_guest(args.owner)
     h = Harness()
@@ -221,6 +221,14 @@ def main():
         result = json.loads(h.artifacts.joinpath('result.json').read_text())
     result['phase'] = args.phase
     try:
+        if args.scenario == 'caddy-patch':
+            import caddy_patch
+            if args.phase != 'prepare':
+                raise ValueError('caddy-patch is a single-phase scenario')
+            bootstrap(h)
+            caddy_patch.run(h, args.owner)
+            result.update(prepare_passed=True, restart_required=False, passed=True)
+            return
         import recovery
         if args.scenario == 'sudo':
             import sudo_scenarios

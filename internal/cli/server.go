@@ -14,7 +14,8 @@ import (
 	"github.com/nchapman/vamos/internal/ssh"
 )
 
-const serverUpgradeImpact = "Host upgrade restarts the Vamos agent and may replace Caddy or update the managed firewall. Caddy replacement can interrupt public traffic."
+const caddyPatchNotice = "The host installs daily Caddy patches on its configured image line. Replacing Caddy can interrupt public traffic."
+const serverUpgradeImpact = "Host upgrade restarts the Vamos agent and may replace Caddy or update the managed firewall. " + caddyPatchNotice
 
 const serverHelp = `Usage:
   vamos server inspect [--json] [--timeout 15s] TARGET

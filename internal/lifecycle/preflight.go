@@ -15,6 +15,9 @@ import (
 )
 
 func (m *Manager) preflight(ctx context.Context, receipt bool) error {
+	if err := m.refreshNamesFree(ctx); err != nil {
+		return err
+	}
 	for _, path := range dataPaths {
 		if err := rejectSymlink(m.path(path)); err != nil {
 			return err

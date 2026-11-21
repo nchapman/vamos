@@ -18,13 +18,13 @@ func indexOf(calls []string, prefix string) int {
 	return -1
 }
 
-func TestSetupRunsPinnedHardenedCaddyContainer(t *testing.T) {
+func TestSetupRunsDigestResolvedHardenedCaddyContainer(t *testing.T) {
 	m, f := newTestManager(t)
 	s, err := m.Bootstrap(context.Background(), testConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.caddy == nil || f.caddy.Image != CaddyImage || !f.caddy.Running || s.CaddyContainerID != f.caddy.ID {
+	if f.caddy == nil || !strings.HasPrefix(f.caddy.Image, CaddyImage+"@") || !f.caddy.Running || s.CaddyContainerID != f.caddy.ID {
 		t.Fatalf("caddy=%+v state=%+v", f.caddy, s)
 	}
 	run := strings.Join(f.caddy.Args, " ")
@@ -83,14 +83,17 @@ func TestUpgradeReplacesCaddyWithDroppedHardening(t *testing.T) {
 	}
 }
 
-func TestUpgradeMovesCaddyToPinnedImageAndKeepsRoutes(t *testing.T) {
+func TestUpgradeMovesCaddyToReleaseLineAndKeepsRoutes(t *testing.T) {
 	m, f := newTestManager(t)
 	if _, err := m.Bootstrap(context.Background(), testConfig); err != nil {
 		t.Fatal(err)
 	}
 	old := "caddy:2.10.0@sha256:" + strings.Repeat("0", 64)
 	f.caddy.Image = old
-	f.caddyImages[digestRef(old)] = true
+	delete(f.caddyImages, digestRef(f.caddy.Args[len(f.caddy.Args)-7]))
+	delete(f.caddyImages, CaddyImage)
+	f.caddy.ImageID = "sha256:" + strings.Repeat("a", 64)
+	f.caddyImages[digestRef(old)] = f.caddy.ImageID
 	oldID := f.caddy.ID
 	if _, err := m.Bootstrap(context.Background(), testConfig); err == nil || !strings.Contains(err.Error(), "server upgrade") {
 		t.Fatalf("repeat setup accepted an outdated Caddy image: %v", err)
@@ -104,14 +107,14 @@ func TestUpgradeMovesCaddyToPinnedImageAndKeepsRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.caddy.Image != CaddyImage || f.caddy.ID == oldID || s.CaddyContainerID != f.caddy.ID || f.caddyImages[digestRef(old)] {
+	if !strings.HasPrefix(f.caddy.Image, CaddyImage+"@") || f.caddy.ID == oldID || s.CaddyContainerID != f.caddy.ID || f.caddyImages[digestRef(old)] != "" {
 		t.Fatalf("caddy=%+v state=%s images=%v", f.caddy, s.CaddyContainerID, f.caddyImages)
 	}
 	calls := f.calls[before:]
-	if pull, remove := indexOf(calls, "docker pull"), indexOf(calls, "docker container rm"); pull < 0 || remove < pull {
+	if pull, remove := indexOf(calls, "docker pull"), indexOf(calls, "docker container stop"); pull < 0 || remove < pull {
 		t.Fatalf("old ingress removed before the new image was pulled: %v", calls)
 	}
-	if remove := indexOf(calls, "docker container rm"); indexOf(calls[remove+1:], "docker pull") >= 0 {
+	if remove := indexOf(calls, "docker container stop"); indexOf(calls[remove+1:], "docker pull") >= 0 {
 		t.Fatal("upgrade contacts registry again after taking down working ingress")
 	}
 	data, err := os.ReadFile(m.path(caddyfilePath))
@@ -280,7 +283,10 @@ func TestTeardownRemovesOutdatedIngressImage(t *testing.T) {
 	}
 	old := "caddy:2.10.0@sha256:" + strings.Repeat("0", 64)
 	f.caddy.Image = old
-	f.caddyImages[digestRef(old)] = true
+	delete(f.caddyImages, digestRef(f.caddy.Args[len(f.caddy.Args)-7]))
+	delete(f.caddyImages, CaddyImage)
+	f.caddy.ImageID = "sha256:" + strings.Repeat("a", 64)
+	f.caddyImages[digestRef(old)] = f.caddy.ImageID
 	if _, err := m.Teardown(context.Background(), testConfig.Name, true); err != nil {
 		t.Fatal(err)
 	}
@@ -292,6 +298,7 @@ func TestTeardownRemovesOutdatedIngressImage(t *testing.T) {
 func TestIngressContainerdAllowlistIsExact(t *testing.T) {
 	c := &caddyContainer{ID: strings.Repeat("a", 64)}
 	c.Config.Image = CaddyImage
+	c.ownsTag = true
 	for _, tc := range []struct {
 		resource, item string
 		owned          bool
@@ -308,5 +315,130 @@ func TestIngressContainerdAllowlistIsExact(t *testing.T) {
 		if got := c.ownsContainerd(tc.resource, tc.item); got != tc.owned {
 			t.Errorf("ownsContainerd(%s, %s) = %v, want %v", tc.resource, tc.item, got, tc.owned)
 		}
+	}
+}
+
+func TestRefreshCaddyActualIdentity(t *testing.T) {
+	m, f := newTestManager(t)
+	ctx := context.Background()
+	s, err := m.Bootstrap(ctx, testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := s.CaddyContainerID
+	if err = m.refreshCaddy(ctx, s); err != nil || s.CaddyContainerID != old {
+		t.Fatalf("unchanged: %v", err)
+	}
+	f.release = 2
+	if err = m.refreshCaddy(ctx, s); err != nil || s.CaddyContainerID == old {
+		t.Fatalf("changed: %v", err)
+	}
+}
+
+func TestBootstrapDoesNotInstallAnOldImageWhenLinePullFails(t *testing.T) {
+	m, f := newTestManager(t)
+	run := m.Run
+	ctx := context.Background()
+	m.Run = func(ctx context.Context, name string, args []string) (process.Result, error) {
+		if name == "docker" && args[0] == "pull" && args[len(args)-1] == CaddyImage {
+			return process.Result{}, os.ErrNotExist
+		}
+		return run(ctx, name, args)
+	}
+	if _, err := m.Bootstrap(ctx, testConfig); err == nil || f.caddy != nil {
+		t.Fatalf("started ingress without the configured patch line: %v", err)
+	}
+}
+
+func TestRefreshCaddyRollsBackRunFailure(t *testing.T) {
+	m, f := newTestManager(t)
+	ctx := context.Background()
+	s, err := m.Bootstrap(ctx, testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := f.caddy.ID
+	run := m.Run
+	f.release++
+	m.Run = func(ctx context.Context, name string, args []string) (process.Result, error) {
+		if name == "docker" && args[0] == "run" {
+			_, _ = run(ctx, name, args)
+			return process.Result{}, os.ErrPermission
+		}
+		return run(ctx, name, args)
+	}
+	if err = m.refreshCaddy(ctx, s); err == nil {
+		t.Fatal("expected failed run")
+	}
+	if f.caddy == nil || f.caddy.ID != old || s.CaddyContainerID != old || !f.caddy.Running {
+		t.Fatal("previous ingress not restored")
+	}
+	if err = m.checkCaddy(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := ReadState(m.path(StatePath))
+	if err != nil || receipt.CaddyContainerID != old {
+		t.Fatalf("rollback receipt: %+v, %v", receipt, err)
+	}
+	if _, err = m.Teardown(ctx, testConfig.Name, true); err != nil {
+		t.Fatalf("rollback left foreign inventory: %v", err)
+	}
+}
+
+func TestUpgradeDoesNotCreateOverAnInterruptedCaddyReplacement(t *testing.T) {
+	m, f := newTestManager(t)
+	ctx := context.Background()
+	s, err := m.Bootstrap(ctx, testConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a hard shutdown just after renaming the old ingress.
+	f.previous, f.caddy = f.caddy, nil
+	if err := m.ensureCaddy(ctx, s); err == nil || !strings.Contains(err.Error(), "vamos-caddy-previous") || f.caddy != nil || f.previous.ID != s.CaddyContainerID {
+		t.Fatalf("expected actionable refusal without creating new ingress: %v", err)
+	}
+}
+
+func TestRefreshCaddyRefusesDriftBeforePull(t *testing.T) {
+	for _, kind := range []string{"missing", "replaced", "stopped", "shape", "file", "runtime"} {
+		t.Run(kind, func(t *testing.T) {
+			m, f := newTestManager(t)
+			ctx := context.Background()
+			s, err := m.Bootstrap(ctx, testConfig)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := s.CaddyContainerID
+			switch kind {
+			case "missing":
+				f.caddy = nil
+			case "replaced":
+				f.caddy.ID = strings.Repeat("f", 64)
+			case "stopped":
+				f.caddy.Running = false
+			case "shape":
+				f.caddy.Mutate = func(d map[string]any) { d["Config"].(map[string]any)["User"] = "root" }
+			case "file":
+				f.write(caddyfilePath, "changed")
+			case "runtime":
+				m.CaddyConfig = func(context.Context) ([]byte, error) { return []byte(`{}`), nil }
+			}
+			before := len(f.calls)
+			if err = m.refreshCaddy(ctx, s); err == nil || indexOf(f.calls[before:], "docker pull") >= 0 || s.CaddyContainerID != old {
+				t.Fatalf("accepted %s: %v", kind, err)
+			}
+		})
+	}
+}
+
+func TestTeardownRejectsRetargetedCaddyTag(t *testing.T) {
+	m, f := newTestManager(t)
+	ctx := context.Background()
+	if _, err := m.Bootstrap(ctx, testConfig); err != nil {
+		t.Fatal(err)
+	}
+	f.caddyImages[CaddyImage] = "sha256:" + strings.Repeat("f", 64)
+	if _, err := m.Teardown(ctx, testConfig.Name, true); err == nil || f.caddy == nil || !f.caddy.Running {
+		t.Fatalf("removed ingress with unowned tag: %v", err)
 	}
 }

@@ -52,18 +52,25 @@ func (p *presentation) renderServerStatus(name, target string, status *ssh.Statu
 }
 
 func writeServerMutationStart(w io.Writer, operation, name, target, domain string) error {
+	var notice string
+	switch operation {
+	case "add":
+		notice = caddyPatchNotice
+	case "upgrade":
+		notice = serverUpgradeImpact
+	}
 	if p := presentationFor(w); p != nil {
 		text := p.header("server "+operation, "", name, target)
 		text += p.ink("warning", "Root host mutation authorized", true) + "\n"
 		text += p.field("Domain", domain)
-		if operation == "upgrade" {
-			text += p.prose(serverUpgradeImpact)
+		if notice != "" {
+			text += p.prose(notice)
 		}
 		return p.write(w, text)
 	}
 	_, err := fmt.Fprintf(w, "%s / %s / %s: %s (root host mutation authorized)\n", name, target, domain, operation)
-	if err == nil && operation == "upgrade" {
-		_, err = fmt.Fprintln(w, serverUpgradeImpact)
+	if err == nil && notice != "" {
+		_, err = fmt.Fprintln(w, notice)
 	}
 	return err
 }

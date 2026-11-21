@@ -83,6 +83,9 @@ func serverLifecycle(ctx context.Context, operation string, args []string, stdou
 		if operation == "upgrade" {
 			return usageError(stderr, serverUpgradeImpact+" Schedule a maintenance window and pass --yes to proceed.")
 		}
+		if operation == "add" {
+			return usageError(stderr, caddyPatchNotice+" Review the target and pass --yes to proceed.")
+		}
 		return usageError(stderr, "host mutation requires --yes after reviewing the target and operation")
 	}
 	if operation == "teardown" && !*purge {

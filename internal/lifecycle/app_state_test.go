@@ -104,7 +104,7 @@ func TestTeardownRefusesMountedAppReceipt(t *testing.T) {
 	}
 	// Only the read-only ingress lookup that scopes the mount check may run.
 	for _, call := range f.calls {
-		if !strings.HasPrefix(call, "systemctl is-active") && !strings.HasPrefix(call, "docker container ls") && !strings.HasPrefix(call, "docker container inspect") {
+		if !strings.HasPrefix(call, "systemctl is-active ") && !strings.HasPrefix(call, "docker container ls ") && !strings.HasPrefix(call, "docker container inspect ") && !strings.HasPrefix(call, "docker image ls ") && !strings.HasPrefix(call, "docker image inspect ") {
 			t.Fatal("mutated before mount refusal", f.calls)
 		}
 	}

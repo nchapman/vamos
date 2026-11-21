@@ -29,6 +29,18 @@ func TestServerUpgradeDisclosesEffectsBeforeConsent(t *testing.T) {
 	}
 }
 
+func TestServerDisclosesAutomaticIngressPatchesBeforeConsent(t *testing.T) {
+	for _, action := range []string{"add", "upgrade"} {
+		for _, args := range [][]string{{"help", "server", action}, {"server", action, "prod"}} {
+			var out bytes.Buffer
+			Run(args, &out, &out, "dev")
+			if !strings.Contains(out.String(), "daily Caddy patch") || !strings.Contains(out.String(), "interrupt public traffic") {
+				t.Fatalf("%v: missing daily patch notice: %s", args, &out)
+			}
+		}
+	}
+}
+
 func TestServerUpgradeUsesExplicitRootLifecycleOperation(t *testing.T) {
 	store := registry.New(t.TempDir())
 	server := registry.Server{Name: "prod", Target: "root@prod", Domain: "apps.example.com"}

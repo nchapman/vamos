@@ -164,6 +164,9 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 	if err := m.step(s, "stop-services"); err != nil {
 		return nil, err
 	}
+	if err := m.removeRefreshTimer(ctx, s); err != nil {
+		return nil, err
+	}
 	// A lost connection is not rollback. While the daemon is still active,
 	// remove the owned ingress and prove Docker is otherwise empty; after it is
 	// stopped/masked, package cleanup can resume.

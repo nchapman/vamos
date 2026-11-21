@@ -26,7 +26,7 @@ See the [whole-system operations checklist](operations.md) for health monitoring
 5. Refresh Ubuntu's configured APT indexes and simulate installing `docker.io` and `docker-buildx` without recommendations. Refuse changes to pre-existing packages. Record every newly installed package name **before** installing anything.
 6. Mask the new services so package scripts cannot start Docker before it is configured. Install the recorded packages from the current archive; a resumed install never upgrades packages that are already present and records any fresh dependency a newer archive introduces before installing it. Installer logs are drained with bounded diagnostic tails, not killed for being verbose.
 7. Write a Caddy configuration with its admin listener on `127.0.0.1:2019` and no app routes. Configure Docker with no shared default bridge and the bounded `local` log driver. Record managed file digests and service-account identities, then unmask, enable and start Docker.
-8. Pull Vamos's pinned Caddy image and run it as the `vamos-caddy` container (see [Caddy ingress](#caddy-ingress)), then start `vamos-agent.service`. Check Docker, Buildx, the container, the Caddyfile and Caddy's live configuration.
+8. Pull Vamos's dated Caddy image line, run it as the `vamos-caddy` container and enable daily patch checks (see [Caddy ingress](#caddy-ingress)), then start `vamos-agent.service`. Check Docker, Buildx, the container, the Caddyfile and Caddy's live configuration.
 9. Mark the host ready, then register it locally. The first local registration becomes the default. A local write failure does not undo a successful remote installation; use `server connect` with the same identity once host status confirms ready and no active worker.
 
 State lives in the private `/var/lib/vamos/host.json` ownership manifest/journal. Writes use a synced temporary file and atomic replacement. The local registry is `vamos/registry.json` under Go's platform user-config directory (`~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux, `%AppData%` on Windows), protected by a stable advisory lock. It is not app configuration and is not stored in the project.
@@ -82,7 +82,7 @@ Both `--yes` and `--purge` are required. The latter authorizes removal of owned 
 - API-loaded Caddy configuration that differs from its managed file, or a `vamos-caddy` container labeled for another installation.
 - An APT purge plan that would remove anything outside the recorded package set.
 
-The owned `vamos-caddy` container and its pinned image are the only Docker resources allowed before approval. After approval, while Docker still runs, teardown removes them and proves Docker and containerd are otherwise empty. It then masks/stops owned services, purges only recorded packages **without autoremove**, removes fixed owned configuration/runtime directories, deletes recorded service accounts/groups, removes its masks, and discards validated completed app receipts without recursively deleting app directories. Local registration is forgotten only after the host reports `removed`.
+The owned `vamos-caddy` container and its managed ingress image are the only Docker resources allowed before approval. After approval, while Docker still runs, teardown removes them and proves Docker and containerd are otherwise empty. It then masks/stops owned services, purges only recorded packages **without autoremove**, removes fixed owned configuration/runtime directories, deletes recorded service accounts/groups, removes its masks, and discards validated completed app receipts without recursively deleting app directories. Local registration is forgotten only after the host reports `removed`.
 
 The host receipt and runtime lock remain so a repeated teardown is safe. Reboot naturally clears `/run` locks. A subsequent add performs fresh-host checks again, creates a new installation identity, and re-registers the server. OS package indexes/caches, system journals, and authentication logs are retained. Kernel networking artifacts can outlive daemon removal until reboot; teardown never flushes the host firewall globally. This is installation removal, not a pristine-OS snapshot restore.
 
@@ -111,11 +111,28 @@ The internal JSON protocol adds `bootstrap` and `teardown` operations with `conf
 
 ## Caddy ingress
 
-Caddy runs as the `vamos-caddy` Docker container from an image **pinned by digest** in each Vamos release, not from Ubuntu's `caddy` package (frozen at 2.6.2 on 24.04 and 26.04). `vamos server upgrade` replaces the container when its image or configuration no longer matches the release. It pulls the replacement image before removing the old container. In-flight connections can be cut, and new requests can fail until Caddy is serving again. Replacement preserves routes (`/etc/caddy/Caddyfile`), certificates and ACME state (`/var/lib/caddy/data`) and autosaved config (`/var/lib/caddy/config`), which live on the host.
+Vamos runs its own Caddy build in the `vamos-caddy` Docker container. The host follows a **dated image line**, initially `ghcr.io/nchapman/vamos/caddy:20261120`. The bare date is a moving tag; `:20261120.0`, `:20261120.1`, etc. identify individual builds. The date is independent of the Vamos and upstream Caddy versions.
+
+A systemd timer pulls the configured line daily. An unchanged image needs no restart. A patch replaces only Caddy, not the agent, firewall or apps. Existing hosts get the timer with a one-time `vamos server upgrade --yes NAME`; subsequent patches on the same line need no CLI or host upgrade. The timer never selects a newer date.
+
+In-flight connections can be cut, and new requests can fail until Caddy is serving again. Replacement preserves routes (`/etc/caddy/Caddyfile`), certificates and ACME state (`/var/lib/caddy/data`) and autosaved config (`/var/lib/caddy/config`), which live on the host.
 
 The container uses host networking, so loopback upstreams, the loopback admin API on `127.0.0.1:2019`, HTTP/3 and client addresses behave as they would for a host process. It runs as root with every capability dropped except binding ports 80/443, `no-new-privileges`, a read-only root filesystem and the `local` log driver; `/etc/caddy` is mounted read-only. The `unless-stopped` restart policy brings it back after reboots and Docker restarts. Vamos runs the Caddy CLI with `docker exec vamos-caddy caddy …`; view its logs with `docker logs vamos-caddy`.
 
-The container carries an `org.vamos.caddy.host` label with the installation ID. A container with that name and any other label is never adopted, replaced or removed. Repeat setup only verifies the container; if it is stopped, missing or runs an image this release does not pin, run `vamos server upgrade` to repair it.
+The container carries an `org.vamos.caddy.host` label with the installation ID. A container with that name and any other label is never adopted, replaced or removed. Repeat setup only verifies the container; if it is stopped, missing or no longer matches the managed installation, run `vamos server upgrade` to repair it.
+
+Check the next run with `systemctl list-timers vamos-caddy-refresh.timer`; inspect the last check with `journalctl -u vamos-caddy-refresh.service`. To request the same check immediately, an administrator can run `sudo systemctl start vamos-caddy-refresh.service`.
+
+**Publishing a patch (maintainers):** Tag the reviewed image source commit `caddy-YYYYMMDD.N` and push that Git tag. For example, `caddy-20261120.0` publishes both `:20261120.0` and `:20261120`; `caddy-20261120.1` advances only that date line. The [image workflow](../.github/workflows/caddy.yml) builds for Linux amd64 and arm64. A backport is a new numbered patch on the affected line, not a new Vamos release. Protect the release tags and restrict package write access: publishing to a moving line authorizes an unattended update on the hosts following it. Publish the initial `.0` **before** releasing a Vamos bundle that selects a new line.
+
+### Caddy ingress recovery
+
+If a patch cannot start a working proxy, Vamos attempts to restore the old container and records a failure. A power loss during replacement can leave `vamos-caddy-previous` behind. In that case the next check refuses to overwrite either container. Compare their full IDs, running states and `org.vamos.caddy.host` labels (`docker inspect`) with `caddy_container_id` and the installation `id` in `/var/lib/vamos/host.json`.
+
+- If only `vamos-caddy-previous` exists and its full ID and label match the receipt, rename that verified container back to `vamos-caddy` and start it if stopped.
+- If the receipt identifies a healthy `vamos-caddy`, leave it serving. Confirm the previous container is the stopped, superseded ingress before removing it by full ID. If ownership or the serving configuration is unclear, do not delete either container; reconcile ingress first.
+
+Verify that the public routes work, then retry the refresh service. Do not edit the receipt or prune Docker to clear the refusal.
 
 ## Runtime package updates
 
@@ -123,7 +140,7 @@ Ubuntu owns the Docker runtime packages (`docker.io`, `docker-buildx`, `containe
 
 A Docker package update restarts the daemon. Docker live restore stays disabled (the isolated builder depends on that), so containers restart with the daemon: Caddy and app containers use `unless-stopped` and come back on their own, while the builder stays stopped until the next build. Expect a brief interruption, and an in-progress deploy may fail and need a retry.
 
-Neither add nor connect blesses changed managed file hashes or an executor replacement; use `vamos server upgrade` for Vamos's own binaries and its pinned Caddy image. See the [maintenance notes](operations.md#os-and-runtime-maintenance-boundary) for the remaining operator responsibilities.
+Neither add nor connect blesses changed managed file hashes or an executor replacement; use `vamos server upgrade` for Vamos's own binaries and explicit host maintenance. See the [maintenance notes](operations.md#os-and-runtime-maintenance-boundary) for the remaining operator responsibilities.
 
 ## Verification
 

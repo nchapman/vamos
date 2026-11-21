@@ -80,7 +80,7 @@ func TestMetadataStatusAndMutationLabels(t *testing.T) {
 	state := &lifecycle.State{ID: "id", Phase: "ready"}
 	_ = writeServerMutationStart(&plain, "add", "home", "root@home", "example.test")
 	_ = writeServerMutationResult(&plain, "home", state, "done")
-	if want := "home / root@home / example.test: add (root host mutation authorized)\nhome: ready (installation id)\ndone\n"; plain.String() != want {
+	if want := "home / root@home / example.test: add (root host mutation authorized)\n" + caddyPatchNotice + "\nhome: ready (installation id)\ndone\n"; plain.String() != want {
 		t.Fatalf("plain changed: %q", plain.String())
 	}
 }

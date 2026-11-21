@@ -6,19 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
-// Caddy runs as a Vamos-managed container pinned by digest, so Vamos controls
-// the ingress version independently of the distribution's archive. Upgrading
-// Vamos is how Caddy is upgraded.
 const (
+	caddyRepo   = "ghcr.io/nchapman/vamos/caddy"
+	CaddyImage  = caddyRepo + ":20261120"
 	caddyDigest = "sha256:b6a94eb93915955ea6df57a16dd69b80274fc21b188713d998261b49e4975eea"
-	// CaddyImage keeps the tag for readability; Docker resolves the digest.
-	CaddyImage = "ghcr.io/nchapman/vamos/caddy:2.11.9@" + caddyDigest
+	caddyPinned = caddyRepo + ":2.11.9@" + caddyDigest
 	// caddyImageRef is the form Docker's image inventory and removal accept.
-	caddyImageRef  = "ghcr.io/nchapman/vamos/caddy@" + caddyDigest
+	caddyImageRef  = caddyRepo + "@" + caddyDigest
 	CaddyContainer = "vamos-caddy"
 	caddyHostLabel = "org.vamos.caddy.host"
 	// Host paths and loopback admin endpoint shared with app deployments.
@@ -44,9 +44,9 @@ func CaddyCommand(args ...string) (string, []string) {
 // root user keeps only the capability to bind 80/443, on a read-only rootfs.
 // unless-stopped brings Caddy back after Docker restarts, including the daemon
 // restarts that Ubuntu runtime package updates trigger.
-func caddyRunArgs(hostID string) []string {
+func caddyRunArgs(hostID, image string) []string {
 	return []string{
-		"run", "--detach", "--name", CaddyContainer,
+		"run", "--pull=never", "--detach", "--name", CaddyContainer,
 		"--label", caddyHostLabel + "=" + hostID,
 		"--restart", caddyRestart, "--network", caddyNetworking, "--log-driver", "local",
 		"--user", "0:0", "--read-only", "--tmpfs", "/tmp",
@@ -54,15 +54,18 @@ func caddyRunArgs(hostID string) []string {
 		"--mount", "type=bind,source=/etc/caddy,target=/etc/caddy,readonly",
 		"--mount", "type=bind,source=" + caddyDataDir + ",target=/data",
 		"--mount", "type=bind,source=" + caddyConfigDir + ",target=/config",
-		CaddyImage, "caddy", "run", "--config", caddyfilePath, "--adapter", "caddyfile",
+		image, "caddy", "run", "--config", caddyfilePath, "--adapter", "caddyfile",
 	}
 }
 
 // caddyContainer holds only the inspect fields Vamos sets itself, so Docker
 // updates that add or change unrelated defaults do not register as drift.
 type caddyContainer struct {
-	ID     string `json:"Id"`
-	Config struct {
+	ID        string `json:"Id"`
+	Image     string `json:"Image"`
+	ownsTag   bool
+	tagDigest string
+	Config    struct {
 		Image      string            `json:"Image"`
 		User       string            `json:"User"`
 		Entrypoint []string          `json:"Entrypoint"`
@@ -127,15 +130,14 @@ func (c *caddyContainer) ownsContainerd(resource, item string) bool {
 	case "containers":
 		return item == c.ID
 	case "images":
-		name, digest, ok := strings.Cut(item, "@")
-		if !ok || (name != "ghcr.io/nchapman/vamos/caddy" && !strings.HasPrefix(name, "ghcr.io/nchapman/vamos/caddy:") && name != "docker.io/library/caddy" && !strings.HasPrefix(name, "docker.io/library/caddy:")) {
-			return false
+		if item == CaddyImage {
+			return c.ownsTag
 		}
-		for _, ref := range c.imageRefs() {
-			if strings.HasSuffix(ref, "@"+digest) {
-				return true
-			}
+		ref := digestRef(item)
+		if strings.HasPrefix(ref, "docker.io/library/caddy@") {
+			ref = strings.TrimPrefix(ref, "docker.io/library/")
 		}
+		return ref != "" && slices.Contains(c.imageRefs(), ref)
 	}
 	return false
 }
@@ -143,33 +145,52 @@ func (c *caddyContainer) ownsContainerd(resource, item string) bool {
 // imageRefs are the owned ingress images teardown may find: the pinned image
 // and, before server upgrade replaces the container, the image it still runs.
 func (c *caddyContainer) imageRefs() []string {
-	if ref := c.imageRef(); ref != caddyImageRef {
-		return []string{caddyImageRef, ref}
+	refs := []string{caddyImageRef}
+	if c.ownsTag {
+		refs = append([]string{CaddyImage}, refs...)
 	}
-	return []string{caddyImageRef}
+	if ref := c.imageRef(); ref != caddyImageRef {
+		refs = append(refs, ref)
+	}
+	if c.tagDigest != "" && !slices.Contains(refs, c.tagDigest) {
+		refs = append(refs, c.tagDigest)
+	}
+	return refs
 }
 
 // imageRef is the digest reference of the image this container runs, which
 // differs from the pinned image until server upgrade replaces the container.
 func (c *caddyContainer) imageRef() string {
-	if ref := digestRef(c.Config.Image); ref != "" {
+	if ref := ownedCaddyDigest(c.Config.Image); ref != "" {
 		return ref
 	}
 	return caddyImageRef
 }
 
+// Older installations also used the official Docker Hub Caddy image.
+func ownedCaddyDigest(image string) string {
+	ref := digestRef(image)
+	repo, digest, _ := strings.Cut(ref, "@")
+	if (repo == caddyRepo || repo == "caddy" || repo == "docker.io/library/caddy") && imageIdentity.MatchString(digest) {
+		return ref
+	}
+	return ""
+}
+
 func (c *caddyContainer) current() bool {
-	if c.Config.Image != CaddyImage || c.Config.User != "0:0" || len(c.Config.Entrypoint) != 0 ||
+	lineDigest, line := strings.CutPrefix(c.Config.Image, CaddyImage+"@")
+	if !imageIdentity.MatchString(c.Image) || (!(line && imageIdentity.MatchString(lineDigest)) && c.Config.Image != caddyPinned && c.Config.Image != caddyImageRef) || c.Config.User != "0:0" || len(c.Config.Entrypoint) != 0 ||
 		!slices.Equal(c.Config.Cmd, []string{"caddy", "run", "--config", caddyfilePath, "--adapter", "caddyfile"}) {
 		return false
 	}
 	h := c.HostConfig
+	_, tmp := h.Tmpfs["/tmp"]
 	if h.NetworkMode != caddyNetworking || h.RestartPolicy.Name != caddyRestart || h.LogConfig.Type != "local" ||
 		h.Privileged || !h.ReadonlyRootfs || len(h.Binds) != 0 ||
 		!slices.Equal(h.CapDrop, []string{"ALL"}) ||
 		(!slices.Equal(h.CapAdd, []string{"CAP_NET_BIND_SERVICE"}) && !slices.Equal(h.CapAdd, []string{"NET_BIND_SERVICE"})) ||
 		!slices.Equal(h.SecurityOpt, []string{"no-new-privileges"}) ||
-		len(h.Tmpfs) != 1 || h.Tmpfs["/tmp"] != "" || len(h.Mounts) != 3 {
+		!tmp || len(h.Tmpfs) != 1 || h.Tmpfs["/tmp"] != "" || len(h.Mounts) != 3 {
 		return false
 	}
 	want := [3]struct {
@@ -188,22 +209,25 @@ func (c *caddyContainer) current() bool {
 	return true
 }
 
-// findCaddy returns the container named vamos-caddy, or nil when a successful
-// inventory proves it absent. A container with that name that does not carry
-// this installation's label is never adopted or removed.
-func (m *Manager) findCaddy(ctx context.Context, s *State) (*caddyContainer, error) {
-	out, err := m.command(ctx, "docker", "container", "ls", "--all", "--no-trunc", "--filter", "name=^"+CaddyContainer+"$", "--format", "{{.ID}}")
+func (m *Manager) namedCaddyID(ctx context.Context, name string) (string, error) {
+	out, err := m.command(ctx, "docker", "container", "ls", "--all", "--no-trunc", "--filter", "name=^"+name+"$", "--format", "{{.ID}}")
 	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(string(out))
+	if id != "" && !imageIdentity.MatchString("sha256:"+id) {
+		return "", errors.New("invalid Caddy container inventory")
+	}
+	return id, nil
+}
+
+// findCaddy never adopts a named container from a different installation.
+func (m *Manager) findCaddy(ctx context.Context, s *State) (*caddyContainer, error) {
+	id, err := m.namedCaddyID(ctx, CaddyContainer)
+	if err != nil || id == "" {
 		return nil, err
 	}
-	ids := strings.Fields(string(out))
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	if len(ids) != 1 {
-		return nil, errors.New("ambiguous Caddy container inventory")
-	}
-	data, err := m.command(ctx, "docker", "container", "inspect", "--format", "{{json .}}", ids[0])
+	data, err := m.command(ctx, "docker", "container", "inspect", "--format", "{{json .}}", id)
 	if err != nil {
 		return nil, err
 	}
@@ -211,11 +235,26 @@ func (m *Manager) findCaddy(ctx context.Context, s *State) (*caddyContainer, err
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("unrecognized Caddy container inspection: %w", err)
 	}
-	if c.ID != ids[0] {
+	if c.ID != id {
 		return nil, errors.New("Caddy container identity changed during inspection")
 	}
-	if c.Config.Labels[caddyHostLabel] != s.ID {
+	if s.ID == "" || c.Config.Labels[caddyHostLabel] != s.ID {
 		return nil, fmt.Errorf("container %s is not owned by this installation; refusing to adopt or replace it", CaddyContainer)
+	}
+	tagIDs, err := m.caddyImageIDs(ctx, CaddyImage)
+	if err != nil {
+		return nil, err
+	}
+	c.ownsTag = strings.HasPrefix(ownedCaddyDigest(c.Config.Image), caddyRepo+"@") && slices.Equal(tagIDs, []string{c.Image})
+	if c.ownsTag {
+		ref, id, err := m.inspectCaddyImage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if id != c.Image {
+			return nil, errors.New("Caddy image tag moved during inspection")
+		}
+		c.tagDigest = digestRef(ref)
 	}
 	return &c, nil
 }
@@ -224,52 +263,242 @@ func (m *Manager) findCaddy(ctx context.Context, s *State) (*caddyContainer, err
 // it when its image or shape differs from this release, and start it when
 // stopped. Routes and certificates live on the host, so replacement keeps them.
 func (m *Manager) ensureCaddy(ctx context.Context, s *State) error {
+	return m.convergeCaddy(ctx, s, false)
+}
+
+var imageIdentity = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// Resolve the pulled tag before interrupting ingress. The manifest digest is
+// used for run and cleanup; Docker's platform image ID is used for comparison.
+func (m *Manager) selectCaddy(ctx context.Context) (string, string, error) {
+	if _, err := m.command(ctx, "docker", "pull", "--quiet", CaddyImage); err != nil {
+		return "", "", err
+	}
+	return m.inspectCaddyImage(ctx)
+}
+
+func (m *Manager) inspectCaddyImage(ctx context.Context) (string, string, error) {
+	data, err := m.command(ctx, "docker", "image", "inspect", "--format", "{{json .}}", CaddyImage)
+	if err != nil {
+		return "", "", err
+	}
+	var image struct {
+		ID          string
+		RepoDigests []string
+		Descriptor  struct{ Digest string }
+	}
+	if err = json.Unmarshal(data, &image); err != nil {
+		return "", "", err
+	}
+	if !imageIdentity.MatchString(image.ID) {
+		return "", "", errors.New("invalid platform ID for Caddy image")
+	}
+	// The containerd image store exposes the exact descriptor for the tag. On
+	// classic stores accept only an unambiguous repository digest.
+	selected := ""
+	for _, d := range image.RepoDigests {
+		digest, ok := strings.CutPrefix(d, caddyRepo+"@")
+		if !ok || !imageIdentity.MatchString(digest) {
+			continue
+		}
+		if image.Descriptor.Digest != "" && digest != image.Descriptor.Digest {
+			continue
+		}
+		if selected != "" && selected != digest {
+			return "", "", errors.New("ambiguous manifest digest for Caddy image")
+		}
+		selected = digest
+	}
+	if selected == "" {
+		return "", "", errors.New("missing manifest digest for Caddy image")
+	}
+	return CaddyImage + "@" + selected, image.ID, nil
+}
+
+func (m *Manager) refreshCaddy(ctx context.Context, s *State) error {
+	return m.convergeCaddy(ctx, s, true)
+}
+
+func (m *Manager) convergeCaddy(ctx context.Context, s *State, daily bool) (err error) {
+	// A hard shutdown may have interrupted the swap before rollback ran.
+	// Don't treat that as a fresh installation or discard a serving container.
+	previous, err := m.namedCaddyID(ctx, CaddyContainer+"-previous")
+	if err != nil {
+		return err
+	}
+	if previous != "" {
+		return fmt.Errorf("vamos-caddy-previous (%s) already exists; compare both ingress containers with the host receipt (%s) before retrying; see Caddy ingress recovery in docs/host-lifecycle.md", previous, s.CaddyContainerID)
+	}
 	c, err := m.findCaddy(ctx, s)
 	if err != nil {
 		return err
 	}
-	if c == nil || !c.current() {
+	if daily {
+		if c == nil || c.ID != s.CaddyContainerID || !c.current() || !c.State.Running {
+			return errors.New("managed Caddy container is missing or changed; run vamos server upgrade")
+		}
+		path := m.path(caddyfilePath)
+		if err = rejectSymlink(path); err != nil {
+			return err
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Size() > 1<<20 {
+			return errors.New("unsafe managed Caddyfile")
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(string(data), caddyConfig) {
+			return errors.New("managed Caddyfile differs from this release")
+		}
+		if err = m.checkCaddyRuntime(ctx); err != nil {
+			return err
+		}
+	}
+	ref, id, err := m.selectCaddy(ctx)
+	if err != nil {
+		return err
+	}
+	if c != nil && c.current() && c.Image == id {
+		if !c.State.Running {
+			if _, err = m.command(ctx, "docker", "container", "start", c.ID); err != nil {
+				return err
+			}
+		}
+	} else {
 		for _, dir := range []string{caddyDataDir, caddyConfigDir} {
-			if err := rejectSymlink(m.path(dir)); err != nil {
+			if err = rejectSymlink(m.path(dir)); err != nil {
 				return err
 			}
-			if err := os.MkdirAll(m.path(dir), 0700); err != nil {
+			if err = os.MkdirAll(m.path(dir), 0700); err != nil {
 				return err
 			}
 		}
-		if _, err := m.command(ctx, "docker", "pull", "--quiet", CaddyImage); err != nil {
-			return err
-		}
-		// Prepare directories and pull before taking an existing ingress offline.
+		var createdID string
 		if c != nil {
-			if _, err := m.command(ctx, "docker", "container", "rm", "--force", c.ID); err != nil {
+			old := c
+			if _, err = m.command(ctx, "docker", "container", "rename", old.ID, CaddyContainer+"-previous"); err != nil {
 				return err
 			}
-			previous := digestRef(c.Config.Image)
-			if previous != "" && previous != caddyImageRef {
-				// Best effort: Docker retains images still used elsewhere.
-				defer func() { _, _ = m.Run(ctx, "docker", []string{"image", "rm", previous}) }()
+			defer func() { err = m.finishCaddyReplacement(ctx, s, old, ref, id, createdID, err) }()
+			if _, err = m.command(ctx, "docker", "container", "stop", old.ID); err != nil {
+				return err
 			}
 		}
-		if _, err := m.command(ctx, "docker", caddyRunArgs(s.ID)...); err != nil {
+		output, runErr := m.command(ctx, "docker", caddyRunArgs(s.ID, ref)...)
+		if runErr != nil {
+			return runErr
+		}
+		createdID = strings.TrimSpace(string(output))
+		if !imageIdentity.MatchString("sha256:" + createdID) {
+			createdID = ""
+			return errors.New("invalid Docker run container ID")
+		}
+		c, err = m.findCaddy(ctx, s)
+		if err != nil {
 			return err
 		}
-		if c, err = m.findCaddy(ctx, s); err != nil {
-			return err
+		if c == nil || c.ID != createdID || c.Image != id || c.Config.Image != ref || !c.current() || !c.State.Running {
+			return errors.New("unexpected Caddy container after replacement")
 		}
-		if c == nil {
-			return errors.New("Caddy container is missing after creation")
-		}
-	} else if !c.State.Running {
-		if _, err := m.command(ctx, "docker", "container", "start", c.ID); err != nil {
-			return err
+		if daily {
+			if err = m.waitCaddyRuntime(ctx); err != nil {
+				return err
+			}
 		}
 	}
 	if s.CaddyContainerID != c.ID {
+		next := *s
+		next.CaddyContainerID = c.ID
+		if err = m.save(&next); err != nil {
+			return err
+		}
 		s.CaddyContainerID = c.ID
-		return m.save(s)
 	}
 	return nil
+}
+
+// Docker detach does not wait for the new admin listener to be ready.
+func (m *Manager) waitCaddyRuntime(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for {
+		err := m.checkCaddyRuntime(ctx)
+		if err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// Keep the previous container by ID until verification and receipt persistence
+// both succeed. Recovery must also work after cancellation of the update.
+func (m *Manager) finishCaddyReplacement(ctx context.Context, s *State, old *caddyContainer, ref, id, createdID string, err error) error {
+	recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	cmd := func(args ...string) error { _, e := m.command(recovery, "docker", args...); return e }
+	if err == nil {
+		err = cmd("container", "rm", "--force", old.ID)
+		if err == nil {
+			for _, previous := range slices.Compact([]string{ownedCaddyDigest(old.Config.Image), old.tagDigest}) {
+				if previous != "" && previous != digestRef(ref) {
+					_, _ = m.command(recovery, "docker", "image", "rm", previous)
+				}
+			}
+		}
+		return err
+	}
+	var e error
+	if createdID != "" {
+		e = cmd("container", "rm", "--force", createdID)
+	} else {
+		var replacement *caddyContainer
+		replacement, e = m.findCaddy(recovery, s)
+		if e == nil && replacement != nil {
+			if replacement.Config.Image != ref {
+				e = errors.New("unexpected replacement image")
+			} else {
+				e = cmd("container", "rm", "--force", replacement.ID)
+			}
+		}
+	}
+
+	if e == nil {
+		e = cmd("container", "rename", old.ID, CaddyContainer)
+	}
+	if old.State.Running {
+		e = errors.Join(e, cmd("container", "start", old.ID))
+	}
+	// Undo the pull's tag move only while it still names our candidate. An
+	// unrelated retag must never be deleted to make the inventory look clean.
+	if e == nil && old.Image != id && strings.HasPrefix(ref, CaddyImage+"@") {
+		tags, inspectErr := m.caddyImageIDs(recovery, CaddyImage)
+		e = inspectErr
+		if e == nil && slices.Equal(tags, []string{id}) {
+			if old.ownsTag {
+				e = cmd("image", "tag", old.tagDigest, CaddyImage)
+			} else {
+				e = cmd("image", "rm", CaddyImage)
+			}
+			if e == nil {
+				digest := digestRef(ref)
+				ids, inspectErr := m.caddyImageIDs(recovery, digest)
+				e = inspectErr
+				if e == nil && slices.Equal(ids, []string{id}) {
+					e = cmd("image", "rm", digest)
+				}
+			}
+		}
+	}
+	return errors.Join(err, e)
 }
 
 // checkCaddy verifies the running ingress container matches this release.

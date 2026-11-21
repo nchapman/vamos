@@ -16,7 +16,7 @@ func writeServerHelp(w io.Writer, action string, flags *flag.FlagSet) {
 		names = append(names, "json")
 	case "add":
 		usage = "vamos server add [OPTIONS] --yes [--firewall=true|false] [--domain DOMAIN] NAME TARGET"
-		notes = "Bootstrap a dedicated supported Ubuntu host using root or passwordless sudo. Requires explicit --yes.\nDefaults to <hex-ip>.tryvamos.dev when --domain is omitted. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH.\nChoose --firewall=true|false explicitly in scripts; interactive stdin prompts if omitted.\nManaged firewall is opt-in automatic dedicated-host protection, including Docker public publishing.\nFalse leaves rules untouched. Unsupported existing firewall configurations are refused."
+		notes = "Bootstrap a dedicated supported Ubuntu host using root or passwordless sudo. Requires explicit --yes.\nDefaults to <hex-ip>.tryvamos.dev when --domain is omitted. Started mutations survive client disconnection.\nThe deploy key (SSH agent or --deploy-key) is installed as the restricted non-root bridge key;\napp operations then need no root SSH.\nChoose --firewall=true|false explicitly in scripts; interactive stdin prompts if omitted.\nManaged firewall is opt-in automatic dedicated-host protection, including Docker public publishing.\nFalse leaves rules untouched. Unsupported existing firewall configurations are refused.\n" + caddyPatchNotice
 		names = append(names, "yes", "domain", "executor", "deploy-key", "firewall")
 	case "upgrade":
 		usage = "vamos server upgrade [OPTIONS] --yes [NAME [TARGET]]"

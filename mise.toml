@@ -54,6 +54,7 @@ description = "Run fast integration-driver and example Python tests (requires Py
 run = '''
 python3 -m unittest discover -s integration -p 'test_*.py' -v
 python3 -m unittest discover -s integration/repository -p 'test_*.py' -v
+python3 -m unittest discover -s docker/caddy -p 'test_*.py' -v
 (cd examples/journal && python3 -m unittest discover -v)
 (cd examples/ledger && python3 -m unittest discover -s tests -v)
 '''

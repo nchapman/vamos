@@ -230,11 +230,14 @@ func (r runner) run(ctx context.Context, o options) (result error) {
 	}
 	fmt.Fprintln(r.out, "Guest prepare phase")
 	prepareArgs := []string{"python3", "/opt/vamos-test/integration/linux_suite.py", "--owner", o.token}
-	if o.scenario == "firewall" || o.scenario == "waf-cache" || o.scenario == "sudo" {
+	if o.scenario == "firewall" || o.scenario == "waf-cache" || o.scenario == "sudo" || o.scenario == "caddy-patch" {
 		prepareArgs = append(prepareArgs, "--scenario", o.scenario)
 	}
 	if err := call(nil, prepareArgs...); err != nil {
 		return fmt.Errorf("guest prepare: %w", err)
+	}
+	if o.scenario == "caddy-patch" {
+		return nil // Single-phase refresh and teardown acceptance.
 	}
 	// Prepare exit zero certifies the private guest checkpoint is ready. Always
 	// restart: the verification phase itself rejects a missing checkpoint.
@@ -383,9 +386,9 @@ func entry() error {
 	keep := flag.Bool("keep-on-failure", false, "retain owned VM on failure")
 	arch := flag.String("arch", "native", "native, arm64, or amd64")
 	ubuntu := flag.String("ubuntu", "24.04", "24.04 or 26.04")
-	scenario := flag.String("scenario", "all", "all, firewall, waf-cache, or sudo (focused acceptance checks)")
+	scenario := flag.String("scenario", "all", "all, firewall, waf-cache, caddy-patch, or sudo (focused acceptance checks)")
 	flag.Parse()
-	if (*scenario != "all" && *scenario != "firewall" && *scenario != "waf-cache" && *scenario != "sudo") || flag.NArg() != 0 || (*arch != "native" && *arch != "arm64" && *arch != "amd64") || (*ubuntu != "24.04" && *ubuntu != "26.04") {
+	if (*scenario != "all" && *scenario != "firewall" && *scenario != "waf-cache" && *scenario != "sudo" && *scenario != "caddy-patch") || flag.NArg() != 0 || (*arch != "native" && *arch != "arm64" && *arch != "amd64") || (*ubuntu != "24.04" && *ubuntu != "26.04") {
 		return errors.New("invalid arguments")
 	}
 	if runtime.GOOS != "darwin" {

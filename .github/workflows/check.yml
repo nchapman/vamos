@@ -79,6 +79,7 @@ jobs:
           python-version: '3.12'
       - run: python3 -m unittest discover -s integration -p 'test_*.py' -v
       - run: python3 -m unittest discover -s integration/repository -p 'test_*.py' -v
+      - run: python3 -m unittest discover -s docker/caddy -p 'test_*.py' -v
       - run: python3 -m unittest discover -v
         working-directory: examples/journal
       - run: python3 -m unittest discover -s tests -v

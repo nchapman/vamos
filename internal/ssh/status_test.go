@@ -130,3 +130,44 @@ exit 4
 		t.Fatalf("expected active=true for running coordinator worker, got %+v", status)
 	}
 }
+
+func TestStatusScriptReportsRefresh(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("remote shell")
+	}
+	for _, tc := range []struct {
+		enabled, unit, service, want string
+		active                       bool
+	}{{"enabled", "active", "active", "active", true}, {"disabled", "active", "inactive", "disabled", false}, {"disabled", "inactive", "inactive", "inactive", false}} {
+		t.Run(tc.want, func(t *testing.T) {
+			dir := t.TempDir()
+			script := `#!/bin/sh
+case "$1:$2" in
+is-active:vamos-caddy-refresh.timer) s=$TIMER;;
+is-active:vamos-caddy-refresh.service) s=$SERVICE;;
+is-active:*) s=inactive;;
+is-enabled:vamos-caddy-refresh.timer) echo "$ENABLED"; [ "$ENABLED" = enabled ]; exit $?;;
+*) exit 99;;
+esac
+echo "$s"; [ "$s" = active ] || exit 3
+`
+			if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "host.json"), []byte(`{"caddy_refresh_timer":"installed"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("/bin/sh", "-s")
+			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TIMER="+tc.unit, "SERVICE="+tc.service, "ENABLED="+tc.enabled)
+			cmd.Stdin = strings.NewReader(strings.ReplaceAll(statusScript, "/var/lib/vamos", dir))
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			var status Status
+			if err = decodeJSON(out, &status); err != nil || status.RefreshTimer != tc.want || status.Active != tc.active {
+				t.Fatalf("status %+v: %v", status, err)
+			}
+		})
+	}
+}

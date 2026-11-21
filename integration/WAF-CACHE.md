@@ -2,7 +2,7 @@
 
 Run `mise run test:integration --scenario waf-cache` on macOS with OrbStack.
 The runner creates and deletes an isolated Ubuntu server; no existing server is
-upgraded or mutated. It deploys the pinned production Caddy image and real
+upgraded or mutated. It deploys the production Caddy image and real
 Vamos services with default middleware, individual opt-outs, and path rules.
 
 The origin returns a new UUID on every request, in both its body and a header.

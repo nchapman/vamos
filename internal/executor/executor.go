@@ -228,3 +228,11 @@ func failure(w io.Writer, code, message string, exitCode int) int {
 	}
 	return exitCode
 }
+
+// RefreshCaddy is a local systemd entry point, never an SSH protocol operation.
+func RefreshCaddy(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancel()
+	m := lifecycle.Manager{Root: "/", Run: lifecycle.RunCommand, Inspect: func(ctx context.Context) (*host.Report, error) { return host.Inspect(ctx, collectLocal) }}
+	return m.RefreshCaddy(ctx)
+}

@@ -24,7 +24,7 @@ To upgrade the **local CLI and its bundled executors** later, run:
 vamos upgrade
 ```
 
-This does not change any server. A separate `vamos server upgrade --yes NAME` restarts the agent and may replace Caddy or update the managed firewall. Schedule host upgrades when a public traffic interruption is acceptable.
+This does not change any server. A separate `vamos server upgrade --yes NAME` restarts the agent and may replace Caddy or update the managed firewall. Schedule host upgrades when a public traffic interruption is acceptable. After setup or upgrade, the host also checks its [Caddy image line](docs/host-lifecycle.md#caddy-ingress) daily and installs patches without a client upgrade. A proxy replacement can briefly interrupt public traffic.
 
 ### 2. Inspect and bootstrap a server
 

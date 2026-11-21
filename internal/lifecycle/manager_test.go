@@ -40,7 +40,10 @@ type fakeSystem struct {
 	unownedRemoval    bool
 	archiveVersion    string
 	caddy             *fakeCaddy
-	caddyImages       map[string]bool
+	tagDigest         string
+	release           int
+	previous          *fakeCaddy
+	caddyImages       map[string]string
 	created           int
 	agentStopped      bool
 	foreignCtr        string
@@ -48,6 +51,7 @@ type fakeSystem struct {
 
 // fakeCaddy models only the inspect fields Vamos reads from the container.
 type fakeCaddy struct {
+	ImageID string
 	ID      string
 	Image   string
 	Labels  map[string]string
@@ -58,7 +62,7 @@ type fakeCaddy struct {
 
 func (c *fakeCaddy) inspect() string {
 	doc := map[string]any{
-		"Id": c.ID,
+		"Id": c.ID, "Image": c.ImageID,
 		"Config": map[string]any{
 			"Image":    c.Image,
 			"User":     "0:0",
@@ -101,7 +105,7 @@ func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 		t.Fatal(err)
 	}
 	m := &Manager{Root: root, Executor: []byte("test-executor"), Inspect: func(context.Context) (*host.Report, error) { return &host.Report{Supported: true, Root: true}, nil }}
-	f := &fakeSystem{t: t, m: m, installed: map[string]installedPackage{"base-files": {"installed", "1"}}, accounts: map[string]string{}, caddyImages: map[string]bool{}}
+	f := &fakeSystem{t: t, m: m, installed: map[string]installedPackage{"base-files": {"installed", "1"}}, accounts: map[string]string{}, caddyImages: map[string]string{}}
 	m.Run = f.run
 	m.MountInfo = func() ([]byte, error) { return nil, nil }
 	m.CaddyConfig = func(context.Context) ([]byte, error) { return []byte(`{"admin":{"listen":"127.0.0.1:2019"}}`), nil }
@@ -165,7 +169,20 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		return out("")
 	case "systemctl":
 		switch args[0] {
+		case "is-enabled":
+			return out("enabled\n")
 		case "show":
+			if unit := args[len(args)-1]; refreshUnits[unit] != "" {
+				switch args[1] {
+				case "--property=FragmentPath":
+					return out(systemUnitDir + unit + "\n")
+				case "--property=DropInPaths":
+					return out("\n")
+				}
+				if _, err := os.Stat(f.m.path(systemUnitDir + args[len(args)-1])); os.IsNotExist(err) {
+					return out("not-found\n")
+				}
+			}
 			if len(f.installed) > 1 {
 				return out("loaded\n")
 			}
@@ -175,6 +192,16 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		case "reload":
 			return out("")
 		case "enable":
+			if contains(args, refreshTimer) {
+				p := f.m.path(refreshEnableLink)
+				if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+					return process.Result{}, err
+				}
+				if err := os.Symlink(systemUnitDir+refreshTimer, p); err != nil && !os.IsExist(err) {
+					return process.Result{}, err
+				}
+				return out("")
+			}
 			if f.failStart {
 				f.failStart = false
 				return process.Result{}, fakeExit(1)
@@ -186,6 +213,9 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			f.write("/var/lib/docker/engine-state", "owned runtime data")
 			return out("")
 		case "stop":
+			if args[1] == refreshTimer {
+				return out("")
+			}
 			if args[1] == agentUnit {
 				f.agentStopped = true
 			} else {
@@ -303,16 +333,25 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		case "buildx":
 			return out("v0.30\n")
 		case "pull":
-			f.caddyImages[digestRef(args[len(args)-1])] = true
+			ref := args[len(args)-1]
+			digest := fmt.Sprintf("sha256:%064x", f.release+100)
+			id := fmt.Sprintf("sha256:%064x", f.release+200)
+			if ref == CaddyImage {
+				f.tagDigest = digest
+				f.caddyImages[CaddyImage] = id
+			} else {
+				digest = caddyDigest
+			}
+			f.caddyImages[caddyRepo+"@"+digest] = id
 			return out("")
 		case "run":
 			image := args[len(args)-7]
-			if !f.caddyImages[digestRef(image)] {
+			if f.caddyImages[digestRef(image)] == "" {
 				return process.Result{Stderr: []byte("image not pulled")}, fakeExit(125)
 			}
 			f.created++
 			label, _ := strings.CutPrefix(args[slicesIndex(args, "--label")+1], caddyHostLabel+"=")
-			f.caddy = &fakeCaddy{ID: fmt.Sprintf("%064x", f.created), Image: image, Labels: map[string]string{caddyHostLabel: label}, Running: true, Args: args}
+			f.caddy = &fakeCaddy{ID: fmt.Sprintf("%064x", f.created), Image: image, ImageID: f.caddyImages[digestRef(image)], Labels: map[string]string{caddyHostLabel: label}, Running: true, Args: args}
 			return out(f.caddy.ID + "\n")
 		case "exec":
 			if f.caddy == nil || !f.caddy.Running || args[1] != CaddyContainer || args[2] != "caddy" {
@@ -325,6 +364,12 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 		case "container":
 			switch args[1] {
 			case "ls":
+				if contains(args, "name=^"+CaddyContainer+"-previous$") {
+					if f.previous != nil {
+						return out(f.previous.ID)
+					}
+					return out("")
+				}
 				var ids []string
 				if f.caddy != nil {
 					ids = append(ids, f.caddy.ID)
@@ -338,7 +383,21 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 					return process.Result{}, fakeExit(1)
 				}
 				return out(f.caddy.inspect())
+			case "rename":
+				if args[3] == CaddyContainer {
+					f.caddy, f.previous = f.previous, nil
+				} else {
+					f.previous, f.caddy = f.caddy, nil
+				}
+				return out("")
+			case "stop":
+				f.previous.Running = false
+				return out("")
 			case "rm":
+				if f.previous != nil && args[len(args)-1] == f.previous.ID {
+					f.previous = nil
+					return out("")
+				}
 				f.caddy = nil
 				return out("")
 			case "start":
@@ -347,12 +406,33 @@ func (f *fakeSystem) run(_ context.Context, name string, args []string) (process
 			}
 		case "image":
 			switch args[1] {
+			case "tag":
+				id := f.caddyImages[args[2]]
+				if id == "" {
+					return process.Result{}, fakeExit(1)
+				}
+				_, f.tagDigest, _ = strings.Cut(args[2], "@")
+				f.caddyImages[args[3]] = id
+				return out("")
+			case "inspect":
+				ref := args[len(args)-1]
+				id := f.caddyImages[ref]
+				if id == "" {
+					id = f.caddyImages[digestRef(ref)]
+				}
+				var digests []string
+				for r, i := range f.caddyImages {
+					if i == id && strings.Contains(r, "@") {
+						digests = append(digests, r)
+					}
+				}
+				data, _ := json.Marshal(map[string]any{"Id": id, "RepoDigests": digests, "Descriptor": map[string]string{"digest": f.tagDigest}})
+				return out(string(data))
 			case "ls":
 				var ids []string
-				for ref := range f.caddyImages {
-					if ref == args[len(args)-1] || !strings.Contains(args[len(args)-1], "@") {
-						_, digest, _ := strings.Cut(ref, "@")
-						ids = append(ids, digest)
+				for ref, id := range f.caddyImages {
+					if ref == args[len(args)-1] || args[len(args)-1] == "--no-trunc" {
+						ids = append(ids, id)
 					}
 				}
 				sort.Strings(ids)

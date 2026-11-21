@@ -43,8 +43,23 @@ check_unit() {
       exit 1 ;;
   esac
 }
+refresh_status=''
+if [ -f /var/lib/vamos/host.json ] && grep -Eq '"caddy_refresh_timer"[[:space:]]*:[[:space:]]*"installed"' /var/lib/vamos/host.json; then
+  if ! check_unit vamos-caddy-refresh.timer; then refresh_status=inactive
+  else
+    code=0
+    enabled=$(systemctl is-enabled vamos-caddy-refresh.timer 2>/dev/null) || code=$?
+    case "$enabled:$code" in
+      enabled:0) refresh_status=active ;;
+      disabled:1|masked:1|enabled-runtime:0|static:0|linked:1) refresh_status=disabled ;;
+      *) printf '%s\n' 'cannot establish Caddy refresh timer enablement' >&2; exit 1 ;;
+    esac
+  fi
+fi
 active=false
 if check_unit vamos-host-operation.service; then
+  active=true
+elif [ -n "$refresh_status" ] && check_unit vamos-caddy-refresh.service; then
   active=true
 elif [ -d /var/lib/vamos/queue/operations ]; then
   for rec in /var/lib/vamos/queue/operations/*.json; do
@@ -65,7 +80,9 @@ elif [ -d /var/lib/vamos/queue/operations ]; then
     fi
   done
 fi
-printf '{"active":%s,"state":' "$active"
+printf '{"active":%s,' "$active"
+if [ -n "$refresh_status" ]; then printf '"caddy_refresh_timer":"%s",' "$refresh_status"; fi
+printf '"state":'
 if [ -f /var/lib/vamos/host.json ]; then
   head -c 1048577 /var/lib/vamos/host.json
 else
@@ -75,8 +92,9 @@ printf '}\n'
 `
 
 type Status struct {
-	Active bool             `json:"active"`
-	State  *lifecycle.State `json:"state"`
+	RefreshTimer string           `json:"caddy_refresh_timer,omitempty"`
+	Active       bool             `json:"active"`
+	State        *lifecycle.State `json:"state"`
 }
 
 func HostStatus(ctx context.Context, target string) (*Status, error) {

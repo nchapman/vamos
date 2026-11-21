@@ -41,6 +41,7 @@ type State struct {
 	Configured       bool              `json:"configured"`
 	ExecutorSHA      string            `json:"executor_sha256,omitempty"`
 	AgentSHA         string            `json:"agent_sha256,omitempty"`
+	RefreshTimer     string            `json:"caddy_refresh_timer,omitempty"`
 	CaddyContainerID string            `json:"caddy_container_id,omitempty"`
 	PurgeApproved    bool              `json:"purge_approved"`
 	Accounts         map[string]string `json:"accounts,omitempty"`
@@ -155,6 +156,9 @@ func ValidateState(s *State) error {
 			return errors.New("invalid agent digest")
 		}
 	}
+	if s.RefreshTimer != "" && s.RefreshTimer != "pending" && s.RefreshTimer != "installed" {
+		return errors.New("invalid refresh timer ownership")
+	}
 	if s.CaddyContainerID != "" && !sha256RE.MatchString(s.CaddyContainerID) {
 		return errors.New("invalid Caddy container identity")
 	}
@@ -175,6 +179,15 @@ func ValidateState(s *State) error {
 }
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {
+	return atomicPublish(filename, data, mode, false)
+}
+
+// atomicCreate publishes complete data without replacing an existing path.
+func atomicCreate(filename string, data []byte, mode os.FileMode) error {
+	return atomicPublish(filename, data, mode, true)
+}
+
+func atomicPublish(filename string, data []byte, mode os.FileMode, exclusive bool) error {
 	if err := rejectSymlink(filename); err != nil {
 		return err
 	}
@@ -201,7 +214,11 @@ func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(f.Name(), filename); err != nil {
+	publish := os.Rename
+	if exclusive {
+		publish = os.Link
+	}
+	if err := publish(f.Name(), filename); err != nil {
 		return err
 	}
 	if runtime.GOOS != "windows" {

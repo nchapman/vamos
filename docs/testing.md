@@ -79,6 +79,8 @@ pinned Go distribution, Go modules, container base images and Python packages.
 This is local execution, **not an offline test**. Application images are built
 from the copied source inside the guest; they are not published to a registry.
 
+To exercise daily Caddy patches **before publishing a new image line**, run `mise exec -- go run ./integration/orbstack --scenario caddy-patch`. This focused scenario points the guest build at a loopback registry, starts the timer’s service, advances the date tag, checks that the app still serves HTTPS, and verifies that another pull does not restart Caddy. It does not push to GHCR.
+
 For another supported Ubuntu release or architecture:
 
 ```sh
@@ -105,7 +107,7 @@ it is not evidence of execution on native hardware of that architecture.
   SSH server bound to guest loopback. The guest generates its own keys and pins
   its SSH host key using the trusted VM control channel. Mac SSH configuration,
   keys, Vamos registry, service bindings and Docker context are not used.
-- Vamos's real bootstrap installs Docker and runs its pinned Caddy container inside the guest.
+- Vamos's real bootstrap installs Docker and runs its managed Caddy container inside the guest.
   HTTPS uses `.localhost` names and Caddy's internal CA. Trust installation is
   confined to the guest; curl verifies the certificate and hostname. No public
   DNS, public ACME issuer, or Mac trust-store modification is needed.

@@ -260,6 +260,9 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 			}
 		}
 		if s.Phase == "ready" {
+			if s.RefreshTimer == "pending" {
+				return nil, errors.New("Caddy timer migration is incomplete; resume server upgrade")
+			}
 			installed, err := m.packages(ctx)
 			if err != nil {
 				return nil, err
@@ -315,7 +318,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 				return nil, fmt.Errorf("APT did not plan a fresh %s installation", required)
 			}
 		}
-		s = &State{Version: 1, ID: newID(), Config: config, Phase: "installing", Step: "planned", Packages: packages}
+		s = &State{Version: 1, ID: newID(), Config: config, Phase: "installing", Step: "planned", RefreshTimer: "pending", Packages: packages}
 		if err := m.save(s); err != nil {
 			return nil, err
 		}
@@ -428,6 +431,13 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 	if err := m.health(ctx, s); err != nil {
 		return nil, err
 	}
+	// A resumed setup from an older release may already have installed its
+	// old executor. Leave it on the legacy schedule until explicit upgrade.
+	if hash := sha256.Sum256(m.Executor); s.ExecutorSHA == hex.EncodeToString(hash[:]) || s.RefreshTimer != "" {
+		if err := m.installRefreshTimer(ctx, s); err != nil {
+			return nil, err
+		}
+	}
 	s.Phase = "ready"
 	if err := m.step(s, "complete"); err != nil {
 		return nil, err
@@ -436,7 +446,7 @@ func (m *Manager) Bootstrap(ctx context.Context, config Config) (_ *State, err e
 }
 
 // Upgrade replaces the paired installed executor and coordinator, and moves the
-// Caddy container to this release's pinned image, after proving every managed
+// Caddy container to this release's image line, after proving every managed
 // resource still matches the ownership receipt. It never adopts drift or
 // retries an uncertain previous replacement silently.
 func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err error) {
@@ -463,6 +473,16 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 	}
 	if err := m.verifyFilesFor(s, true); err != nil {
 		return nil, err
+	}
+	if s.RefreshTimer == "" {
+		if err := m.refreshNamesFree(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if s.RefreshTimer == "installed" {
+		if err := m.checkRefreshHealth(ctx); err != nil {
+			return nil, err
+		}
 	}
 	if err := m.checkFirewallForUpgrade(ctx, s.ID); err != nil {
 		return nil, err
@@ -552,7 +572,7 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 		caddyUpdated = true
 	}
 	// Routes and certificates live on the host, so replacing the container to
-	// adopt a new pinned image keeps them, but can interrupt public traffic.
+	// adopt a new image keeps them, but can interrupt public traffic.
 	if err = m.ensureCaddy(ctx, s); err != nil {
 		return nil, err
 	}
@@ -591,7 +611,14 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 		agentStopped = true
 		return nil, err
 	}
+	// The new pair is healthy and committed. A failed timer migration must
+	// resume with this executor, not roll back parts of the release.
 	binariesUpdated = false
+	caddyUpdated = false
+	oldFirewallScript = ""
+	if err = m.installRefreshTimer(ctx, s); err != nil {
+		return nil, err
+	}
 	if err = m.step(s, "complete"); err != nil {
 		return nil, err
 	}
@@ -599,6 +626,11 @@ func (m *Manager) Upgrade(ctx context.Context, config Config) (_ *State, err err
 }
 
 func (m *Manager) health(ctx context.Context, s *State) error {
+	if s.RefreshTimer == "installed" {
+		if err := m.checkRefreshHealth(ctx); err != nil {
+			return err
+		}
+	}
 	if _, err := m.command(ctx, "systemctl", "is-active", "docker.service", agentUnit); err != nil {
 		return err
 	}
@@ -671,6 +703,9 @@ func (m *Manager) verifyFiles(s *State) error {
 }
 
 func (m *Manager) verifyFilesFor(s *State, allowLiveRoutes bool) error {
+	if err := m.checkRefreshFiles(s); err != nil {
+		return err
+	}
 	for path, expected := range map[string]string{DockerDaemonPath: dockerConfig, "/etc/ssh/sshd_config.d/vamos.conf": agentSSHConfig, "/etc/systemd/system/" + agentUnit: agentServiceConfig} {
 		if err := rejectSymlink(m.path(path)); err != nil {
 			return err
