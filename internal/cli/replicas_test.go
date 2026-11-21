@@ -15,7 +15,7 @@ import (
 func TestReplicaSessionFlags(t *testing.T) {
 	path, _, deps := appFixture(t)
 	deps.Stream = func(_ context.Context, _ string, r deploy.SessionRequest, _ []byte, _ io.Reader, out, _ io.Writer) (int, error) {
-		if r.Replica != 2 {
+		if r.Replica != 32 {
 			t.Fatalf("lost selector: %+v", r)
 		}
 		io.WriteString(out, "raw\x00stream")
@@ -23,7 +23,7 @@ func TestReplicaSessionFlags(t *testing.T) {
 	}
 	for _, action := range []string{"exec", "console", "logs"} {
 		var out, diag bytes.Buffer
-		args := []string{"-f", path, "--replica", "2"}
+		args := []string{"-f", path, "--replica", "32"}
 		var code int
 		if action == "logs" {
 			args = append(args, "--follow")
@@ -38,7 +38,7 @@ func TestReplicaSessionFlags(t *testing.T) {
 			t.Fatalf("%s: code %d: %s", action, code, &diag)
 		}
 	}
-	for _, value := range []string{"0", "-1", "9"} {
+	for _, value := range []string{"0", "-1", "33"} {
 		var out bytes.Buffer
 		if code := sessionCommand(context.Background(), "exec", []string{"--replica", value, "--", "true"}, nil, &out, &out, appDeps{}, terminalStreams); code != 2 {
 			t.Fatalf("accepted selector %s", value)

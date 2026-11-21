@@ -10,7 +10,7 @@ func TestDomainAliasLimits(t *testing.T) {
 	for _, tc := range []struct {
 		services, aliases int
 		valid             bool
-	}{{1, 8, true}, {1, 9, false}, {4, 8, true}, {5, 7, false}} {
+	}{{1, 32, true}, {1, 33, false}, {4, 8, true}, {5, 7, false}} {
 		t.Run(fmt.Sprintf("%dx%d", tc.services, tc.aliases), func(t *testing.T) {
 			a := &App{Name: "notes", Services: map[string]Service{}}
 			for i := 0; i < tc.services; i++ {

@@ -18,13 +18,13 @@ func replicaMaintenance(t *testing.T) *multiMaintenanceInventory {
 	f.j.Completed = &completedRelease{Operation: f.j.Operation, Services: map[string]*release{}}
 	for serviceIndex, name := range []string{"api", "web"} {
 		r := multiMaintenanceRelease(name, f.j.Operation, "sha256:"+strings.Repeat("c", 64), true)
-		n := 3
+		n := 10
 		r.Config.Replicas = &n
 		r.Container = ""
 		r.Port = ""
 		r.PublishPort = ""
-		for ordinal := 1; ordinal <= 3; ordinal++ {
-			port := fmt.Sprint(14000 + serviceIndex*3 + ordinal)
+		for ordinal := 1; ordinal <= n; ordinal++ {
+			port := fmt.Sprint(14000 + serviceIndex*n + ordinal)
 			member := releaseInstance{Ordinal: ordinal, Container: instanceName(f.j.App, name, r.Operation, ordinal), Port: port, PublishPort: port}
 			r.Instances = append(r.Instances, member)
 			// The inventory boundary stores Docker objects, not duplicated captured configs.
@@ -110,12 +110,12 @@ func TestReplicaMaintenanceRetentionDestroyAndRemove(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wanted := 6
+			wanted := 20
 			if action == "destroy" {
 				wanted = 0
 			}
 			if action == "service-remove" {
-				wanted = 3
+				wanted = 10
 			}
 			if len(f.containers) != wanted {
 				t.Fatalf("containers remaining %d want %d", len(f.containers), wanted)
@@ -123,7 +123,7 @@ func TestReplicaMaintenanceRetentionDestroyAndRemove(t *testing.T) {
 			if action != "destroy" && (f.j.Version != 8 || len(f.images) != 1) {
 				t.Fatal("downgrade or shared image removed")
 			}
-			if action == "service-remove" && (strings.Contains(caddy.live, "14001") || !strings.Contains(caddy.live, "14006")) {
+			if action == "service-remove" && (strings.Contains(caddy.live, "14001") || !strings.Contains(caddy.live, "14020")) {
 				t.Fatal("wrong remaining upstream set")
 			}
 		})
@@ -133,8 +133,8 @@ func TestReplicaMaintenanceRetentionDestroyAndRemove(t *testing.T) {
 func TestReplicaMaintenanceRejectsUnrecordedMember(t *testing.T) {
 	f := replicaMaintenance(t)
 	r := f.j.ServiceStates["web"].Current
-	phantom := f.add(&release{Container: instanceName(f.j.App, "web", r.Operation, 4), Service: "web", Operation: r.Operation, Image: r.Image})
-	phantom.Config.Labels["vamos.replica"] = "4"
+	phantom := f.add(&release{Container: instanceName(f.j.App, "web", r.Operation, 11), Service: "web", Operation: r.Operation, Image: r.Image})
+	phantom.Config.Labels["vamos.replica"] = "11"
 	if _, err := f.m.planMaintenance(context.Background(), f.j, "destroy", strings.Repeat("e", 32)); err == nil {
 		t.Fatal("unrecorded extra member authorized")
 	}

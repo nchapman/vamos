@@ -19,7 +19,7 @@ http:
     - www.notes.example.com
 ```
 
-- At most 8 aliases per service and 32 per app.
+- At most 32 aliases across the app, shared by its public services. Each hostname adds routing and automatic certificate-management work.
 - Names are case-insensitive ASCII DNS hostnames; use punycode for international
   names. Labels are at most 63 characters and hostnames at most 253, with at
   least one dot. Duplicates are rejected case-insensitively.

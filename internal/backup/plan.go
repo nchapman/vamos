@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/nchapman/vamos/internal/config"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -225,8 +226,8 @@ func validatePlanSet(set Set, sources map[string]Source) error {
 	if len(set.Sources) < 1 || len(set.Sources) > MaxSources {
 		return errors.New("each set must select 1–16 sources")
 	}
-	if len(set.Stop) > 8 {
-		return errors.New("stop must contain at most 8 service names")
+	if len(set.Stop) > config.MaxAppReplicas {
+		return errors.New("stop list exceeds the app replica budget")
 	}
 	stopped := map[string]bool{}
 	for _, svc := range set.Stop {

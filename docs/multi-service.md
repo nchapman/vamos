@@ -2,7 +2,7 @@
 
 See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
-Vamos supports **1–8 services per app**, each built from a Dockerfile or pulled from a registry image reference. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing; [`ports`](ports.md) publishes TCP/UDP directly through Docker. No database/storage semantics are implied.
+An app contains one or more services, each built from a Dockerfile or pulled from a registry image reference. Every service joins the app's private bridge network; `http` opts a service into public HTTP routing; [`ports`](ports.md) publishes TCP/UDP directly through Docker. No database/storage semantics are implied.
 
 The runnable [private-backend example](../examples/private-backend/vamos.yaml) uses one shared build for public `web` and private `backend`. No local Docker daemon or registry is needed.
 
@@ -41,9 +41,7 @@ See the [PostgreSQL workflow](postgres.md) for image services, protected updates
 ## Replica groups
 
 Set `replicas: 2` on a service to run two instances of one captured release.
-Omission and `replicas: 1` are equivalent. Counts are bounded to **1–8 per
-service and 32 desired instances across the merged app**; these are accounting
-bounds, not host-capacity reservations. Volume-backed services and services with `ports` require one
+Omission and `replicas: 1` are equivalent. The merged app can request **32 container instances in total**, with no separate service-count limit. For example, 12 singleton services and one 20-replica stateless service fit. This bounds how many containers Vamos must create, inspect and recover; it does not reserve host capacity or count transient rollout overlap. Volume-backed services and services with `ports` require one
 instance. Zero does not stop or remove a service. Count changes respect scoped
 selection and manual-service protection like other configuration changes.
 
@@ -128,7 +126,7 @@ The supported host uses Vamos's Docker-managed bridge/NAT configuration. Deploym
 - Version-4 journals capture registry image identities, protected-service skips and explicit deployment scope. Version-1/2/3 recovery stays supported; older journal versions do not acquire these new fields implicitly.
 - Destruction removes all app public routes before containers/network. Secret versions remain retained. See [app lifecycle](app-lifecycle.md) and [secrets](secrets.md).
 - The **32 MiB aggregate bundle limit** includes all tar payloads and manifest overhead. Hash/length/entry validation happens before runtime mutation; a journal checksum detects changed saved bundles on resume. Docker ignore semantics are unchanged.
-- At most **64 secret environment mappings across the merged app configuration**; existing per-value/store limits remain. Independent manifests share this bound, the 8-service bound and the 32-alias app bound. Metadata-only SSH responses remain capped at **64 KiB**: oversized aggregate responses fail with complete, actionable JSON, not truncated JSON. Query `status --service NAME` for large mixed states; `secrets list` returns retained metadata separately.
+- At most **64 secret environment mappings across the merged app configuration**; existing per-value/store limits remain. Independent manifests share this bound and the app-wide budgets for container instances and domain aliases. Metadata-only SSH responses remain capped at **64 KiB**: oversized aggregate responses fail with complete, actionable JSON, not truncated JSON. Query `status --service NAME` for large mixed states; `secrets list` returns retained metadata separately.
 - Local Docker inspection remains bounded at 8 MiB per stream. Mutations retain the existing global host lock and worker deadlines. This milestone does not add a scheduler or background control-plane daemon.
 
 ## Verification

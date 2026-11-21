@@ -106,14 +106,48 @@ func TestPartialSupersedeExactSelection(t *testing.T) {
 	}
 }
 
-func TestPartialMergedServiceLimit(t *testing.T) {
+func TestPartialMergedNineServices(t *testing.T) {
 	local := &config.App{Name: "notes", Services: map[string]config.Service{"extra": multiApp().Services["backend"]}}
 	old := &journal{Version: 7, ServiceStates: map[string]*serviceState{}}
-	for i := 0; i < MaxServices; i++ {
+	for i := 0; i < 8; i++ {
 		cfg := multiApp().Services["backend"]
 		old.ServiceStates[string(rune('a'+i))] = &serviceState{Current: &release{Config: &cfg}}
 	}
-	if _, err := effectiveConfig(Request{App: "notes", Partial: true, Config: local}, old); err == nil {
-		t.Fatal("partial manifests bypassed merged service limit")
+	if merged, err := effectiveConfig(Request{App: "notes", Partial: true, Config: local}, old); err != nil || len(merged.Services) != 9 {
+		t.Fatalf("merge eight existing services and one new service: %v", err)
+	}
+}
+
+func TestNineServiceDeploymentAndRollback(t *testing.T) {
+	f := newMultiFlow(t)
+	f.req.Partial = true
+	a := &config.App{Name: f.req.App, Services: map[string]config.Service{}}
+	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"} {
+		a.Services[name] = config.Service{Build: &config.Build{Context: ".", Dockerfile: "Dockerfile." + name}, Update: config.UpdateAuto}
+	}
+	if _, err := f.deploy(a, strings.Repeat("1", 32)); err != nil {
+		t.Fatal(err)
+	}
+	old := f.load()
+	f.req.HostIdentity = old.HostID
+	f.req.Bindings = map[string]string{}
+	for name, s := range a.Services {
+		f.req.Bindings[name] = old.ServiceStates[name].Incarnation
+		s.Env = map[string]string{"REV": "next"}
+		a.Services[name] = s
+	}
+	if _, err := f.deploy(a, strings.Repeat("2", 32)); err != nil {
+		t.Fatal(err)
+	}
+	r := rollbackRequest(f, "3", "", true)
+	r.Partial, r.Bindings = false, nil
+	if _, err := f.m.Execute(context.Background(), r, nil); err != nil {
+		t.Fatal(err)
+	}
+	j := f.load()
+	for name := range a.Services {
+		if !reflect.DeepEqual(j.ServiceStates[name].Current.Config, old.ServiceStates[name].Current.Config) {
+			t.Fatalf("%s config not restored", name)
+		}
 	}
 }

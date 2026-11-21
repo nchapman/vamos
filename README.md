@@ -76,14 +76,14 @@ vamos destroy -f examples/hello/vamos.yaml --yes   # Remove the app and its rout
 
 ## What Vamos supports
 
-- **Multi-service apps** — Up to 8 services per app (Dockerfile-built or prebuilt image) sharing a private Docker network, with public HTTP routing on selected services, private service-to-service DNS, and per-service `replicas` (up to 8 stateless instances behind Caddy load balancing) and [`resources`](docs/resources.md) (e.g. `cpus: 0.5`, `memory: 512m`).
+- **Multi-service apps** — Dockerfile-built or prebuilt services share a private app network. Route selected services over public HTTP, use private service-to-service DNS, and configure per-service `replicas` (32 desired containers across the app) and [`resources`](docs/resources.md) (e.g. `cpus: 0.5`, `memory: 512m`).
 - **Zero-downtime public rollouts** — New containers must pass HTTP readiness checks before Caddy switches traffic; failed rollouts leave the previous release serving.
 - **TCP/UDP service ports** — Public IPv4 Docker port bindings, including equal-sized ranges for services such as coturn. Fixed-port services use one replica and stop-first replacement. See [service ports](docs/ports.md).
 - **Persistent volumes** — One named local volume per service (`volume: {name: data, mount: /data}`) with single-writer stop/start replacement, durable 503 maintenance routing during updates, and retained data across cleanup/destroy.
 - **Runtime secrets** — `vamos secrets stage` stores new values without restarting services; deploy the intended services to apply staged values. `vamos secrets set` stores new values and rolls out replacements to their deployed consumers, which can interrupt service. Secret-management output reports metadata, not values. Applications can log their own credentials; inspect workload logs before sharing them. See [runtime secrets](docs/secrets.md).
 - **Release & one-off commands** — Run pre-rollout release hooks (`release: {service: web, command: [...]}`) or ad-hoc noninteractive jobs (`vamos run --service web -- ...`) inside the captured image and network.
 - **Preview-first rollbacks** — Inspect and apply code/config rollbacks with `vamos rollback`.
-- **Custom domains** — Add `http.domains` aliases (up to 8 per service) alongside the generated app URL; Caddy manages TLS certificates automatically.
+- **Custom domains** — Add `http.domains` aliases (up to 32 across the app) alongside the generated app URL; Caddy manages TLS certificates automatically.
 - **Independent service directories** — Deploy services from separate repositories/folders into one app using `--service` and `vamos service bind` / `vamos service remove`.
 - **Encrypted backup repositories & plans** — Configure S3-compatible restic repositories (`vamos backup repository`) and shared backup plans (`vamos backup configure` / `vamos backup plan`). *(Application capture, restore, and scheduling are not yet implemented.)*
 - **Crash-safe remote execution** — Mutations run inside systemd units supervised by `vamos-agent`. Disconnecting SSH does not abort an admitted deploy. Check `vamos status`; resume a recorded incomplete deployment by ID, or replace its inputs with `vamos deploy --supersede <operation-id>`. A request refused before submission has nothing to resume.

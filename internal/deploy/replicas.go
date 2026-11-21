@@ -93,7 +93,7 @@ func replicaLabel(labels map[string]string) int {
 		return 0
 	}
 	n, err := strconv.Atoi(value)
-	if err != nil || n < 1 || n > config.MaxReplicas || strconv.Itoa(n) != value {
+	if err != nil || n < 1 || n > config.MaxAppReplicas || strconv.Itoa(n) != value {
 		return -1
 	}
 	return n
@@ -167,7 +167,7 @@ func validateInstances(j *journal, r *release) error {
 		}
 		return nil
 	}
-	if j.Version != 8 || r.Service == "" || r.Config == nil || r.Container != "" || r.Port != "" || r.PublishPort != "" || len(r.Instances) != r.Config.ReplicaCount() || len(r.Instances) > config.MaxReplicas || (r.Config.StopFirst() && len(r.Instances) > 1) {
+	if j.Version != 8 || r.Service == "" || r.Config == nil || r.Container != "" || r.Port != "" || r.PublishPort != "" || len(r.Instances) != r.Config.ReplicaCount() || len(r.Instances) > config.MaxAppReplicas || (r.Config.StopFirst() && len(r.Instances) > 1) {
 		return bad
 	}
 	ports := map[string]bool{}

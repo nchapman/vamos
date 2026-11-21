@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nchapman/vamos/internal/appstate"
+	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
@@ -118,7 +119,7 @@ func maintenanceContainerIdentity(j *journal, name, service, op string, replica 
 		ordinal = replica[0]
 	}
 	if ordinal != 0 {
-		return j.Version == 8 && ordinal > 0 && ordinal <= 8 && service != "" && appstate.ValidName(service) && operation.MatchString(op) && name == instanceName(j.App, service, op, ordinal)
+		return j.Version == 8 && ordinal > 0 && ordinal <= config.MaxAppReplicas && service != "" && appstate.ValidName(service) && operation.MatchString(op) && name == instanceName(j.App, service, op, ordinal)
 	}
 	return operation.MatchString(op) && (service == "" || appstate.ValidName(service)) &&
 		(name == containerName(j.App, service, op) || (service != "" && name == "vamos-run-"+op))

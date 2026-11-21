@@ -2,7 +2,7 @@
 
 See [persistent local volumes](volumes.md) for single-writer replacement, durable 503 routing, retained data and explicit reuse after destroy.
 
-Implemented: up to eight Dockerfile-built or prebuilt-image public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
+Implemented: Dockerfile-built or prebuilt-image public/private services per app, remote Buildx builds, same-app DNS, candidate readiness for public services, stop/start private replacement, Caddy routing with automatic HTTPS, captured-input recovery, status, bounded logs, [explicit cleanup/destruction](app-lifecycle.md), and [staged runtime secrets](secrets.md). See [multi-service deployment](multi-service.md) for ordering, partial success, DNS handoff, and compatibility.
 
 The binding-aware partial-manifest and service-removal implementation is described
 in [independent services](services.md), including the live acceptance evidence.
@@ -223,7 +223,7 @@ Native Windows/Linux client runs, arm64 execution, forced power-loss recovery, a
 
 ## Custom domains
 
-Public services accept `http.domains` (up to 8 per service, 32 per app).
+Public services accept `http.domains` (up to 32 across the app).
 Edit YAML and use normal `vamos deploy`, optionally scoped with `--service`;
 there is no route-only `vamos domains` command. Generated URLs remain available.
 Alias replacement follows service readiness and atomic Caddy routing, not an

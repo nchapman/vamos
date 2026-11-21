@@ -12,7 +12,7 @@ Add persistent local storage for small Dockerfile-built applications, beginning 
 
 Recommended first boundary:
 
-- At most **one named volume per service**, eight desired volumes per app. SQLite and uploads can share directories under one `/data` mount. Use a singular `volume` object; lists and the plural `volumes` key are rejected rather than advertising unsupported multiple mounts.
+- At most **one named volume per service**; each volume-backed service has a single writer and counts toward the app-wide instance budget. SQLite and uploads can share directories under one `/data` mount. Use a singular `volume` object; lists and the plural `volumes` key are rejected rather than advertising unsupported multiple mounts.
 - Ordinary Docker `local` volumes only, with no driver options, host bind mounts, anonymous volumes, subpath mounts, or sharing between services/apps. Continue rejecting image-declared `VOLUME`, even when its path resembles a declared mount.
 - Keep `update: auto`. Changed volume-backed services have downtime; unchanged services do not restart. Private service observation remains process-only, not database readiness.
 - A service receives its volume binding when volume creation intent is recorded, not when its first deployment becomes healthy. Reject adding/removing/renaming a mount, changing its path/owner, or converting an existing service between stateless and volume-backed. Such changes need an explicit migration workflow later; adding a new service remains possible.

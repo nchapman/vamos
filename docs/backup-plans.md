@@ -179,7 +179,7 @@ tags, nulls, duplicate/unknown keys and extra documents are rejected.
 - `online-per-source` accepts PostgreSQL and SQLite without a stop list. It makes
   no cross-source atomicity guarantee. Files require `quiesced`.
 - Every set requires nonempty, unique source references and a repository name.
-  Stop lists have at most 8 unique services.
+  Stop lists name distinct services in the same app.
 - A quiesced set declares a nonempty list of its stop services explicitly and
   must include each selected SQLite/file owner. The selected PostgreSQL service remains running;
   at most one database is selected per PostgreSQL service in a set. A stop list

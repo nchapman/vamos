@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -235,5 +236,38 @@ func TestPlanRequestStrictSelection(t *testing.T) {
 		if _, e := m.ExecutePlan(context.Background(), h, p.App, r, rt); !errors.Is(e, errPlanInput) {
 			t.Errorf("mixed request %+v: %v", r, e)
 		}
+	}
+}
+
+func TestNineWriterPlan(t *testing.T) {
+	m, host, p, rt := planFixture(t)
+	set := p.Sets["daily"]
+	for i := 1; i <= 8; i++ {
+		name := fmt.Sprintf("writer-%d", i)
+		rt.Services[name] = PlanService{Incarnation: fmt.Sprintf("%032x", i), Replicas: 1}
+		set.Stop = append(set.Stop, name)
+	}
+	p.Sets["daily"] = set
+	preview := previewPlan(t, m, host, p, rt)
+	if len(preview.Proposed.Bindings.Stops) != 9 {
+		t.Fatal("missing writer identities")
+	}
+	if _, err := m.ExecutePlan(context.Background(), host, p.App, approval(&p, preview), rt); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPlanEffectiveReplicaBudget(t *testing.T) {
+	m, host, p, rt := planFixture(t)
+	// Include effective services that the plan itself does not select.
+	for i := 1; i < 32; i++ {
+		rt.Services[fmt.Sprintf("worker-%d", i)] = PlanService{Replicas: 1, Incarnation: fmt.Sprintf("%032x", i)}
+	}
+	previewPlan(t, m, host, p, rt)
+	worker := rt.Services["worker-1"]
+	worker.Replicas++
+	rt.Services["worker-1"] = worker
+	if _, err := m.ExecutePlan(context.Background(), host, p.App, PlanRequest{Action: "preview", Plan: &p}, rt); !errors.Is(err, errPlanSelection) {
+		t.Fatalf("over-budget runtime: %v", err)
 	}
 }

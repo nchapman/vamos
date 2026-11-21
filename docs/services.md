@@ -263,11 +263,7 @@ a hostile-tenant security boundary.
 
 ## Limits and verification boundary
 
-The merged remote app, not each folder independently, is limited to **8 services,
-32 desired instances (8 per service), 32 custom aliases (8 per public service),
-and 64 secret environment mappings**.
-`vamos validate` checks configuration syntax/schema and alias bounds, but currently
-does not enforce the deployment service-count or aggregate secret-mapping bounds.
+The merged app shares budgets of **32 desired container instances, 32 custom domain aliases, and 64 secret environment mappings**. There is no separate eight-service cap. `vamos validate` checks the local manifest; it cannot see declarations in other folders.
 A successful local validation is not deployment admission: deploy validation and
 remote planning must also validate the merged app and server-wide hostname
 ownership. Splitting folders cannot evade these limits.

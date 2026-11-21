@@ -67,8 +67,8 @@ func sessionCommand(ctx context.Context, action string, args []string, stdin io.
 		shellProvided = shellProvided || f.Name == "shell"
 		ioProvided = ioProvided || f.Name == "interactive" || f.Name == "i" || f.Name == "tty" || f.Name == "t"
 	})
-	if replicaProvided && (*replica < 1 || *replica > config.MaxReplicas) {
-		return usageError(stderr, "--replica must be between 1 and 8")
+	if replicaProvided && (*replica < 1 || *replica > config.MaxAppReplicas) {
+		return usageError(stderr, fmt.Sprintf("--replica must be between 1 and %d", config.MaxAppReplicas))
 	}
 	if *timeout < 0 || (*appFlag != "" && *serverFlag == "") {
 		return usageError(stderr, "invalid timeout or --app without --server")

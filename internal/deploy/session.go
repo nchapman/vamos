@@ -3,6 +3,7 @@ package deploy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gofrs/flock"
+	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
@@ -57,8 +59,8 @@ var sessionContainerID = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // ValidateSessionRequest checks the bounded, action-specific session envelope.
 // Command arguments are validated without trimming, parsing, or rewriting them.
 func ValidateSessionRequest(r SessionRequest) error {
-	if r.Replica < 0 || r.Replica > 8 {
-		return errors.New("replica ordinal must be between 1 and 8")
+	if r.Replica < 0 || r.Replica > config.MaxAppReplicas {
+		return fmt.Errorf("replica ordinal must be between 1 and %d", config.MaxAppReplicas)
 	}
 	if r.Version != 1 {
 		return errors.New("unsupported session request version")

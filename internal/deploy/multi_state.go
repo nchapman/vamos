@@ -140,7 +140,7 @@ func validateMultiJournal(j *journal, app string) error {
 			return err
 		}
 	} else if j.Version == 5 || (j.Version >= 6 && j.Rollback != nil) {
-		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || (len(j.Rollback.Targets) == 0 && !(supportsServiceIdentity(j) && settled && len(j.Selected) == 0)) || len(j.Rollback.Targets) > MaxServices || (j.Rollback.AllowDowntime && j.Scope == "") {
+		if j.Rollback == nil || j.Archive != "" || j.BundleSHA != "" || len(j.BuildImages) != 0 || !operation.MatchString(j.Rollback.TargetOperation) || (len(j.Rollback.Targets) == 0 && !(supportsServiceIdentity(j) && settled && len(j.Selected) == 0)) || (j.Rollback.AllowDowntime && j.Scope == "") {
 			return bad
 		}
 	} else if j.Rollback != nil || j.Archive != j.Operation+".context.tar" || !imageID.MatchString("sha256:"+j.BundleSHA) {
@@ -376,7 +376,7 @@ func validateMultiJournal(j *journal, app string) error {
 		if snapshot == nil {
 			continue
 		}
-		if !operation.MatchString(snapshot.Operation) || len(snapshot.Services) == 0 || len(snapshot.Services) > MaxServices {
+		if !operation.MatchString(snapshot.Operation) || len(snapshot.Services) == 0 {
 			return bad
 		}
 		for name, r := range snapshot.Services {

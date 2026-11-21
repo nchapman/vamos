@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"slices"
+
+	"github.com/nchapman/vamos/internal/config"
 )
 
 var (
@@ -15,12 +17,23 @@ var (
 
 func (m *Manager) resolvePlan(hostID string, plan Plan, runtime PlanRuntime) (PlanRecord, error) {
 	record := PlanRecord{Version: 1, HostID: hostID, Plan: plan, Bindings: PlanBindings{Sources: map[string]SourceBinding{}, Stops: map[string]string{}, Repositories: map[string]RepositoryPin{}}}
-	if runtime.HostID != hostID || runtime.App != plan.App || len(runtime.Services) == 0 || len(runtime.Services) > 8 {
+	if runtime.HostID != hostID || runtime.App != plan.App || len(runtime.Services) == 0 || len(runtime.Services) > config.MaxAppReplicas {
+		return record, errPlanSelection
+	}
+	// PlanRuntime contains effective services, not retained release metadata.
+	total := 0
+	for _, svc := range runtime.Services {
+		if svc.Replicas < 1 || svc.Replicas > config.MaxAppReplicas {
+			return record, errPlanSelection
+		}
+		total += svc.Replicas
+	}
+	if total > config.MaxAppReplicas {
 		return record, errPlanSelection
 	}
 	service := func(name string) (PlanService, bool) {
 		value, ok := runtime.Services[name]
-		return value, ok && ValidOperation(value.Incarnation) && value.Replicas >= 1 && value.Replicas <= 8
+		return value, ok && ValidOperation(value.Incarnation)
 	}
 	for name, source := range plan.Sources {
 		selected, ok := service(source.Service)

@@ -13,6 +13,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/nchapman/vamos/internal/config"
 )
 
 const maxPlanRecordBytes = 24 * 1024
@@ -116,7 +118,7 @@ func ValidatePlanRecord(r PlanRecord) error {
 			volumeOwners[volume.ID] = binding.Service
 		}
 	}
-	if len(identities) > 8 {
+	if len(identities) > config.MaxAppReplicas {
 		return errPlanState
 	}
 	if r.UpdatedAt != "" {

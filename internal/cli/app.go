@@ -182,8 +182,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 			yesProvided = true
 		}
 	})
-	if replicaProvided && (action != "logs" || *replica < 1 || *replica > config.MaxReplicas || runProvided) {
-		return usageError(stderr, "--replica is service logs only and must be between 1 and 8")
+	if replicaProvided && (action != "logs" || *replica < 1 || *replica > config.MaxAppReplicas || runProvided) {
+		return usageError(stderr, fmt.Sprintf("--replica is service logs only and must be between 1 and %d", config.MaxAppReplicas))
 	}
 	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" && action != "rollback" && action != "service-remove" && action != "service-bind" || *service == "")) || (candidateProvided && action != "logs") {
 		return usageError(stderr, "--service requires deploy/run/status/logs/rollback; --candidate is logs only")

@@ -37,8 +37,6 @@ type Release struct {
 }
 
 const (
-	MaxServices       = 8
-	MaxReplicas       = 8
 	MaxAppReplicas    = 32
 	MaxSecretMappings = 64
 )

@@ -306,8 +306,8 @@ func ValidateRequest(r Request) error {
 			return errors.New("release runner is outside the selected service scope; use a manifest without a release command for dependency-only deployment")
 		}
 	}
-	if r.Replica < 0 || r.Replica > config.MaxReplicas || (r.Replica != 0 && (r.Action != "logs" || r.RunOperation != "")) {
-		return errors.New("replica ordinal is logs-only and must be between 1 and 8")
+	if r.Replica < 0 || r.Replica > config.MaxAppReplicas || (r.Replica != 0 && (r.Action != "logs" || r.RunOperation != "")) {
+		return fmt.Errorf("replica ordinal is logs-only and must be between 1 and %d", config.MaxAppReplicas)
 	}
 	if r.Partial && (r.Action != "deploy" || r.ContextFormat != BundleFormat) {
 		return errors.New("partial manifests require deploy with a current build bundle")
@@ -320,9 +320,6 @@ func ValidateRequest(r Request) error {
 	}
 	if len(r.Bindings) != 0 && r.HostIdentity == "" {
 		return errors.New("service bindings require the bound host identity")
-	}
-	if len(r.Bindings) > MaxServices {
-		return errors.New("too many service bindings")
 	}
 	for name, id := range r.Bindings {
 		if len(name) > 63 || !label.MatchString(name) || !operation.MatchString(id) {

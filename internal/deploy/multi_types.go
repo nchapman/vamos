@@ -4,7 +4,6 @@ import (
 	"github.com/nchapman/vamos/internal/secrets"
 )
 
-const MaxServices = 8
 const BundleFormat = "bundle-v1"
 
 type InstanceStatus struct {

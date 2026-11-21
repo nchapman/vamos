@@ -75,9 +75,7 @@ remain compatible with overlapping old and new application versions.
 ## Replica groups
 
 Optional `replicas` is a positive, bounded count, defaulting to one. Omission and
-explicit one have the same effective behavior. Initial bounds are 8 per service
-and 32 total desired instances per app; these are accounting bounds, not capacity
-reservations. Volume-backed services reject counts above one. Zero is not stop or
+explicit one have the same effective behavior. The app may request 32 instances in total. This bounds the number of containers a deploy must start and track, not how they are split among services or how much capacity is reserved. Volume-backed services reject counts above one. Zero is not stop or
 delete. Manual protection and selected-only updates continue to apply.
 
 A service release contains one image/configuration/secret set and an ordered list

@@ -483,7 +483,7 @@ On later deployments, API and renderer versions must tolerate overlap. If a rend
 | --- | --- |
 | “Can I add Postgres or Redis?” | Yes: private image-based services with volumes and explicit update protection. |
 | “Can my worker reach them?” | Yes: app-local service DNS, without public ports or link declarations. |
-| “Can I attach several domains?” | Yes: up to 8 aliases per public service and 32 per app, via YAML and deploy. |
+| “Can I attach several domains?” | Yes: up to 32 aliases across the app's public services, via YAML and deploy. |
 | “Can one app expose web and API?” | Yes: opt-in HTTP per service; everything else stays private. |
 | “Do volume-backed apps use normal deploy?” | Yes, with stop/start downtime; manual update protection is a separate choice. |
 | “Does rollback restore my database?” | No: code/config rollback and data recovery are separate operations. |

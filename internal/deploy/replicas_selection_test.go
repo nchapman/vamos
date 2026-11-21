@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -113,8 +114,12 @@ func TestReplicaExplicitOneAndLegacyRoutesUnchanged(t *testing.T) {
 func TestReplicaScopedRollbackUsesServiceHistoryAndAllCustomUpstreams(t *testing.T) {
 	f := newMultiFlow(t)
 	f.req.Partial = true
-	a := replicaApp(3)
-	a.Services["web"].HTTP.Domains = []string{"www.notes.example.net"}
+	a := replicaApp(10)
+	var aliases []string
+	for i := 0; i < 10; i++ {
+		aliases = append(aliases, fmt.Sprintf("alias-%d.example.net", i))
+	}
+	a.Services["web"].HTTP.Domains = aliases
 	if _, err := f.deploy(a, strings.Repeat("1", 32)); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +148,7 @@ func TestReplicaScopedRollbackUsesServiceHistoryAndAllCustomUpstreams(t *testing
 		t.Fatal(err)
 	}
 	j := f.load()
-	if j.Version != 8 || len(j.ServiceStates["web"].Current.Instances) != 3 {
+	if j.Version != 8 || len(j.ServiceStates["web"].Current.Instances) != 10 {
 		t.Fatal("scoped rollback lost group or downgraded")
 	}
 	if !reflect.DeepEqual(j.ServiceStates["backend"].Current, before.ServiceStates["backend"].Current) {
@@ -160,8 +165,12 @@ func TestReplicaScopedRollbackUsesServiceHistoryAndAllCustomUpstreams(t *testing
 		}
 		upstreams = append(upstreams, "127.0.0.1:"+*ref.Port)
 	}
+	target, err := f.m.ResolveSession(context.Background(), SessionRequest{Version: 1, Action: "exec", App: j.App, Host: f.req.Host, Service: "web", Replica: 10, Command: []string{"true"}})
+	if err != nil || target.Container != instanceName(j.App, "web", q.Operation, 10) {
+		t.Fatalf("rollback session target: %+v, %v", target, err)
+	}
 	const wantWAF = "\tcoraza_waf {\n\t\tload_owasp_crs\n\t\tdirectives `\n\t\t\tInclude @coraza.conf-recommended\n\t\t\tInclude @crs-setup.conf.example\n\t\t\tInclude @owasp_crs/*.conf\n\t\t\tSecRuleEngine On\n\t\t`\n\t}\n\tcache\n\tencode zstd gzip\n"
-	for _, host := range []string{"notes.example.com", "www.notes.example.net"} {
+	for _, host := range append([]string{"notes.example.com"}, aliases...) {
 		want := host + " {\n" + wantWAF + "\treverse_proxy " + strings.Join(upstreams, " ") + " {\n\t\tlb_policy round_robin\n\t\tlb_try_duration 5s\n\t\tfail_duration 10s\n\t}\n}"
 		if !strings.Contains(routes, want) {
 			t.Fatalf("missing full ordered upstream set for %s: %s", host, routes)

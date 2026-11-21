@@ -32,9 +32,6 @@ func (a App) Validate() error {
 	if len(a.Services) == 0 {
 		add("services must contain at least one service")
 	}
-	if len(a.Services) > MaxServices {
-		add("at most %d services are supported", MaxServices)
-	}
 
 	totalReplicas := 0
 	totalSecrets := 0
@@ -49,8 +46,10 @@ func (a App) Validate() error {
 		s := a.Services[name]
 		prefix := "services." + name
 		count := s.ReplicaCount()
-		if count < 1 || count > MaxReplicas {
-			add("%s.replicas must be between 1 and %d", prefix, MaxReplicas)
+		if count < 1 {
+			add("%s.replicas must be positive", prefix)
+		} else if count > MaxAppReplicas-totalReplicas {
+			totalReplicas = MaxAppReplicas + 1
 		} else {
 			totalReplicas += count
 		}
@@ -141,9 +140,6 @@ func (a App) Validate() error {
 			}
 			if name != "web" && len(a.Name+"-"+name) > 63 {
 				add("%s: generated hostname label exceeds 63 bytes", prefix)
-			}
-			if len(s.HTTP.Domains) > 8 {
-				add("%s.http.domains: at most 8 aliases per service are supported", prefix)
 			}
 			if s.HTTP.Port < 1 || s.HTTP.Port > 65535 {
 				add("%s.http.port must be between 1 and 65535", prefix)

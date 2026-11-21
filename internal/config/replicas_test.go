@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,10 +14,17 @@ func TestReplicasSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []int{0, -1, 9} {
+	for _, n := range []int{0, -1, 33, math.MaxInt} {
 		if _, err := Decode(strings.NewReader(base + fmt.Sprintf("    replicas: %d\n", n))); err == nil {
 			t.Fatalf("accepted %d", n)
 		}
+	}
+	if _, err := Decode(strings.NewReader(base + "    replicas: 32\n")); err != nil {
+		t.Fatal(err)
+	}
+	// The default singleton plus MaxInt must not wrap the aggregate negative.
+	if _, err := Decode(strings.NewReader(base + fmt.Sprintf("  worker:\n    image: demo\n    replicas: %d\n", math.MaxInt))); err == nil {
+		t.Fatal("aggregate overflow accepted")
 	}
 	one, err := Decode(strings.NewReader(base + "    replicas: 1\n"))
 	if err != nil || !reflect.DeepEqual(one, omitted) {
