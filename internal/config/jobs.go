@@ -12,8 +12,7 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// Jobs travel with their service's effective config and immutable release history.
-// Only the manifest uses a top-level jobs mapping with explicit service selectors.
+// A Job belongs to one service and travels with its immutable release history.
 type Job struct {
 	Command  []string `yaml:"command"`
 	Schedule Schedule `yaml:"schedule"`

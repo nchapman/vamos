@@ -12,10 +12,13 @@ def run(h, owner):
     app = h.work / 'jobcheck'
     app.mkdir()
     literal = 'two words $HOME %n'
-    manifest = {'app': 'jobcheck', 'services': {'worker': {'image': IMAGE, 'replicas': 2,
-                'command': ['python', '-c', "import os,time; os.mkfifo('/tmp/tick'); time.sleep(3600)"]}},
-                'jobs': {'marker': {'service': 'worker', 'schedule': {'every': '1m'},
-                         'command': ['python', '-c', "import sys; open('/tmp/tick','w').write(sys.argv[1])", literal]}}}
+    worker = {
+        'image': IMAGE, 'replicas': 2,
+        'command': ['python', '-c', "import os,time; os.mkfifo('/tmp/tick'); time.sleep(3600)"],
+        'jobs': {'marker': {'schedule': {'every': '1m'}, 'command': [
+            'python', '-c', "import sys; open('/tmp/tick','w').write(sys.argv[1])", literal]}},
+    }
+    manifest = {'app': 'jobcheck', 'services': {'worker': worker}}
     (app / 'vamos.yaml').write_text(json.dumps(manifest))
     h.command(['chown', '-R', 'vamostest:vamostest', app], user='root')
     h.cli('deploy', '--server', 'local', cwd=app)
@@ -26,7 +29,7 @@ def run(h, owner):
                    'timeout', '85', 'cat', '/tmp/tick', cwd=app)
     if result.stdout.decode() != literal:
         raise AssertionError('scheduled command did not deliver the literal argv to replica one')
-    del manifest['jobs']
+    del worker['jobs']
     (app / 'vamos.yaml').write_text(json.dumps(manifest))
     h.cli('deploy', '--server', 'local', cwd=app)
     if h.status('jobcheck').get('jobs'):

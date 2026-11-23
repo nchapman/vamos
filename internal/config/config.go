@@ -61,7 +61,7 @@ func (s *Service) NormalizeReplicas() {
 }
 
 type Service struct {
-	Jobs      map[string]Job    `yaml:"-" json:",omitempty"`
+	Jobs      map[string]Job    `yaml:"jobs,omitempty" json:",omitempty"`
 	Ports     []string          `yaml:"ports,omitempty" json:"Ports,omitempty"`
 	Replicas  *int              `yaml:"replicas,omitempty" json:"Replicas,omitempty"`
 	Build     *Build            `yaml:"build,omitempty"`
@@ -290,14 +290,8 @@ func Decode(r io.Reader) (*App, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 
-	var manifest struct {
-		App  `yaml:",inline"`
-		Jobs map[string]struct {
-			Service string `yaml:"service"`
-			Job     `yaml:",inline"`
-		} `yaml:"jobs"`
-	}
-	if err := decoder.Decode(&manifest); err != nil {
+	var app App
+	if err := decoder.Decode(&app); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, errors.New("configuration is empty")
 		}
@@ -314,19 +308,6 @@ func Decode(r io.Reader) (*App, error) {
 		return nil, errors.New("expected exactly one YAML document")
 	}
 
-	app := manifest.App
-	for _, name := range sortedKeys(manifest.Jobs) {
-		job := manifest.Jobs[name]
-		service, ok := app.Services[job.Service]
-		if !ok {
-			return nil, fmt.Errorf("jobs.%s.service must name a declared service", name)
-		}
-		if service.Jobs == nil {
-			service.Jobs = make(map[string]Job)
-		}
-		service.Jobs[name] = job.Job
-		app.Services[job.Service] = service
-	}
 	for name, service := range app.Services {
 		service.NormalizeReplicas()
 		if service.Update == "" {

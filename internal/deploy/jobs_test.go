@@ -73,13 +73,17 @@ func TestScheduledJobsFollowOnlyCurrentServiceRelease(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	deployOnly("web", a.Services["web"], "2")
-	if got := dueAt(minute); !slices.Equal(got, jobs) {
-		t.Fatal(got)
+	// An independently deployed service can declare the same job name.
+	web := a.Services["web"]
+	web.Jobs = map[string]config.Job{"collect": {Command: []string{"web-collect"}, Schedule: config.Schedule{Every: "15m"}}}
+	deployOnly("web", web, "2")
+	both := dueAt(minute)
+	if len(both) != 2 || !slices.Contains(both, job) || both[0].Unit() == both[1].Unit() {
+		t.Fatalf("expected independent units for both services: %+v", both)
 	}
 	s.Jobs = nil
 	deployOnly("backend", s, "3")
-	if got := dueAt(minute); len(got) != 0 {
+	if got := dueAt(minute); len(got) != 1 || got[0].Service != "web" || got[0].Name != "collect" {
 		t.Fatal(got)
 	}
 	if _, err := f.m.ScheduledCommand(ctx, job, minute); err == nil {

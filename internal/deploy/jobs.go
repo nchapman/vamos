@@ -16,7 +16,9 @@ import (
 // A transient worker receives identities, never a host command, shell string or container name.
 type ScheduledJob struct{ App, Service, Name, HostID, Release string }
 
-func (job ScheduledJob) Unit() string { return "vamos-job-" + job.App + "." + job.Name + ".service" }
+func (job ScheduledJob) Unit() string {
+	return "vamos-job-" + job.App + "." + job.Service + "." + job.Name + ".service"
+}
 
 func (m *Manager) jobHost() (*lifecycle.State, error) {
 	path := m.path(lifecycle.StatePath)

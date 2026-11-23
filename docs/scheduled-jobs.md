@@ -1,17 +1,19 @@
 # Scheduled jobs
 
-Declare a recurring command under `jobs` in the same `vamos.yaml` as its target service. For example, a Rails app that declares a `web` service can send a digest every Monday morning and prune expired sessions every 15 minutes:
+Declare recurring commands under `services.<name>.jobs` in the manifest that owns the service. For example, a Rails `web` service can send a digest every Monday morning and prune expired sessions every 15 minutes:
 
 ```yaml
-jobs:
-  weekly-digest:
-    service: web
-    command: ["bin/rails", "runner", "WeeklyDigest.deliver!"]
-    schedule: {every: week, on: monday, at: "09:00"}
-  prune-sessions:
-    service: web
-    command: ["bin/rails", "sessions:prune"]
-    schedule: {every: 15m}
+app: ledger
+services:
+  web:
+    build: .
+    jobs:
+      weekly-digest:
+        command: ["bin/rails", "runner", "WeeklyDigest.deliver!"]
+        schedule: {every: week, on: monday, at: "09:00"}
+      prune-sessions:
+        command: ["bin/rails", "sessions:prune"]
+        schedule: {every: 15m}
 ```
 
 **Schedules use the server's local time** unless you set `timezone` inside `schedule`. Choose one form:
@@ -31,4 +33,4 @@ Use `timezone: UTC` for a fixed clock; in zones with daylight-saving changes a l
 - The host agent starts one command in **replica 1 of the current service**, not one per replica. It uses the running container's user, environment and mounts. Arguments are passed literally: no host shell or interpolation. Keep credentials in service secrets, not in command arguments.
 - If a previous run of that job is still active, the tick is skipped. A tick can also be missed during downtime, deployment, maintenance, or when the target container is unavailable. There is **no catch-up, retry, or exactly-once delivery**. Make commands idempotent; for durable delivery use an application queue.
 - Editing or removing a job takes effect when you deploy the target service. Its schedules follow its release through scoped deployments and rollbacks. Another service's deploy doesn't replace those definitions. As with interactive exec, replacing a container can interrupt a run.
-- A job name is a lowercase DNS label, unique across the app (up to 32 jobs total). For host-level start/failure diagnostics use `journalctl -u vamos-job-APP.JOB.service`; the wrapper doesn't copy application stdout or stderr into the host journal. Have the application record the results you need.
+- Job names are lowercase DNS labels scoped to the service. In split manifests, `billing/cleanup` and `notifications/cleanup` run independently. The app can have up to 32 jobs total. For host-level start/failure diagnostics use `journalctl -u vamos-job-APP.SERVICE.JOB.service`; the wrapper doesn't copy application stdout or stderr into the host journal. Have the application record the results you need.

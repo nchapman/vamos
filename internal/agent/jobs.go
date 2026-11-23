@@ -38,7 +38,7 @@ func runJobClock(ctx context.Context) {
 				break
 			}
 			if err := startScheduledJob(tick, job, minute); err != nil {
-				log.Printf("scheduled job %s/%s not started (busy or unavailable)", job.App, job.Name)
+				log.Printf("scheduled job %s/%s/%s not started (busy or unavailable)", job.App, job.Service, job.Name)
 			}
 		}
 		cancel()
