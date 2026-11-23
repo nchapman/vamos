@@ -261,9 +261,11 @@ a started execution automatically. Separate secret names/credentials do not auto
 SQL privileges. Configure roles and grants yourself; shared app networking is not
 a hostile-tenant security boundary.
 
+For recurring work in a deployed service, declare [scheduled jobs](scheduled-jobs.md) with a calendar schedule or five-field cron expression. They run in one current replica, not once per replica.
+
 ## Limits and verification boundary
 
-The merged app shares budgets of **32 desired container instances, 32 custom domain aliases, and 64 secret environment mappings**. There is no separate eight-service cap. `vamos validate` checks the local manifest; it cannot see declarations in other folders.
+The merged app shares budgets of **32 desired container instances, 32 custom domain aliases, 32 scheduled jobs, and 64 secret environment mappings**. There is no separate eight-service cap. `vamos validate` checks the local manifest; it cannot see declarations in other folders.
 A successful local validation is not deployment admission: deploy validation and
 remote planning must also validate the merged app and server-wide hostname
 ownership. Splitting folders cannot evade these limits.

@@ -677,6 +677,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		return lifecycleError(stderr, errors.New("remote response has no app status"))
 	}
 	s := response.Status
+	for _, job := range s.Jobs {
+		if _, err := fmt.Fprintf(stdout, "Scheduled job %s / %s: %s; next: %s\n", displayText(job.Service), displayText(job.Name), displayText(job.Schedule), displayText(job.Next)); err != nil {
+			return lifecycleError(stderr, err)
+		}
+	}
 	if len(s.Services) > 0 {
 		if _, err := fmt.Fprintf(stdout, "%s / %s: phase=%q operation=%q host-operation-active=%t\n", server.Name, name, s.Phase, s.Operation, s.Active); err != nil {
 			return lifecycleError(stderr, err)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -207,6 +208,14 @@ func AgentHello(ctx context.Context, target string) (agentproto.HelloResponse, e
 
 func requiredCapabilities(request deploy.Request) []string {
 	caps := []string{agentproto.CapAppDeploy}
+	if request.Config != nil {
+		for _, service := range request.Config.Services {
+			if len(service.Jobs) > 0 {
+				caps = append(caps, agentproto.CapJobs)
+				break
+			}
+		}
+	}
 	if request.PreviewOnly {
 		caps = append(caps, agentproto.CapProtectedPreview)
 	}
@@ -241,6 +250,9 @@ func AgentRunApp(ctx context.Context, target string, request deploy.Request, pay
 	defer closeConn()
 	if request.Mutating() {
 		return runMutation(ctx, client, request, payload)
+	}
+	if request.Action == "status" && slices.Contains(client.Hello().Capabilities, agentproto.CapJobs) {
+		request.IncludeJobs = true
 	}
 	response, err := client.Read(ctx, request)
 	if err != nil {

@@ -13,6 +13,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/gofrs/flock v0.13.2
 	github.com/moby/patternmatcher v0.6.1
+	github.com/robfig/cron/v3 v3.0.1
 	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/crypto v0.59.0
 	golang.org/x/term v0.48.0

@@ -35,6 +35,7 @@ func (a App) Validate() error {
 
 	totalReplicas := 0
 	totalSecrets := 0
+	jobs := map[string]bool{}
 	domains := make(map[string]string)
 	volumes := make(map[string]string)
 	type portClaim struct {
@@ -45,6 +46,15 @@ func (a App) Validate() error {
 	for _, name := range sortedKeys(a.Services) {
 		s := a.Services[name]
 		prefix := "services." + name
+		for _, job := range sortedKeys(s.Jobs) {
+			if !validLabel(job) || jobs[job] {
+				add("job names must be unique app-wide lowercase DNS labels: %q", job)
+			}
+			jobs[job] = true
+			if err := s.Jobs[job].validate(); err != nil {
+				add("jobs.%s: %v", job, err)
+			}
+		}
 		count := s.ReplicaCount()
 		if count < 1 {
 			add("%s.replicas must be positive", prefix)
@@ -202,6 +212,9 @@ func (a App) Validate() error {
 	}
 	if len(domains) > 32 {
 		add("at most 32 custom domains per app are supported")
+	}
+	if len(jobs) > 32 {
+		add("at most 32 scheduled jobs are supported per app")
 	}
 	return errors.Join(issues...)
 }

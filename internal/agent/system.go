@@ -56,6 +56,7 @@ func ServeSystem(ctx context.Context) error {
 		PrincipalsPath:     DefaultPrincipals,
 		AuthorizedKeysPath: DefaultAuthorizedKeys,
 		SocketGID:          gid,
+		ScheduledJobs:      true,
 	}).Serve(ctx)
 }
 

@@ -29,6 +29,7 @@ import (
 )
 
 type Request struct {
+	IncludeJobs    bool                `json:"include_jobs,omitempty"`
 	BackupPlan     *backup.PlanRequest `json:"backup_plan,omitempty"`
 	Backup         *backup.Request     `json:"backup,omitempty"`
 	PreviewOnly    bool                `json:"preview_only,omitempty"`
@@ -97,6 +98,7 @@ type VolumeStatus struct {
 }
 
 type Status struct {
+	Jobs         []JobStatus              `json:"jobs,omitempty"`
 	HostIdentity string                   `json:"host_identity,omitempty"`
 	Run          *RunResult               `json:"run,omitempty"`
 	Release      *RunResult               `json:"release,omitempty"`
@@ -262,6 +264,9 @@ func validateLegacyApp(a *config.App) error {
 		return errors.New("legacy protocol does not support release commands")
 	}
 	for _, service := range a.Services {
+		if len(service.Jobs) != 0 {
+			return errors.New("scheduled jobs require a current agent and build bundle")
+		}
 		if service.Resources != nil {
 			return errors.New("legacy protocol does not support resources; use a current client with a captured build bundle")
 		}
@@ -286,6 +291,9 @@ func (r Request) Mutating() bool {
 }
 
 func ValidateRequest(r Request) error {
+	if r.IncludeJobs && r.Action != "status" {
+		return errors.New("include_jobs is status only")
+	}
 	if r.Action == "backup-plan" {
 		return validateBackupPlanRequest(r)
 	}
@@ -777,6 +785,9 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			resp, err = m.readMulti(ctx, r, j, secretState, !ok)
 			if err == nil && r.Action == "status" && resp.Status != nil {
 				m.enrichRunStatus(ctx, j, resp.Status)
+				if r.IncludeJobs {
+					resp.Status.Jobs = scheduledStatus(j, r.Service, time.Now())
+				}
 			}
 			return
 		}

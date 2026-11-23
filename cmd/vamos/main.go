@@ -46,6 +46,13 @@ func run() int {
 		}
 		return 126
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "internal-scheduled-job" {
+		if err := agent.RunScheduledJob(ctx, os.Args[2:]); err != nil {
+			_, _ = os.Stderr.WriteString("vamos-job: " + err.Error() + "\n")
+			return 1
+		}
+		return 0
+	}
 	if len(os.Args) == 2 && os.Args[1] == "internal-caddy-refresh" {
 		if err := executor.RefreshCaddy(ctx); err != nil {
 			_, _ = os.Stderr.WriteString("vamos-caddy-refresh: " + err.Error() + "\n")

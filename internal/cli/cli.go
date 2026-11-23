@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/nchapman/vamos/internal/config"
@@ -153,9 +155,22 @@ func validate(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return lifecycleError(stderr, err)
 	}
+	var jobs []string
+	for _, service := range slices.Sorted(maps.Keys(app.Services)) {
+		defs := app.Services[service].Jobs
+		for _, name := range slices.Sorted(maps.Keys(defs)) {
+			jobs = append(jobs, fmt.Sprintf("%s / %s: %s", service, name, defs[name].Schedule.Description()))
+		}
+	}
 	if view := presentationFor(stdout); view != nil {
 		text := view.header("validate", app.Name, "", "") + view.ink("success", "Local configuration valid", true) + "\n"
 		text += view.field("File", *filename) + view.field("Services", fmt.Sprint(len(app.Services)))
+		if len(jobs) > 0 {
+			text += view.section("Scheduled jobs")
+			for _, line := range jobs {
+				text += view.prose(line)
+			}
+		}
 		text += view.prose("Local validation only; build files, images, secrets, DNS, and server state were not checked.")
 		if err := view.write(stdout, text); err != nil {
 			return lifecycleError(stderr, err)
@@ -163,6 +178,9 @@ func validate(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprintf(stdout, "%s: valid configuration for %s (%d services)\n", *filename, app.Name, len(app.Services))
+	for _, line := range jobs {
+		fmt.Fprintln(stdout, "Scheduled job:", displayText(line))
+	}
 	fmt.Fprintln(stdout, "Local validation only; build files, images, secrets, DNS, and server state were not checked.")
 	return 0
 }

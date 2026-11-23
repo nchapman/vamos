@@ -52,6 +52,7 @@ type Daemon struct {
 	Queue              *Queue
 	Principals         map[string]agentproto.Principal
 	SocketGID          int
+	ScheduledJobs      bool
 	// BridgePrincipal optionally pins a test or single-key installation. Production
 	// uses command= options in authorized_keys to select a configured principal.
 	BridgePrincipal string
@@ -93,6 +94,9 @@ func (d *Daemon) defaults() {
 	}
 	if len(d.Capabilities) == 0 {
 		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapProtectedPreview, agentproto.CapDurableQueue, agentproto.CapPerAppConcurrency, agentproto.CapScopedACL, agentproto.CapSecrets, agentproto.CapBackups, agentproto.CapSessions}
+		if d.ScheduledJobs {
+			d.Capabilities = append(d.Capabilities, agentproto.CapJobs)
+		}
 	}
 	if d.Sessions == nil {
 		d.Sessions = session.NewManager()
@@ -164,6 +168,12 @@ func (d *Daemon) Serve(ctx context.Context) error {
 		}
 	}
 	var wg sync.WaitGroup
+	if d.ScheduledJobs {
+		jobCtx, stop := context.WithCancel(ctx)
+		var clock sync.WaitGroup
+		clock.Go(func() { runJobClock(jobCtx) })
+		defer func() { stop(); clock.Wait() }()
+	}
 	// Connection handlers can schedule accepted work until they exit.
 	defer d.workWG.Wait()
 	defer wg.Wait()

@@ -58,6 +58,14 @@ func TestValidateFile(t *testing.T) {
 	}
 }
 
+func TestValidateExplainsServerLocalScheduleOffline(t *testing.T) {
+	filename := writeConfig(t, "app: notes\nservices:\n  web: {image: app:v1}\njobs:\n  digest: {service: web, command: [send], schedule: {every: week, on: monday, at: '09:00'}}\n")
+	var stdout, stderr bytes.Buffer
+	if code := cli.Run([]string{"validate", "-f", filename}, &stdout, &stderr, "dev"); code != 0 || !strings.Contains(stdout.String(), "web / digest: every week on monday at 09:00 (server local time)") {
+		t.Fatalf("code=%d output=%q error=%q", code, &stdout, &stderr)
+	}
+}
+
 func TestValidateDefaultFile(t *testing.T) {
 	filename := writeConfig(t, "app: notes\nservices:\n  web: {image: app:v1}\n")
 	t.Chdir(filepath.Dir(filename))

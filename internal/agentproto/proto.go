@@ -28,6 +28,7 @@ const (
 const (
 	CapAppDeploy         = "app-deploy"
 	CapProtectedPreview  = "protected-preview"
+	CapJobs              = "scheduled-jobs"
 	CapDurableQueue      = "durable-queue"
 	CapPerAppConcurrency = "per-app-concurrency"
 	CapScopedACL         = "scoped-acl"
