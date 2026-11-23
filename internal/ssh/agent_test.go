@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/nchapman/vamos/internal/agentproto"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
 )
@@ -111,5 +113,14 @@ func TestIdempotencyKeyForResumeDoesNotCollideWithTargetOperation(t *testing.T) 
 	resumeKey2, err := idempotencyKeyFor(deploy.Request{Action: "resume", Operation: targetOp})
 	if err != nil || len(resumeKey2) != 32 || resumeKey2 == resumeKey1 || resumeKey2 == targetOp {
 		t.Fatalf("resume key2 = %q err=%v", resumeKey2, err)
+	}
+}
+
+func TestJobInboxCapability(t *testing.T) {
+	for _, id := range []string{"", "j_0123456789abcdef"} {
+		caps := requiredCapabilities(deploy.Request{Action: "jobs", JobID: id})
+		if !slices.Contains(caps, agentproto.CapJobs) || slices.Contains(caps, agentproto.CapDurableQueue) {
+			t.Fatalf("jobs requires scheduled reads, not queue: %v", caps)
+		}
 	}
 }

@@ -185,7 +185,8 @@ func (m *Manager) ResolveSession(ctx context.Context, r SessionRequest) (Session
 			if _, statErr := os.Lstat(appPath); statErr == nil {
 				appLock := flock.New(appPath, flock.SetPermissions(0600))
 				defer appLock.Close()
-				ok, err := appLock.TryLock()
+				// Concurrent admissions only inspect identity. Mutations hold this lock exclusively.
+				ok, err := appLock.TryRLock()
 				if err != nil {
 					return zero, err
 				}

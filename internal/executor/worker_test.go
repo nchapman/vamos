@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofrs/flock"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/secrets"
@@ -34,6 +35,25 @@ func TestFormatAppResponseRedactsSecretsAndPreservesFailureStatus(t *testing.T) 
 	formatted := FormatAppResponse(deployReq, partial, errors.New("release hook exited with code 23"))
 	if formatted.Status == nil || formatted.Status.Release == nil || formatted.Status.Release.ExitCode == nil || *formatted.Status.Release.ExitCode != 23 || !strings.Contains(formatted.Error, "code 23") {
 		t.Fatalf("failure lost partial release status: %+v", formatted)
+	}
+}
+
+func TestProbeDoesNotReportJobAdmissionAsMutation(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, dir, err := prepareLockPaths(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission := flock.New(filepath.Join(dir, "app-shop.lock"))
+	defer admission.Close()
+	if err := admission.RLock(); err != nil {
+		t.Fatal(err)
+	}
+	if busy, err := ProbeMutationActive(root, "shop"); err != nil || busy {
+		t.Fatalf("read-only admission reported as a mutation: %v %v", busy, err)
 	}
 }
 

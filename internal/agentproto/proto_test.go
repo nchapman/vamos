@@ -224,3 +224,37 @@ func TestSubmitAndStrictFrameDecoding(t *testing.T) {
 		t.Fatal("oversized frame accepted")
 	}
 }
+
+func TestJobInboxReadPermissionAndShape(t *testing.T) {
+	r := deploy.Request{Version: 1, Action: "jobs", App: "billing", Host: lifecycle.Config{Name: "prod", Domain: "apps.example.com"}}
+	p := Principal{ID: "ci", Role: RoleDeployer, Apps: []string{"billing"}}
+	for _, id := range []string{"", "j_1234567890abcdef"} {
+		r.JobID = id
+		for _, svc := range []string{"", "web"} {
+			r.Service = svc
+			if r.Mutating() || ValidateReadRequest(ReadRequest{Request: r}) != nil {
+				t.Fatal("invalid read", r)
+			}
+			for _, action := range []string{"status", "deploy", "logs"} {
+				p.Actions = []string{action}
+				if (Authorize(p, r.Action, r.App) == nil) != (action == "logs") || Authorize(p, r.Action, "other") == nil {
+					t.Fatal("permission mismatch", action, r)
+				}
+			}
+		}
+	}
+	for _, modify := range []func(*deploy.Request){
+		func(q *deploy.Request) { q.JobID = "../run" },
+		func(q *deploy.Request) { q.Action = "status" },
+		func(q *deploy.Request) { q.Operation = strings.Repeat("1", 32) },
+		func(q *deploy.Request) { q.Tail = 10 },
+		func(q *deploy.Request) { q.Service = "../web" },
+		func(q *deploy.Request) { q.IncludeJobs = true },
+	} {
+		q := r
+		modify(&q)
+		if ValidateReadRequest(ReadRequest{Request: q}) == nil {
+			t.Fatal("accepted", q)
+		}
+	}
+}

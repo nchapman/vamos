@@ -260,6 +260,9 @@ func (p Principal) Validate() error {
 // Authorize enforces server-side principal ACLs. It fails closed on unknown
 // actions, host-admin operations by non-admins, or out-of-scope applications.
 func Authorize(p Principal, action, app string) error {
+	if action == "jobs" {
+		action = "logs"
+	}
 	if err := p.Validate(); err != nil {
 		return err
 	}

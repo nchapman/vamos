@@ -223,6 +223,8 @@ func requiredCapabilities(request deploy.Request) []string {
 		caps = append(caps, agentproto.CapDurableQueue)
 	}
 	switch request.Action {
+	case "jobs":
+		caps = append(caps, agentproto.CapJobs)
 	case "secrets-stage", "secrets-set", "secrets-list":
 		caps = append(caps, agentproto.CapSecrets)
 	case "backup-plan", "backup-repository":

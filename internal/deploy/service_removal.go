@@ -210,6 +210,9 @@ func (m *Manager) executeServiceRemoval(ctx context.Context, r Request, j *journ
 	if err = json.Unmarshal(b, &clone); err != nil {
 		return
 	}
+	if err = m.jobResults().Remove(j.HostID, j.App, w.Service, serviceIncarnation(j, w.Service)); err != nil {
+		return
+	}
 	commitServiceRemoval(&clone)
 	if err = m.save(&clone); err == nil {
 		*j = clone

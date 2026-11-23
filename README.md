@@ -97,6 +97,7 @@ vamos deploy                          # Build, push/load, and roll out
 vamos status                          # In a project: app status. Outside: list registered servers.
 vamos status --server example         # Outside a project: list this server's apps
 vamos logs --service web --follow     # Stream logs from a verified container
+vamos jobs --service web              # Recent scheduled runs; use jobs show ID for output
 vamos exec --service web -- CMD...    # Run a command in a live container
 vamos console --service web           # Interactive shell in a live container
 vamos run --service web -- CMD...     # One-off noninteractive container run
@@ -152,7 +153,7 @@ Detailed contracts and architecture notes live in `docs/`:
 - [CLI reference](docs/cli.md) & [Troubleshooting and safe recovery](docs/troubleshooting.md)
 - [Host inspection](docs/host-inspection.md) & [Host lifecycle (`add`, `upgrade`, `connect`, `teardown`)](docs/host-lifecycle.md)
 - [Deployment & recovery](docs/deployment.md), [Multi-service apps](docs/multi-service.md), & [Rollback](docs/rollback.md)
-- [Service ports](docs/ports.md), [Volumes](docs/volumes.md), [Secrets](docs/secrets.md), [Custom domains](docs/domains.md), [Resources](docs/resources.md), & [Release commands](docs/release-commands.md)
+- [Service ports](docs/ports.md), [Volumes](docs/volumes.md), [Secrets](docs/secrets.md), [Custom domains](docs/domains.md), [Resources](docs/resources.md), [Release commands](docs/release-commands.md), & [Scheduled jobs](docs/scheduled-jobs.md)
 - [Independent services](docs/services.md) & [PostgreSQL](docs/postgres.md)
 - [Backup repositories](docs/backup-repositories.md) & [Backup plans](docs/backup-plans.md)
 - [Operations checklist](docs/operations.md) & [Testing](docs/testing.md)

@@ -153,6 +153,20 @@ func appOutcome(request deploy.Request, response deploy.Response, decodeErr, con
 	if decodeErr != nil {
 		return response, fmt.Errorf("invalid app response (decode error: %w)", decodeErr)
 	}
+	if request.Action == "jobs" && response.Version == 1 {
+		if request.JobID == "" && response.JobRun == nil {
+			for _, run := range response.JobRuns {
+				if len(run.Output) != 0 || (request.Service != "" && request.Service != run.Service) {
+					return deploy.Response{}, errors.New("invalid job inbox summary")
+				}
+			}
+			return deploy.Response{Version: 1, JobRuns: response.JobRuns}, nil
+		}
+		if response.JobRun != nil && response.JobRun.ID == request.JobID && request.JobID != "" && (request.Service == "" || request.Service == response.JobRun.Service) {
+			return deploy.Response{Version: 1, JobRun: response.JobRun}, nil
+		}
+		return deploy.Response{}, errors.New("invalid job inbox response")
+	}
 	if request.PreviewOnly && (response.DeployPreview == nil || !response.DeployPreview.NeedsConfirmation || response.DeployPreview.Service != request.Service) {
 		return deploy.Response{}, errors.New("no matching protected-service preview received")
 	}

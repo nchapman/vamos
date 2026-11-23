@@ -134,6 +134,32 @@ func newSessionFlow(t *testing.T) *multiFlow {
 	return f
 }
 
+func TestSameAppAdmissionsShareInspectionLockButExcludeDeploy(t *testing.T) {
+	f := newSessionFlow(t)
+	r := sessionRequest()
+	dir := f.m.path("/run/lock/vamos")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	lock := flock.New(filepath.Join(dir, "app-"+r.App+".lock"))
+	defer lock.Close()
+	if err := lock.RLock(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.m.ResolveSession(context.Background(), r); err != nil {
+		t.Fatalf("parallel admission refused: %v", err)
+	}
+	if err := lock.Unlock(); err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.Lock(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.m.ResolveSession(context.Background(), r); err == nil {
+		t.Fatal("admitted during mutation")
+	}
+}
+
 func TestSessionSelectionAndImmutableIdentity(t *testing.T) {
 	f := newSessionFlow(t)
 	j := f.load()

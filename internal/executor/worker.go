@@ -370,7 +370,7 @@ func ProbeMutationActive(root, app string) (bool, error) {
 		appPath := filepath.Join(coordDir, "app-"+app+".lock")
 		if _, statErr := os.Lstat(appPath); statErr == nil {
 			appLock := flock.New(appPath, flock.SetPermissions(0600))
-			ok, err := appLock.TryLock()
+			ok, err := appLock.TryRLock()
 			if err != nil {
 				_ = appLock.Close()
 				return false, err

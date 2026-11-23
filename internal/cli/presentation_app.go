@@ -112,7 +112,8 @@ func (p *presentation) statusReport(s *deploy.Status, r appReport) string {
 		b.WriteString(p.section("Scheduled jobs"))
 		for _, job := range s.Jobs {
 			b.WriteString(p.field(job.Service+" / "+job.Name, job.Schedule))
-			b.WriteString(p.field("Next", job.Next))
+			b.WriteString(p.field("Next scheduled", job.Next))
+			b.WriteString(jobStatusFields(p, job))
 		}
 	}
 	b.WriteString(p.section("Recorded operation"))

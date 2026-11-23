@@ -27,6 +27,7 @@ Usage:
   vamos run [--service NAME] -- COMMAND  Run a noninteractive command
   vamos deploy [-f vamos.yaml]             Build and deploy the app's services
   vamos status [--server NAME] [--json]   List servers or apps; in a project, inspect app status
+  vamos jobs [show ID] [OPTIONS]          Inspect scheduled job runs
   vamos logs [--tail 100] [--follow]      Read a snapshot or follow one container's logs
   vamos rollback [--service NAME] [--allow-downtime] [--yes]
                                         Preview or restore captured service images
@@ -117,7 +118,7 @@ func RunContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		return secretsCommand(ctx, args[1:], stdin, stdout, stderr, defaultAppDeps(), readSecretInput)
 	case "server":
 		return serverWithInput(ctx, args[1:], stdin, stdout, stderr)
-	case "run", "deploy", "status", "logs", "rollback", "resume", "cleanup", "destroy":
+	case "run", "deploy", "status", "jobs", "logs", "rollback", "resume", "cleanup", "destroy":
 		return appCommand(ctx, args[0], args[1:], stdout, stderr, defaultAppDeps())
 	case "internal-app-executor":
 		if len(args) != 1 {

@@ -127,6 +127,14 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	timeout := flags.Duration("timeout", deadline, "client wait deadline; does not cancel queued work")
 	flags.Usage = func() { writeAppHelp(flags.Output(), action, flags) }
+	jobID := ""
+	if action == "jobs" {
+		var err error
+		jobID, args, err = jobsArgs(args)
+		if err != nil {
+			return usageError(stderr, err.Error())
+		}
+	}
 	if err := parseFlags(flags, args, stdout, stderr); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -185,8 +193,8 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if replicaProvided && (action != "logs" || *replica < 1 || *replica > config.MaxAppReplicas || runProvided) {
 		return usageError(stderr, fmt.Sprintf("--replica is service logs only and must be between 1 and %d", config.MaxAppReplicas))
 	}
-	if (serviceProvided && (action != "status" && action != "logs" && action != "deploy" && action != "run" && action != "rollback" && action != "service-remove" && action != "service-bind" || *service == "")) || (candidateProvided && action != "logs") {
-		return usageError(stderr, "--service requires deploy/run/status/logs/rollback; --candidate is logs only")
+	if (serviceProvided && (action != "jobs" && action != "status" && action != "logs" && action != "deploy" && action != "run" && action != "rollback" && action != "service-remove" && action != "service-bind" || *service == "")) || (candidateProvided && action != "logs") {
+		return usageError(stderr, "--service requires deploy/run/status/jobs/logs/rollback; --candidate is logs only")
 	}
 	if runProvided && (*runOperation == "" || (action != "status" && action != "logs") || serviceProvided || candidateProvided) {
 		return usageError(stderr, "--run is status/logs only and cannot be combined with --service or --candidate")
@@ -215,11 +223,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	if (action == "resume" && flags.NArg() != 1) || (action != "resume" && action != "run" && flags.NArg() != 0) {
 		return usageError(stderr, "resume requires one operation ID; other app commands have no positional arguments")
 	}
-	if (*supersede != "" && action != "deploy") || (*asJSON && action != "status" && !maintenance) || (yesProvided && !maintenance && action != "rollback" && !(action == "deploy" && *service != "")) || (action != "logs" && *tail != 100) {
+	if (*supersede != "" && action != "deploy") || (*asJSON && action != "jobs" && action != "status" && !maintenance) || (yesProvided && !maintenance && action != "rollback" && !(action == "deploy" && *service != "")) || (action != "logs" && *tail != 100) {
 		return usageError(stderr, "option does not apply to this app command")
 	}
 	if *appFlag != "" && (action == "deploy" || action == "run" || *serverFlag == "") {
-		return usageError(stderr, "--app is for status/logs/resume/cleanup/destroy/rollback and requires an explicit --server")
+		return usageError(stderr, "--app is for status/jobs/logs/resume/cleanup/destroy/rollback and requires an explicit --server")
 	}
 	name := *appFlag
 	var app *config.App
@@ -288,6 +296,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	var selectedNames []string
 	request.AllowDowntime = *allowDowntime
+	request.JobID = jobID
 	request.Service = *service
 	request.Candidate = *candidate
 	request.Replica = *replica
@@ -513,6 +522,12 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 		return code
 	}
+	if action == "jobs" {
+		if err := writeJobs(stdout, view, reportView, response, jobID, *asJSON); err != nil {
+			return lifecycleError(stderr, err)
+		}
+		return 0
+	}
 	if action == "service-bind" {
 		if response.Status == nil || response.Status.HostIdentity == "" || response.Status.Services[*service].Incarnation == "" {
 			return lifecycleError(stderr, errors.New("status has no service/host identity; refusing to bind"))
@@ -598,6 +613,11 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		if response.Status == nil {
 			return lifecycleError(stderr, errors.New("remote response has no app status"))
 		}
+		for _, job := range response.Status.Jobs {
+			if job.Last != nil {
+				job.Last.Output = nil
+			}
+		}
 		if err := json.NewEncoder(stdout).Encode(response.Status); err != nil {
 			return lifecycleError(stderr, err)
 		}
@@ -678,7 +698,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 	}
 	s := response.Status
 	for _, job := range s.Jobs {
-		if _, err := fmt.Fprintf(stdout, "Scheduled job %s / %s: %s; next: %s\n", displayText(job.Service), displayText(job.Name), displayText(job.Schedule), displayText(job.Next)); err != nil {
+		if _, err := fmt.Fprintf(stdout, "Scheduled job %s / %s: %s; Next scheduled: %s\n%s", displayText(job.Service), displayText(job.Name), displayText(job.Schedule), displayText(job.Next), jobStatusFields(nil, job)); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}

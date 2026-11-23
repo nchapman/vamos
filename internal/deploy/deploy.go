@@ -23,12 +23,14 @@ import (
 	"github.com/nchapman/vamos/internal/buildcontext"
 	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/engine"
+	"github.com/nchapman/vamos/internal/jobresults"
 	"github.com/nchapman/vamos/internal/lifecycle"
 	"github.com/nchapman/vamos/internal/process"
 	"github.com/nchapman/vamos/internal/secrets"
 )
 
 type Request struct {
+	JobID          string              `json:"job_id,omitempty"`
 	IncludeJobs    bool                `json:"include_jobs,omitempty"`
 	BackupPlan     *backup.PlanRequest `json:"backup_plan,omitempty"`
 	Backup         *backup.Request     `json:"backup,omitempty"`
@@ -59,6 +61,8 @@ type Request struct {
 	Tail           int                 `json:"tail,omitempty"`
 }
 type Response struct {
+	JobRuns         []jobresults.Run     `json:"job_runs,omitempty"`
+	JobRun          *jobresults.Run      `json:"job_run,omitempty"`
 	SetApplied      bool                 `json:"secret_applied,omitempty"`
 	BackupPlan      *backup.PlanResponse `json:"backup_plan,omitempty"`
 	Backup          *backup.Response     `json:"backup,omitempty"`
@@ -291,6 +295,9 @@ func (r Request) Mutating() bool {
 }
 
 func ValidateRequest(r Request) error {
+	if r.JobID != "" && (r.Action != "jobs" || !jobresults.ValidID(r.JobID)) {
+		return errors.New("invalid job run selector")
+	}
 	if r.IncludeJobs && r.Action != "status" {
 		return errors.New("include_jobs is status only")
 	}
@@ -361,7 +368,7 @@ func ValidateRequest(r Request) error {
 	if r.ContextFormat != "" && ((r.Action != "deploy" && r.Action != "run") || r.ContextFormat != BundleFormat) {
 		return errors.New("unsupported context format or action")
 	}
-	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "logs" && r.Action != "deploy" && r.Action != "run" && r.Action != "rollback" && r.Action != "service-remove")) {
+	if r.Service != "" && (len(r.Service) > 63 || !label.MatchString(r.Service) || (r.Action != "status" && r.Action != "jobs" && r.Action != "logs" && r.Action != "deploy" && r.Action != "run" && r.Action != "rollback" && r.Action != "service-remove")) {
 		return errors.New("invalid service selector or action")
 	}
 	if r.RunOperation != "" && (!operation.MatchString(r.RunOperation) || (r.Action != "status" && r.Action != "logs") || r.Service != "" || r.Candidate) {
@@ -459,7 +466,7 @@ func ValidateRequest(r Request) error {
 		if !operation.MatchString(r.Operation) || !validSecretNames(r) || r.Config != nil {
 			return errors.New("secret staging requires operation ID, unique valid names, and no config")
 		}
-	case "apps", "status", "logs", "secrets-list":
+	case "apps", "status", "logs", "jobs", "secrets-list":
 		if r.Operation != "" || r.Config != nil {
 			return errors.New("read-only request cannot supply operation or config")
 		}
@@ -756,6 +763,9 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 		err = errForeignApp
 		return
 	}
+	if r.Action == "jobs" {
+		return readJobInbox(m.jobResults(), j, r)
+	}
 	secretState, e := m.secretStore().Load(r.App, h.ID)
 	if e != nil {
 		err = e
@@ -786,7 +796,7 @@ func (m *Manager) Execute(ctx context.Context, r Request, tar []byte) (resp Resp
 			if err == nil && r.Action == "status" && resp.Status != nil {
 				m.enrichRunStatus(ctx, j, resp.Status)
 				if r.IncludeJobs {
-					resp.Status.Jobs = scheduledStatus(j, r.Service, time.Now())
+					resp.Status.Jobs, err = m.scheduledStatus(j, r.Service, time.Now())
 				}
 			}
 			return

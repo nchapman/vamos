@@ -10,11 +10,16 @@ import (
 	"time"
 
 	"github.com/nchapman/vamos/internal/config"
+	"github.com/nchapman/vamos/internal/jobresults"
 	"github.com/nchapman/vamos/internal/lifecycle"
 )
 
 // A transient worker receives identities, never a host command, shell string or container name.
-type ScheduledJob struct{ App, Service, Name, HostID, Release string }
+type ScheduledJob struct{ App, Service, Name, HostID, Release, Incarnation string }
+
+func (m *Manager) jobResults() jobresults.Store {
+	return jobresults.Store{Root: m.path("/var/lib/vamos/job-results")}
+}
 
 func (job ScheduledJob) Unit() string {
 	return "vamos-job-" + job.App + "." + job.Service + "." + job.Name + ".service"
@@ -52,15 +57,19 @@ func (m *Manager) jobJournal(app string, h *lifecycle.State) (*journal, error) {
 	return j, nil
 }
 
-func currentJobRelease(j *journal, service string) *release {
-	if j.Phase != "ready" || j.Maintenance != nil {
-		return nil
-	}
+// Keep the last current definition visible even while dispatch is paused.
+func currentJobRelease(j *journal, service string) (*release, string) {
 	s := j.ServiceStates[service]
-	if s == nil || s.Phase != "ready" || s.CurrentRetired || s.Unavailable || s.Current == nil || s.Current.Config == nil {
-		return nil
+	if s == nil || s.Current == nil || s.Current.Config == nil {
+		return nil, "no current release"
 	}
-	return s.Current
+	if j.Phase != "ready" || j.Maintenance != nil {
+		return s.Current, "app is " + j.Phase
+	}
+	if s.Phase != "ready" || s.CurrentRetired || s.Unavailable {
+		return s.Current, "service is unavailable"
+	}
+	return s.Current, ""
 }
 
 func due(s config.Schedule, minute time.Time) bool {
@@ -91,13 +100,13 @@ func (m *Manager) DueJobs(ctx context.Context, tick time.Time) ([]ScheduledJob, 
 			continue
 		}
 		for _, service := range j.ServiceOrder {
-			r := currentJobRelease(j, service)
+			r, _ := currentJobRelease(j, service)
 			if r == nil {
 				continue
 			}
 			for _, name := range slices.Sorted(maps.Keys(r.Config.Jobs)) {
 				if due(r.Config.Jobs[name].Schedule, minute) {
-					jobs = append(jobs, ScheduledJob{app, service, name, h.ID, r.Operation})
+					jobs = append(jobs, ScheduledJob{app, service, name, h.ID, r.Operation, serviceIncarnation(j, service)})
 				}
 			}
 		}
@@ -124,8 +133,8 @@ func (m *Manager) ScheduledCommand(ctx context.Context, job ScheduledJob, minute
 	if err != nil {
 		return nil, err
 	}
-	r := currentJobRelease(j, job.Service)
-	if r == nil || r.Operation != job.Release {
+	r, paused := currentJobRelease(j, job.Service)
+	if paused != "" || r == nil || r.Operation != job.Release || serviceIncarnation(j, job.Service) != job.Incarnation {
 		return nil, errors.New("scheduled release is no longer current")
 	}
 	def, ok := r.Config.Jobs[job.Name]
@@ -136,32 +145,44 @@ func (m *Manager) ScheduledCommand(ctx context.Context, job ScheduledJob, minute
 	if err != nil {
 		return nil, err
 	}
-	if target.Operation != r.Operation || target.HostIdentity != h.ID {
+	if target.Operation != r.Operation || target.HostIdentity != h.ID || target.Incarnation != job.Incarnation {
 		return nil, errors.New("scheduled release changed during admission")
 	}
 	return append([]string{"exec", target.ContainerID}, def.Command...), nil
 }
 
 type JobStatus struct {
-	Name     string `json:"name"`
-	Service  string `json:"service"`
-	Schedule string `json:"schedule"`
-	Next     string `json:"next,omitempty"`
+	Last     *jobresults.Run `json:"last,omitempty"`
+	Paused   string          `json:"paused,omitempty"`
+	Name     string          `json:"name"`
+	Service  string          `json:"service"`
+	Schedule string          `json:"schedule"`
+	Next     string          `json:"next,omitempty"`
 }
 
-func scheduledStatus(j *journal, selected string, now time.Time) []JobStatus {
+func (m *Manager) scheduledStatus(j *journal, selected string, now time.Time) ([]JobStatus, error) {
 	var jobs []JobStatus
 	for _, service := range j.ServiceOrder {
 		if selected != "" && selected != service {
 			continue
 		}
-		r := currentJobRelease(j, service)
-		if r == nil {
+		r, paused := currentJobRelease(j, service)
+		if r == nil || len(r.Config.Jobs) == 0 {
 			continue
+		}
+		attempts, err := m.jobResults().List(j.HostID, j.App, service, serviceIncarnation(j, service))
+		if err != nil {
+			return nil, err
 		}
 		for _, name := range slices.Sorted(maps.Keys(r.Config.Jobs)) {
 			s := r.Config.Jobs[name].Schedule
-			item := JobStatus{Name: name, Service: service, Schedule: s.Description()}
+			item := JobStatus{Name: name, Service: service, Schedule: s.Description(), Paused: paused}
+			for _, attempt := range attempts {
+				if attempt.Job == name {
+					item.Last = &attempt
+					break
+				}
+			}
 			if compiled, err := s.Compile(); err == nil {
 				if next := compiled.Next(now); !next.IsZero() {
 					item.Next = next.Format(time.RFC3339)
@@ -170,5 +191,5 @@ func scheduledStatus(j *journal, selected string, now time.Time) []JobStatus {
 			jobs = append(jobs, item)
 		}
 	}
-	return jobs
+	return jobs, nil
 }

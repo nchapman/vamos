@@ -27,6 +27,7 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 			"Outside a project, list registered servers locally; add --server NAME for its recorded app inventory.\nIn a project, or with --server NAME --app APP, inspect live app status. --run selects a captured\none-off operation and cannot be combined with --service.",
 			"vamos status --server home --app notes --json",
 		},
+		"jobs": {"vamos jobs [show ID] [OPTIONS]", "app service json", "List retained scheduled job runs, or show one run and its retained combined output.", "vamos jobs show ID --server home --app notes"},
 		"logs": {
 			"vamos logs [OPTIONS]", "app service replica run candidate follow tail",
 			"Multi-instance services require --replica ORDINAL (1-based); singleton services default to their sole instance.\nSnapshot logs are byte bounded; --follow streams one pinned container and never retargets replacements.\nSnapshot deadline defaults to 15s; follow defaults to no deadline (explicit --timeout 0 is also unlimited).\n--run diagnostics are snapshots and cannot combine with --follow, --service, --replica, or --candidate.\n-f remains the configuration file. Snapshot workload logs go to stdout; target metadata goes to stderr.",
@@ -72,7 +73,7 @@ func writeAppHelp(w io.Writer, action string, parsed *flag.FlagSet) {
 	if slices.Contains(names, "app") {
 		fmt.Fprintln(w, "--app requires --server and avoids loading local configuration.")
 	}
-	if action != "service-bind" && action != "service-remove" {
+	if action != "jobs" && action != "service-bind" && action != "service-remove" {
 		fmt.Fprintln(w, "Put flags before positional arguments; use -- before a command's literal arguments.")
 	}
 }

@@ -473,6 +473,13 @@ func (m *Manager) executeMaintenance(c context.Context, r Request, j *journal) (
 		}
 		return
 	}
+	// A destroy fences new job attempts via host-op.lock. Late completions
+	// only update existing records and cannot recreate a purged inbox.
+	for name := range j.ServiceStates {
+		if err = m.jobResults().Remove(j.HostID, j.App, name, serviceIncarnation(j, name)); err != nil {
+			return resp, err
+		}
+	}
 	entries, e := os.ReadDir(m.dir(j.App))
 	if e != nil {
 		return resp, e

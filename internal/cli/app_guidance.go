@@ -70,7 +70,7 @@ func appendSuppliedFlags(args []string, flags *flag.FlagSet, names ...string) []
 func configRecoveryHint(w io.Writer, action string, flags *flag.FlagSet) {
 	// Deploy and run require new local inputs. Never suggest a bypass for them.
 	switch action {
-	case "status", "logs", "resume", "rollback", "cleanup", "destroy", "service-bind", "service-remove":
+	case "status", "jobs", "logs", "resume", "rollback", "cleanup", "destroy", "service-bind", "service-remove":
 	default:
 		return
 	}

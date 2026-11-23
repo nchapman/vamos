@@ -73,6 +73,7 @@ func (p *presentation) renderMainHelp() string {
 		{"Inspect and recover", []command{
 			{"apps", "List recorded inventory, not live health"},
 			{"status", "List servers or apps; in a project, inspect app status"},
+			{"jobs [show ID]", "Inspect scheduled job runs"},
 			{"logs", "Read or follow container logs"},
 			{"rollback", "Preview or restore captured service images"},
 			{"resume", "Resume captured operation inputs"},

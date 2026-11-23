@@ -321,6 +321,17 @@ func (m *Manager) Teardown(ctx context.Context, name string, purge bool) (_ *Sta
 }
 
 func (m *Manager) removeQueueHistory() error {
+	// Service destruction already purged its inbox. Do not recursively
+	// delete unexpected files under the persistent results root.
+	for _, p := range []string{"/var/lib/vamos/job-results/.lock", "/var/lib/vamos/job-results"} {
+		target := m.path(p)
+		if err := rejectSymlink(target); err != nil {
+			return err
+		}
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 	for _, transient := range []string{"/run/vamos", "/run/lock/vamos", "/run/vamos-sessions"} {
 		target := m.path(transient)
 		if err := rejectSymlink(target); err != nil {
