@@ -381,3 +381,25 @@ func TestFocusedScenariosKeepOwnedRestartButSkipRepository(t *testing.T) {
 		})
 	}
 }
+
+func TestHostNetworkRunsOnlyOwnedGuestScenario(t *testing.T) {
+	f := &fakeExec{t: t, mode: "success"}
+	r := runner{exec: f, out: io.Discard, stderr: io.Discard}
+	token := strings.Repeat("a", 32)
+	err := r.run(context.Background(), options{root: fixture(t), artifacts: t.TempDir(), name: "vamos-test-0123456789ab", token: token, arch: "native", ubuntu: "24.04", scenario: "host-network"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	phases := 0
+	for _, a := range f.calls {
+		if a[0] == "run" && a[5] == "python3" {
+			phases++
+			if strings.Join(a[6:], " ") != "/opt/vamos-test/integration/orbstack/host_network.py --owner "+token {
+				t.Fatalf("unexpected guest phase: %v", a)
+			}
+		}
+	}
+	if phases != 1 || f.restarted || f.calls[len(f.calls)-1][0] != "delete" {
+		t.Fatalf("unexpected lifecycle: %v", f.calls)
+	}
+}

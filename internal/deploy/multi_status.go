@@ -102,6 +102,9 @@ func (m *Manager) multiStatus(ctx context.Context, j *journal, state *secrets.St
 		if len(cfg.Ports) != 0 || (slot.Current != nil && slot.Current.Config != nil && len(slot.Current.Config.Ports) != 0) {
 			s.Kind = "ports"
 		}
+		if (slot.Current == nil && cfg.NetworkMode == "host") || (slot.Current != nil && slot.Current.Config != nil && slot.Current.Config.NetworkMode == "host") {
+			s.Kind = "host"
+		}
 		if cfg.HTTP != nil {
 			s.Kind = "public"
 			s.URL = ServiceURL(j.App, name, journalDomain(j))

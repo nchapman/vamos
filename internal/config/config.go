@@ -49,9 +49,12 @@ func (s Service) ReplicaCount() int {
 	return *s.Replicas
 }
 
-// NormalizeReplicas keeps explicit one equivalent to omission, including in
+// NormalizeReplicas canonicalizes default replicas, network mode and HTTP features for
 // captured configuration equality and canonical historical run records.
 func (s *Service) NormalizeReplicas() {
+	if s.NetworkMode == "bridge" {
+		s.NetworkMode = ""
+	}
 	if s.Replicas != nil && *s.Replicas == 1 {
 		s.Replicas = nil
 	}
@@ -61,18 +64,19 @@ func (s *Service) NormalizeReplicas() {
 }
 
 type Service struct {
-	Jobs      map[string]Job    `yaml:"jobs,omitempty" json:",omitempty"`
-	Ports     []string          `yaml:"ports,omitempty" json:"Ports,omitempty"`
-	Replicas  *int              `yaml:"replicas,omitempty" json:"Replicas,omitempty"`
-	Build     *Build            `yaml:"build,omitempty"`
-	Image     string            `yaml:"image,omitempty"`
-	Command   []string          `yaml:"command,omitempty"`
-	Env       map[string]string `yaml:"env,omitempty"`
-	Secrets   map[string]string `yaml:"secrets,omitempty"`
-	HTTP      *HTTP             `yaml:"http,omitempty"`
-	Volume    *Volume           `yaml:"volume,omitempty" json:"Volume,omitempty"`
-	Update    UpdatePolicy      `yaml:"update,omitempty"`
-	Resources *Resources        `yaml:"resources,omitempty" json:",omitempty"`
+	NetworkMode string            `yaml:"network_mode,omitempty" json:"NetworkMode,omitempty"`
+	Jobs        map[string]Job    `yaml:"jobs,omitempty" json:",omitempty"`
+	Ports       []string          `yaml:"ports,omitempty" json:"Ports,omitempty"`
+	Replicas    *int              `yaml:"replicas,omitempty" json:"Replicas,omitempty"`
+	Build       *Build            `yaml:"build,omitempty"`
+	Image       string            `yaml:"image,omitempty"`
+	Command     []string          `yaml:"command,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	Secrets     map[string]string `yaml:"secrets,omitempty"`
+	HTTP        *HTTP             `yaml:"http,omitempty"`
+	Volume      *Volume           `yaml:"volume,omitempty" json:"Volume,omitempty"`
+	Update      UpdatePolicy      `yaml:"update,omitempty"`
+	Resources   *Resources        `yaml:"resources,omitempty" json:",omitempty"`
 }
 
 // UnmarshalJSON preserves stateless requests and journals written before the

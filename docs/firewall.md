@@ -57,6 +57,7 @@ server accepted confirmation. Registration is retained if firewall setup fails.
   Vamos labels and host identity, allowing owned host-network Caddy but rejecting
   foreign containers/networks. Default `docker0` and IPv6 app networks are not
   supported. Host IPv6 ICMP, SSH and Caddy remain protected and usable.
+- Application `network_mode: host` services do not publish through Docker NAT. Host listeners remain subject to INPUT policy; deploying an app does not open ports. Initial firewall enable currently refuses existing host-network app containers, including stopped ones. Caddy's existing exception is unchanged.
 - Public forwarding requires IPv4 TCP/UDP DNAT in conntrack's ORIGINAL direction
   with a non-loopback original destination. The firewall returns to Docker's own
   publish/isolation policy, never accepts around it. BuildKit's host-owned mangle

@@ -76,6 +76,13 @@ func (f *fakeDocker) response(key string) (process.Result, error) {
 	return process.Result{}, nil
 }
 func (f *fakeDocker) endpoint(v *inspection, alias string) {
+	if v.HostConfig.NetworkMode == "host" {
+		if alias != "" {
+			f.t.Fatal("host network cannot accept an alias")
+		}
+		v.NetworkSettings.Networks = map[string]json.RawMessage{"host": json.RawMessage(`{"Aliases":null}`)}
+		return
+	}
 	aliases := []string{strings.TrimPrefix(v.Name, "/"), v.ID[:12]}
 	if alias != "" {
 		aliases = append(aliases, alias)
@@ -228,7 +235,7 @@ func (f *fakeDocker) run(_ context.Context, name string, a []string, input []byt
 			}
 			f.net.Containers = map[string]json.RawMessage{}
 			for _, v := range f.containers {
-				if v.State.Running && len(v.NetworkSettings.Networks) > 0 {
+				if v.State.Running && v.NetworkSettings.Networks[network(f.j)] != nil {
 					f.net.Containers[v.ID] = json.RawMessage(`{}`)
 				}
 			}
@@ -1168,4 +1175,49 @@ func (f *fakeDocker) publicPortConflict(candidate *inspection) bool {
 		}
 	}
 	return false
+}
+
+func TestHostRuntimeInspectionRejectsNetworkAndPublishDrift(t *testing.T) {
+	m, j, r, f := multiDockerFixture(t, false)
+	r.Config.NetworkMode = "host"
+	j.Config.Services[r.Service] = *r.Config
+	slot := j.ServiceStates[r.Service]
+	slot.Phase = "prepared"
+	ctx := context.Background()
+	if err := m.multiEnsureRuntime(ctx, j, r, true); err != nil {
+		t.Fatal(err)
+	}
+	slot.Phase = "starting"
+	ensureMultiDocker(t, m, j, r)
+	if err := m.multiObserve(ctx, j, r); err != nil {
+		t.Fatal(err)
+	}
+	for name, drift := range map[string]func(*inspection){
+		"mode":          func(v *inspection) { v.HostConfig.NetworkMode = network(j) },
+		"detached":      func(v *inspection) { v.NetworkSettings.Networks = nil },
+		"extra-network": func(v *inspection) { v.NetworkSettings.Networks[network(j)] = json.RawMessage(`{}`) },
+		"alias":         func(v *inspection) { v.NetworkSettings.Networks["host"] = json.RawMessage(`{"Aliases":["worker"]}`) },
+		"static-port": func(v *inspection) {
+			v.HostConfig.PortBindings = map[string][]struct{ HostIP, HostPort string }{"80/tcp": nil}
+		},
+		"effective-port": func(v *inspection) {
+			v.NetworkSettings.Ports = map[string][]struct{ HostIP, HostPort string }{"80/tcp": {{"0.0.0.0", "80"}}}
+		},
+		"publish-all": func(v *inspection) { v.HostConfig.PublishAllPorts = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			old := f.containers[r.Container]
+			b, _ := json.Marshal(old)
+			var changed inspection
+			if err := json.Unmarshal(b, &changed); err != nil {
+				t.Fatal(err)
+			}
+			drift(&changed)
+			f.containers[r.Container] = &changed
+			defer func() { f.containers[r.Container] = old }()
+			if err := m.multiObserve(ctx, j, r); err == nil {
+				t.Fatal("observed drifted runtime")
+			}
+		})
+	}
 }

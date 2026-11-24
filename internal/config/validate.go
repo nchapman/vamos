@@ -56,6 +56,15 @@ func (a App) Validate() error {
 			}
 		}
 		count := s.ReplicaCount()
+		switch s.NetworkMode {
+		case "", "bridge": // Default bridge network.
+		case "host":
+			if s.HTTP != nil || len(s.Ports) != 0 || count > 1 {
+				add("%s.network_mode: host is incompatible with http, ports, or multiple replicas", prefix)
+			}
+		default:
+			add("%s.network_mode must be bridge or host", prefix)
+		}
 		if count < 1 {
 			add("%s.replicas must be positive", prefix)
 		} else if count > MaxAppReplicas-totalReplicas {

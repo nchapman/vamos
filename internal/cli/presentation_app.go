@@ -371,10 +371,11 @@ func (p *presentation) replicaReport(s deploy.ServiceStatus) string {
 }
 
 func deploymentRouteNotice(s *deploy.Status) string {
-	hasPublic, hasPorts := len(s.Services) == 0, false
+	hasPublic, hasPorts, hasHost := len(s.Services) == 0, false, false
 	for _, ss := range s.Services {
 		hasPublic = hasPublic || ss.Kind == "public"
 		hasPorts = hasPorts || ss.Kind == "ports"
+		hasHost = hasHost || ss.Kind == "host"
 	}
 	var messages []string
 	if hasPublic {
@@ -386,6 +387,9 @@ func deploymentRouteNotice(s *deploy.Status) string {
 			prefix = "Direct IPv4 ports configured; no public HTTP route."
 		}
 		messages = append(messages, prefix+" Protocol readiness and firewall reachability are not implied by deployment success.")
+	}
+	if hasHost {
+		messages = append(messages, "Host networking: the service binds host sockets directly. Listener readiness and firewall reachability are not verified.")
 	}
 	if len(messages) == 0 {
 		return "Private-only app: no public route is configured."

@@ -49,7 +49,7 @@ func runPath(m *Manager, j *journal, op string) string {
 	return filepath.Join(m.dir(j.App), op+".run.json")
 }
 func validateRun(j *journal, r *runRecord) error {
-	if r == nil || !validRunVersion(r) || r.App != j.App || r.HostID != j.HostID || !operation.MatchString(r.Operation) || !label.MatchString(r.Service) || len(r.Service) > 63 || r.Container != "vamos-run-"+r.Operation || len(r.Config.Command) == 0 || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || len(r.Output) > runOutputLimit || r.Config.HTTP != nil || r.Config.Volume != nil || len(r.Config.Ports) != 0 {
+	if r == nil || !validRunVersion(r) || r.App != j.App || r.HostID != j.HostID || !operation.MatchString(r.Operation) || !label.MatchString(r.Service) || len(r.Service) > 63 || r.Container != "vamos-run-"+r.Operation || len(r.Config.Command) == 0 || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || len(r.Output) > runOutputLimit || r.Config.HTTP != nil || r.Config.Volume != nil || len(r.Config.Ports) != 0 || r.Config.NetworkMode != "" {
 		return errors.New("invalid run record")
 	}
 	if err := ValidateApp(&config.App{Name: r.App, Services: map[string]config.Service{r.Service: r.Config}}); err != nil {
@@ -479,6 +479,7 @@ func (m *Manager) executeRun(ctx context.Context, r Request, data []byte, j *jou
 	}
 	cfg.Command = append([]string(nil), r.Command...)
 	cfg.Ports = nil
+	cfg.NetworkMode = ""
 	cfg.HTTP = nil
 	cfg.Volume = nil
 	rec := &runRecord{Version: 1, App: j.App, HostID: j.HostID, RunResult: RunResult{Operation: r.Operation, Service: r.Service, Phase: "building", Container: "vamos-run-" + r.Operation}, Config: cfg, SecretRefs: refs}

@@ -113,6 +113,9 @@ func instanceIdentity(j *journal, r runtimeRef) error {
 	if r.release == nil || r.Config == nil || !operation.MatchString(r.Operation) || !imageID.MatchString(r.Image) || (r.Service != "" && (!label.MatchString(r.Service) || len(r.Service) > 63)) || r.Container != instanceName(j.App, r.Service, r.Operation, r.Ordinal) || validateInstances(j, r.release) != nil {
 		return errors.New("invalid captured runtime identity")
 	}
+	if mode := r.Config.NetworkMode; mode != "" && (mode != "host" || r.Service == "" || r.Config.HTTP != nil || len(r.Config.Ports) != 0 || r.Config.ReplicaCount() != 1 || *r.Port != "" || *r.PublishPort != "") {
+		return errors.New("invalid captured runtime network configuration")
+	}
 	if !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) {
 		return errors.New("captured runtime secrets mismatch")
 	}
@@ -183,6 +186,9 @@ func validateMultiEndpoint(j *journal, v *inspection) error {
 	if ref == nil || !runtimeLabelMatches(ref, name, v.Config.Labels) {
 		return errors.New("unrecorded container on app network")
 	}
+	if ref.Config != nil && ref.Config.NetworkMode == "host" {
+		return errors.New("host runtime on app network")
+	}
 	if v.Config.Image != ref.Image {
 		return errors.New("app network endpoint image mismatch")
 	}
@@ -228,6 +234,13 @@ func validateMultiEndpoint(j *journal, v *inspection) error {
 	return nil
 }
 
+func runtimeNetwork(j *journal, cfg *config.Service) string {
+	if cfg.NetworkMode == "host" {
+		return "host"
+	}
+	return network(j)
+}
+
 func validRuntimePort(port string) bool {
 	p, err := strconv.Atoi(port)
 	return err == nil && p > 0 && p <= 65535 && strconv.Itoa(p) == port
@@ -256,15 +269,21 @@ func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef,
 	if err := m.verifyRuntimeMounts(ctx, j, r.release, v); err != nil {
 		return nil, err
 	}
-	attached := len(v.NetworkSettings.Networks) == 1 && v.NetworkSettings.Networks[network(j)] != nil
+	netName := runtimeNetwork(j, r.Config)
+	attached := len(v.NetworkSettings.Networks) == 1 && v.NetworkSettings.Networks[netName] != nil
 	if !attached && !(allowDetached && len(v.NetworkSettings.Networks) == 0) {
 		return nil, errors.New("runtime network mismatch")
 	}
 	if attached {
-		if _, err := endpointAliases(v, network(j)); err != nil {
+		aliases, err := endpointAliases(v, netName)
+		if err != nil {
 			return nil, err
 		}
-		if r.Service != "" {
+		if r.Config.NetworkMode == "host" {
+			if len(aliases) != 0 {
+				return nil, errors.New("unexpected host runtime network alias")
+			}
+		} else if r.Service != "" {
 			if requireAlias && !hasAlias(v, network(j), r.Service) {
 				return nil, errors.New("service alias missing")
 			}
@@ -339,7 +358,7 @@ func (m *Manager) instanceInspect(ctx context.Context, j *journal, r runtimeRef,
 	if len(cmd) == 0 {
 		cmd = im.Config.Cmd
 	}
-	if !reflect.DeepEqual(env, actual) || !slices.Equal(cmd, v.Config.Cmd) || !slices.Equal(im.Config.Entrypoint, v.Config.Entrypoint) || im.Config.User != v.Config.User || im.Config.WorkingDir != v.Config.WorkingDir || unsafeMultiHostConfig(v) || v.HostConfig.NetworkMode != network(j) {
+	if !reflect.DeepEqual(env, actual) || !slices.Equal(cmd, v.Config.Cmd) || !slices.Equal(im.Config.Entrypoint, v.Config.Entrypoint) || im.Config.User != v.Config.User || im.Config.WorkingDir != v.Config.WorkingDir || unsafeMultiHostConfig(v) || v.HostConfig.NetworkMode != netName {
 		return nil, errors.New("runtime immutable configuration mismatch")
 	}
 	if policy := v.HostConfig.RestartPolicy.Name; policy != "unless-stopped" && policy != "no" {
@@ -422,7 +441,7 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		return err
 	}
 	slot := j.ServiceStates[r.Service]
-	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate == nil || !releaseHas(slot.Candidate, r.Container) || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (!slot.stopFirst(*r.Config) || slot.Phase != "prepared")) {
+	if j.Phase != "updating" || r.Operation != j.Operation || r.Service == "" || slot == nil || slot.Candidate != r.release || !releaseHas(slot.Candidate, r.Container) || (!prepareOnly && slot.Phase != "starting") || (prepareOnly && (!slot.stopFirst(*r.Config) || slot.Phase != "prepared")) {
 		return errors.New("candidate creation requires starting intent")
 	}
 	if !prepareOnly && (r.Config.HTTP == nil || slot.stopFirst(*r.Config)) && slot.Current != nil {
@@ -481,9 +500,9 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		} else if *r.Port != "" || *r.PublishPort != "" {
 			return errors.New("private service publishes ports")
 		}
-		args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", network(j)}
+		args := []string{"run", "--detach", "--name", r.Container, "--restart", "unless-stopped", "--network", runtimeNetwork(j, r.Config)}
 		if slot.stopFirst(*r.Config) {
-			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", network(j)}
+			args = []string{"create", "--name", r.Container, "--restart", "no", "--network", runtimeNetwork(j, r.Config)}
 		}
 		if r.Config.Volume != nil {
 			args = append(args, "--mount", volumeMountArgument("vamos-vol-"+r.VolumeID, r.Config.Volume.Mount))
@@ -497,7 +516,7 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		args = append(args, resourceArgs(r.Config.Resources)...)
 		if r.Config.HTTP != nil {
 			args = append(args, "--publish", fmt.Sprintf("127.0.0.1:%s:%d", *r.PublishPort, r.Config.HTTP.Port))
-		} else {
+		} else if r.Config.NetworkMode != "host" {
 			args = append(args, "--network-alias", r.Service)
 		}
 		args = append(args, "--label", "vamos.host="+j.HostID, "--label", "vamos.app="+j.App, "--label", "vamos.operation="+r.Operation, "--label", "vamos.service="+r.Service)
@@ -514,6 +533,11 @@ func (m *Manager) instanceEnsureRuntime(ctx context.Context, j *journal, r runti
 		}
 		args = append(args, r.Image)
 		args = append(args, r.Config.Command...)
+		if r.Config.NetworkMode == "host" {
+			if err := m.recordHostReceipt(j, r); err != nil {
+				return err
+			}
+		}
 		if err := m.runContainer(ctx, j, r.release, args); err != nil {
 			return runtimeContext("create candidate failed", err)
 		}

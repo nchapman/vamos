@@ -34,6 +34,9 @@ func maintenanceStatus(j *journal, domain string) Status {
 			}
 			if r := slot.Current; r != nil {
 				status.Kind = "private"
+				if r.Config != nil && r.Config.NetworkMode == "host" {
+					status.Kind = "host"
+				}
 				status.Operation, status.Container, status.Image, status.Port = r.Operation, r.Container, r.Image, r.Port
 				refs := runtimeRefs(r)
 				status.CurrentInstances = len(refs)

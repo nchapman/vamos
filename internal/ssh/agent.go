@@ -210,9 +210,11 @@ func requiredCapabilities(request deploy.Request) []string {
 	caps := []string{agentproto.CapAppDeploy}
 	if request.Config != nil {
 		for _, service := range request.Config.Services {
-			if len(service.Jobs) > 0 {
+			if len(service.Jobs) > 0 && !slices.Contains(caps, agentproto.CapJobs) {
 				caps = append(caps, agentproto.CapJobs)
-				break
+			}
+			if service.NetworkMode == "host" && !slices.Contains(caps, agentproto.CapHostNetwork) {
+				caps = append(caps, agentproto.CapHostNetwork)
 			}
 		}
 	}

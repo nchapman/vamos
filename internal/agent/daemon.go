@@ -93,7 +93,7 @@ func (d *Daemon) defaults() {
 		}
 	}
 	if len(d.Capabilities) == 0 {
-		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapProtectedPreview, agentproto.CapDurableQueue, agentproto.CapPerAppConcurrency, agentproto.CapScopedACL, agentproto.CapSecrets, agentproto.CapBackups, agentproto.CapSessions}
+		d.Capabilities = []string{agentproto.CapAppDeploy, agentproto.CapHostNetwork, agentproto.CapProtectedPreview, agentproto.CapDurableQueue, agentproto.CapPerAppConcurrency, agentproto.CapScopedACL, agentproto.CapSecrets, agentproto.CapBackups, agentproto.CapSessions}
 		if d.ScheduledJobs {
 			d.Capabilities = append(d.Capabilities, agentproto.CapJobs)
 		}

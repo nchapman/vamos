@@ -74,12 +74,74 @@ func (m *Manager) resourceList(ctx context.Context, kind string) ([]resourceRow,
 	}
 	return rows, nil
 }
-func resourceContainer(v *resourceInspection, j *journal, r resourceRow) error {
+
+func hostAttachment(v *resourceInspection, nv *resourceInspection) error {
+	var attachment struct{ NetworkID string }
+	if nv.Name != "host" || nv.Driver != "host" || !resourceID.MatchString(nv.ID) || json.Unmarshal(v.NetworkSettings.Networks["host"], &attachment) != nil {
+		return errors.New("unsafe host network attachment")
+	}
+	// Docker can clear the endpoint ID after stop. In that case the immutable
+	// HostConfig, sole host endpoint, and pinned system network still agree.
+	if attachment.NetworkID != nv.ID && (attachment.NetworkID != "" || v.State.Running || v.State.Restarting || v.State.Paused) {
+		return errors.New("host network identity mismatch")
+	}
+
+	return nil
+}
+func (m *Manager) resourceContainer(v *resourceInspection, j *journal, r resourceRow) error {
 	op := v.Config.Labels["vamos.operation"]
 	if service, present := v.Config.Labels["vamos.service"]; present && service == "" {
 		return errors.New("empty maintenance service label")
 	}
-	if !operation.MatchString(op) || !owned(v.Config.Labels, j, op) || !maintenanceContainerIdentity(j, r.Name, v.Config.Labels["vamos.service"], op, replicaLabel(v.Config.Labels)) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (!supportsVolumes(j) && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || (!supportsVolumes(j) && len(v.Config.Volumes) != 0) || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != network(j) || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[network(j)] == nil {
+	mode := network(j)
+	service := v.Config.Labels["vamos.service"]
+	ordinal := replicaLabel(v.Config.Labels)
+	if !operation.MatchString(op) || !maintenanceContainerIdentity(j, r.Name, service, op, ordinal) {
+		return errors.New("invalid maintenance identity")
+	}
+	var receipt string
+	if service != "" && r.Name == instanceName(j.App, service, op, ordinal) {
+		var err error
+		receipt, err = readHostReceipt(m.hostReceiptPath(j, service, r.Name, op))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	var captured *release
+	for _, rel := range retainedReleases(j) {
+		if rel.Operation == op && rel.Service == service {
+			captured = rel
+			break
+		}
+	}
+	capturedHost := captured != nil && captured.Config != nil && captured.Config.NetworkMode == "host"
+	if capturedHost || receipt != "" || v.HostConfig.NetworkMode == "host" {
+		if service == "" || ordinal < 0 || ordinal > 1 || r.Name != instanceName(j.App, service, op, ordinal) || !imageID.MatchString(v.Config.Image) || (receipt != "" && receipt != v.Config.Image) {
+			return errors.New("invalid host service identity")
+		}
+		if captured != nil {
+			if !capturedHost || captured.Image != v.Config.Image || !runtimeLabelMatches(captured, r.Name, v.Config.Labels) {
+				return errors.New("host service differs from captured release")
+			}
+		} else if receipt == "" || v.HostConfig.RestartPolicy.Name != "no" || v.State.Running || v.State.Restarting || v.State.Paused {
+			return errors.New("unproven historical host service")
+		}
+
+		if policy := v.HostConfig.RestartPolicy.Name; policy != "unless-stopped" && policy != "no" {
+			return errors.New("unsafe host service restart policy")
+		}
+		mode = "host"
+		aliases, err := endpointAliases(&v.inspection, mode)
+		if err != nil || len(aliases) != 0 || unsafeMultiHostConfig(&v.inspection) || len(v.HostConfig.PortBindings) != 0 {
+			return errors.New("unsafe host service container")
+		}
+		for _, bindings := range v.NetworkSettings.Ports {
+			if len(bindings) != 0 {
+				return errors.New("host service publishes ports")
+			}
+		}
+	}
+	if !owned(v.Config.Labels, j, op) || v.Name != "/"+r.Name || v.ID != r.ID || !imageID.MatchString(v.Image) || (!supportsVolumes(j) && (len(v.Mounts) != 0 || len(v.HostConfig.Mounts) != 0 || len(v.HostConfig.VolumesFrom) != 0)) || (!supportsVolumes(j) && len(v.Config.Volumes) != 0) || len(v.HostConfig.Binds) != 0 || v.HostConfig.Privileged || v.HostConfig.NetworkMode != mode || len(v.NetworkSettings.Networks) != 1 || v.NetworkSettings.Networks[mode] == nil {
 		return errors.New("unsafe or changed maintenance container")
 	}
 	return nil
@@ -278,6 +340,16 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 			runBatch++
 		}
 		w.Containers = append(w.Containers, plannedContainer{Name: r.Name, ID: r.ID, Image: v.Image, Operation: o, Service: v.Config.Labels["vamos.service"], Replica: replicaLabel(v.Config.Labels)})
+		if v.HostConfig.NetworkMode == "host" {
+			nv, err := m.resourceInspect(ctx, "network", "host")
+			if err != nil {
+				return nil, err
+			}
+			if err := hostAttachment(v, nv); err != nil {
+				return nil, err
+			}
+			w.Containers[len(w.Containers)-1].NetworkID = nv.ID
+		}
 		w.Plan.Containers = append(w.Plan.Containers, r.Name)
 		exclude[r.ID] = true
 	}
@@ -285,12 +357,10 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 	if e != nil {
 		return nil, e
 	}
-	found := false
 	for _, r := range nets {
 		if r.Name != network(j) {
 			continue
 		}
-		found = true
 		v, e := m.resourceInspect(ctx, "network", r.ID)
 		if e != nil {
 			return nil, e
@@ -299,6 +369,12 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 			return nil, errors.New("unsafe app network")
 		}
 		for i, c := range w.Containers {
+			if c.NetworkID != "" {
+				if _, ok := v.Containers[c.ID]; ok {
+					return nil, errors.New("unexpected host workload on app network")
+				}
+				continue
+			}
 			cv, e := m.resourceInspect(ctx, "container", c.ID)
 			if e != nil {
 				return nil, e
@@ -337,8 +413,10 @@ func (m *Manager) planMaintenanceScope(ctx context.Context, j *journal, action, 
 			w.Plan.Network = r.Name
 		}
 	}
-	if !found && len(w.Containers) > 0 {
-		return nil, errors.New("owned network missing")
+	for _, c := range w.Containers {
+		if c.NetworkID == "" {
+			return nil, errors.New("owned network missing")
+		}
 	}
 	if service != "" {
 		w.Action = "service-remove"
@@ -494,6 +572,16 @@ func (m *Manager) plannedResourceContainer(ctx context.Context, j *journal, p pl
 	if replicaLabel(v.Config.Labels) != p.Replica || v.Image != p.Image || v.Config.Labels["vamos.operation"] != p.Operation || v.Config.Labels["vamos.service"] != p.Service {
 		return nil, errors.New("changed planned container")
 	}
+	if v.HostConfig.NetworkMode == "host" {
+		nv, err := m.resourceInspect(ctx, "network", "host")
+		if err != nil {
+			return nil, err
+		}
+		if nv.ID != p.NetworkID {
+			return nil, errors.New("changed host network identity")
+		}
+		return v, hostAttachment(v, nv)
+	}
 	nv, e := m.resourceInspect(ctx, "network", network(j))
 	if e != nil {
 		return nil, e
@@ -539,9 +627,6 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 		return err
 	}
 	for _, p := range w.Containers {
-		if w.Network != nil && p.NetworkID != w.Network.ID {
-			return errors.New("planned container network identity mismatch")
-		}
 		commands := [][]string{{"container", "rm", p.ID}}
 		if (w.Action == "destroy" || w.Action == "service-remove") && !strings.HasPrefix(p.Name, "vamos-run-") {
 			commands = [][]string{{"container", "update", "--restart=no", p.ID}, {"container", "stop", p.ID}, {"container", "rm", p.ID}}
@@ -553,6 +638,9 @@ func (m *Manager) removeMaintenanceResources(ctx context.Context, j *journal, w 
 			}
 			if v == nil {
 				break
+			}
+			if w.Network != nil && v.HostConfig.NetworkMode != "host" && p.NetworkID != w.Network.ID {
+				return errors.New("planned container network identity mismatch")
 			}
 			if w.Action == "cleanup" && v.State.Running {
 				return errors.New("cleanup container started since planning")
@@ -706,11 +794,14 @@ func (m *Manager) verifyResourceContainer(ctx context.Context, v *resourceInspec
 	if v.Config.Labels["vamos.run"] != "" || strings.HasPrefix(row.Name, "vamos-run-") {
 		return m.maintenanceRunContainer(ctx, j, v, row)
 	}
-	if err := resourceContainer(v, j, row); err != nil {
+	if err := m.resourceContainer(v, j, row); err != nil {
 		return err
 	}
-	if err := m.replicaResourceProvenance(j, v, row.Name); err != nil {
-		return err
+	// Host provenance above already binds the exact ordinal, name and image.
+	if v.HostConfig.NetworkMode != "host" {
+		if err := m.replicaResourceProvenance(j, v, row.Name); err != nil {
+			return err
+		}
 	}
 	if !supportsVolumes(j) {
 		return nil

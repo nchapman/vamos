@@ -68,6 +68,10 @@ func validateServiceRelease(j *journal, name string, r *release, historical bool
 			return bad
 		}
 	} else {
+		// Legacy containers have no service identity and never used host networking.
+		if r.Service == "" && r.Config.NetworkMode == "host" {
+			return bad
+		}
 		a := &config.App{Name: j.App, Services: map[string]config.Service{name: *r.Config}}
 		if ValidateApp(a) != nil || !matchingSecretRefs(r.SecretRefs, r.Config.Secrets) || (j.Version < 4 && workflowConfig(a)) || (j.Version < 6 && domainConfig(a)) || (j.Version < 8 && replicaConfig(a)) {
 			return bad

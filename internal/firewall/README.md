@@ -105,6 +105,11 @@ after enable. Other custom mangle policy is unsupported.
   host ownership, permits owned host-network Caddy, and rejects foreign workloads.
   This is admission, not continuous Docker inventory enforcement. Root/Docker
   administrators and interface naming remain trusted.
+  Firewall preflight does not read deployment release captures. A service name
+  and Docker labels alone do not establish that host networking was authorized
+  for that release. Preflight therefore refuses host-networked application
+  containers (the existing Caddy exception is unchanged). No service ports are
+  added to INPUT; host-network listeners are subject to existing host policy.
 - Existing UFW/firewalld/nftables/persistent iptables configuration files are
   rejected even if inactive. Installing a package can leave such files: remove
   the conflicting configuration deliberately, not through this package.

@@ -76,7 +76,7 @@ vamos destroy -f examples/hello/vamos.yaml --yes   # Remove the app and its rout
 
 ## What Vamos supports
 
-- **Multi-service apps** — Dockerfile-built or prebuilt services share a private app network. Route selected services over public HTTP, use private service-to-service DNS, and configure per-service `replicas` (32 desired containers across the app) and [`resources`](docs/resources.md) (e.g. `cpus: 0.5`, `memory: 512m`).
+- **Multi-service apps** — Dockerfile-built or prebuilt services share a private app network by default. A trusted service can explicitly use [host networking](docs/ports.md#host-networking). Route selected services over public HTTP, use private service-to-service DNS, and configure per-service `replicas` (32 desired containers across the app) and [`resources`](docs/resources.md) (e.g. `cpus: 0.5`, `memory: 512m`).
 - **Readiness-checked public rollouts** — For HTTP services without volumes or fixed ports, Caddy keeps routing to the previous release until its replacement passes readiness. Volume-backed and fixed-port services stop first and can remain unavailable if replacement fails. In a multi-service deploy, a later failure does not undo earlier service updates.
 - **TCP/UDP service ports** — Public IPv4 Docker port bindings, including equal-sized ranges for services such as coturn. Fixed-port services use one replica and stop-first replacement. See [service ports](docs/ports.md).
 - **Persistent volumes** — One named local volume per service (`volume: {name: data, mount: /data}`) with single-writer stop/start replacement, durable 503 maintenance routing during updates, and retained data across cleanup/destroy.

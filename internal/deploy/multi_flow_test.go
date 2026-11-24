@@ -448,3 +448,61 @@ func TestMultiFlowLegacyRedeployAddsServiceDNS(t *testing.T) {
 		t.Fatal("legacy previous container not retired")
 	}
 }
+
+func TestPrivateNetworkModeTransitions(t *testing.T) {
+	f := newMultiFlow(t)
+	var old string
+	for i, mode := range []string{"", "host", ""} {
+		a := changedMultiApp(fmt.Sprint(i))
+		s := a.Services["backend"]
+		s.NetworkMode = mode
+		a.Services["backend"] = s
+		op := strings.Repeat(fmt.Sprint(i+1), 32)
+		from := len(f.docker.calls)
+		if mode == "host" {
+			f.docker.lose["start"] = 1
+			if _, err := f.deploy(a, op); err == nil {
+				t.Fatal("lost start was not observed")
+			}
+			if _, err := f.resume(op); err != nil {
+				t.Fatal(err)
+			}
+		} else if _, err := f.deploy(a, op); err != nil {
+			t.Fatal(err)
+		}
+		j := f.load()
+		name := j.ServiceStates["backend"].Current.Container
+		v := f.docker.containers[name]
+		if v == nil || !runtimeRunning(v) || hasAlias(v, network(j), "backend") != (mode == "") {
+			t.Fatal("incorrect backend runtime or DNS")
+		}
+		if old != "" {
+			calls := strings.Join(f.docker.calls[from:], "\n")
+			stop, start := strings.Index(calls, "stop --time 30 "+old), strings.Index(calls, "start "+name)
+			if stop < 0 || start < stop || f.docker.containers[old].State.Running {
+				t.Fatal("replacement was not stop-first", calls)
+			}
+		}
+		old = name
+	}
+}
+
+func TestHostRuntimeKeepsVolumeAcrossModeChange(t *testing.T) {
+	f := newMultiFlow(t)
+	var id string
+	for i, mode := range []string{"host", ""} {
+		a := multiApp()
+		s := a.Services["backend"]
+		s.NetworkMode = mode
+		s.Volume = &config.Volume{Name: "data", Mount: "/data"}
+		a.Services["backend"] = s
+		if _, err := f.deploy(a, strings.Repeat(fmt.Sprint(i+1), 32)); err != nil {
+			t.Fatal(err)
+		}
+		r := f.load().ServiceStates["backend"].Current
+		if !r.ExecutionIntent || r.VolumeID == "" || (i != 0 && r.VolumeID != id) || len(f.docker.containers[r.Container].Mounts) != 1 {
+			t.Fatal("volume identity or mount lost")
+		}
+		id = r.VolumeID
+	}
+}

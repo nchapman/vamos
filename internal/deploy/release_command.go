@@ -91,6 +91,7 @@ func (m *Manager) hookRecord(j *journal) *runRecord {
 	cfg := j.Config.Services[h.Directive.Service]
 	cfg.Command = slices.Clone(h.Directive.Command)
 	cfg.HTTP, cfg.Volume, cfg.Ports = nil, nil, nil
+	cfg.NetworkMode = ""
 	return &runRecord{Version: 2, App: j.App, HostID: j.HostID,
 		RunResult: RunResult{Operation: h.Operation, Service: h.Directive.Service, Phase: "create-intent", Container: "vamos-run-" + h.Operation, Image: selectedImage(j, h.Directive.Service), Purpose: "release", ParentOperation: j.Operation},
 		Config:    cfg, SecretRefs: j.ServiceStates[h.Directive.Service].SecretRefs}

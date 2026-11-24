@@ -18,7 +18,7 @@ services:
 Each quoted string is `HOST:CONTAINER[/tcp|udp]`. Both sides may be inclusive,
 ascending ranges of **equal size**. Ports must be **1–65535**. Only TCP and UDP
 are supported. There is no host-IP syntax, automatic host-port assignment, host
-networking option, or per-application firewall rule configuration.
+networking **with `ports`**, or per-application firewall rule configuration. For a service that binds directly to host interfaces, see [host networking](#host-networking).
 
 Vamos passes these bindings to Docker as `--publish 0.0.0.0:…` on the existing
 app bridge network. **These are public IPv4 bindings on every host interface,
@@ -124,7 +124,27 @@ objects to each service:
   before truncation. A range counts as one entry here, unlike the expanded-binding
   validation limit. Human output explicitly identifies truncated lists.
 
-## Coturn example
+## Host networking
+
+Services use the private app bridge by default (`network_mode: bridge` is equivalent to omission). Opt an individual service into the Linux host's network namespace with `network_mode: host`:
+
+```yaml
+app: gateway
+services:
+  relay:
+    build: . # A relay image with its own authenticated listener configuration
+    network_mode: host
+```
+
+Vamos still owns the container, image, secrets, logs, and lifecycle. The process binds sockets on the host directly: there are no Docker published ports, no Caddy route, and no service-name alias on the app bridge. Set the bind address in the service itself. `http`, `ports` and multiple replicas are not supported on a host-network service. Replacement stops the old instance before starting the new one; a listener conflict with another host process is an application startup error, not a port reservation. Status shows `kind: host`; availability does not prove a particular listener or external protocol works. `run` and release hooks use the app bridge; `exec` and scheduled jobs execute in the actual service container.
+
+**Trust boundary:** anyone with deploy access to an app can opt its services into host networking. It shares host interfaces and loopback, including services normally reachable only from the host such as Caddy's admin API. There is no separate approval, port allowlist, or per-key restriction. Use only with trusted deployers and trusted images. This setting does not grant host PID, filesystem, or privileged-container access.
+
+Host listeners follow host INPUT policy, not Docker's published-port policy. Vamos does not open firewall ports for them. See the [managed firewall boundary](firewall.md).
+
+For a TURN relay with thousands of allocation ports, host networking avoids publishing each port and translating relay addresses across the app bridge. Bind coturn to the server's intended interface, configure the reachable relay address/range and authentication inside the container, and provide its shared secret using [runtime secrets](secrets.md). The [upstream coturn image](https://github.com/coturn/coturn/blob/master/docker/coturn/README.md) declares a volume, so also declare its matching mount, as shown below. Test forced-relay transfers with real clients; a successful deployment alone is not evidence of TURN reachability.
+
+## Coturn example (bridge with a small published range)
 
 Keep relay ranges small enough for your capacity needs: Docker expands each
 published range into individual bindings, so large ranges can be expensive.
@@ -156,9 +176,7 @@ services:
       - "--static-auth-secret=$TURN_SHARED_SECRET"
       - "--userdb=/tmp/turnserver.db"
       - "--no-tls"
-      - "--no-dtls"
       - "--no-tcp-relay"
-      - "--no-cli"
       - "--no-multicast-peers"
       - "--log-file=stdout"
 ```

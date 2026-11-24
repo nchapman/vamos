@@ -391,7 +391,7 @@ func appCommand(ctx context.Context, action string, args []string, stdout, stder
 		}
 	}
 	if action == "deploy" && *service == "" {
-		if _, err := fmt.Fprintln(stdout, "Declared-service deploy: private services and services with ports use stop/start replacement; a brief interruption is expected."); err != nil {
+		if _, err := fmt.Fprintln(stdout, "Declared-service deploy: private, host-network, and fixed-port services use stop/start replacement; a brief interruption is expected."); err != nil {
 			return lifecycleError(stderr, err)
 		}
 	}

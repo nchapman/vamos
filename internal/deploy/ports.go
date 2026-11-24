@@ -237,9 +237,16 @@ func (m *Manager) reserveManagedPorts(all []*journal, hostID string) error {
 	return reserveJournalPorts(all)
 }
 
-// Removing ports also uses stop-first, including recovery from an unavailable
+// Leaving host mode or removing ports also uses stop-first, including recovery from an unavailable
 // fixed-port release, even if its first deployment never became current.
 // Storage identity itself is immutable.
 func (s *serviceState) stopFirst(cfg config.Service) bool {
-	return cfg.StopFirst() || (s != nil && s.Unavailable) || (s != nil && s.Current != nil && s.Current.Config != nil && len(s.Current.Config.Ports) != 0)
+	if cfg.NetworkMode == "host" || cfg.StopFirst() || (s != nil && s.Unavailable) {
+		return true
+	}
+	if s == nil || s.Current == nil || s.Current.Config == nil {
+		return false
+	}
+	prior := s.Current.Config
+	return prior.NetworkMode == "host" || len(prior.Ports) != 0
 }

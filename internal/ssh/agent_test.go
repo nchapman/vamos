@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nchapman/vamos/internal/agentproto"
+	"github.com/nchapman/vamos/internal/config"
 	"github.com/nchapman/vamos/internal/deploy"
 	"github.com/nchapman/vamos/internal/lifecycle"
 )
@@ -113,6 +114,18 @@ func TestIdempotencyKeyForResumeDoesNotCollideWithTargetOperation(t *testing.T) 
 	resumeKey2, err := idempotencyKeyFor(deploy.Request{Action: "resume", Operation: targetOp})
 	if err != nil || len(resumeKey2) != 32 || resumeKey2 == resumeKey1 || resumeKey2 == targetOp {
 		t.Fatalf("resume key2 = %q err=%v", resumeKey2, err)
+	}
+}
+
+func TestHostNetworkRequiresCapableAgent(t *testing.T) {
+	for _, mode := range []string{"", "host"} {
+		request := deploy.Request{Action: "deploy", Config: &config.App{Services: map[string]config.Service{
+			"turn": {NetworkMode: mode}, "web": {Jobs: map[string]config.Job{"tick": {}}},
+		}}}
+		caps := requiredCapabilities(request)
+		if slices.Contains(caps, agentproto.CapHostNetwork) != (mode == "host") || !slices.Contains(caps, agentproto.CapJobs) {
+			t.Fatalf("required capabilities for network mode %q: %v", mode, caps)
+		}
 	}
 }
 

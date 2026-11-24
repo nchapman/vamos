@@ -1,6 +1,6 @@
 # Give a laptop or CI runner its own deploy key
 
-Use one named key per runner or laptop. The key can operate **one app**, including deploying code, executing commands, and changing that app's secrets and services. It cannot list all apps, deploy another app, grant keys, or administer the host. This is access for trusted app operators and code, not a sandbox for untrusted tenants.
+Use one named key per runner or laptop. The key can operate **one app**, including deploying code, executing commands, and changing that app's secrets and services. It cannot list all apps, deploy another app, grant keys, or administer the host. This is access for trusted app operators and code, not a sandbox for untrusted tenants. **A deploy key can select [host networking](ports.md#host-networking) for its app.** That container can access host-loopback network services. There is no distinct approval for this setting.
 
 ## Grant access (administrator)
 

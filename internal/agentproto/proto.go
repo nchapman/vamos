@@ -29,6 +29,7 @@ const (
 	CapAppDeploy         = "app-deploy"
 	CapProtectedPreview  = "protected-preview"
 	CapJobs              = "scheduled-jobs"
+	CapHostNetwork       = "service-host-network"
 	CapDurableQueue      = "durable-queue"
 	CapPerAppConcurrency = "per-app-concurrency"
 	CapScopedACL         = "scoped-acl"
