@@ -16,6 +16,8 @@ On macOS or Linux, install the latest release (`vamos` plus the matching Linux `
 curl -fsSL https://raw.githubusercontent.com/nchapman/vamos/main/install.sh | sh
 ```
 
+Both the installer and `vamos upgrade` verify checksums and GitHub build provenance attestations (Sigstore signatures) before installing anything.
+
 Or download an archive from [GitHub Releases](https://github.com/nchapman/vamos/releases) (macOS, Linux, or Windows) and place all three binaries (`vamos`, `vamos-linux-amd64`, and `vamos-linux-arm64`) together in a directory on your `PATH`.
 
 To upgrade the **local CLI and its bundled executors** later, run:
@@ -28,7 +30,7 @@ This does not change any server. A separate `vamos server upgrade --yes NAME` re
 
 ### 2. Inspect and bootstrap a server
 
-Start with a **fresh Ubuntu 24.04+ server** (amd64 or arm64) with root SSH access **or a non-root SSH account with passwordless sudo**, and an already-trusted host key. Point a wildcard DNS record (e.g. `*.apps.example.com`) at the server and allow TCP ports `80` and `443`.
+Start with a **fresh Ubuntu 24.04+ server** (amd64 or arm64) with root SSH access **or a non-root SSH account with passwordless sudo**, and an already-trusted host key. Point a wildcard DNS record (e.g. `*.apps.example.com`) at the server and allow TCP ports `80` and `443`. Omitting `--domain` defaults the base domain to `<hex-ip>.tryvamos.dev`.
 
 ```sh
 # Read-only compatibility check
@@ -79,9 +81,11 @@ vamos destroy -f examples/hello/vamos.yaml --yes   # Remove the app and its rout
 - **Multi-service apps** — Dockerfile-built or prebuilt services share a private app network by default. A trusted service can explicitly use [host networking](docs/ports.md#host-networking). Route selected services over public HTTP, use private service-to-service DNS, and configure per-service `replicas` (32 desired containers across the app) and [`resources`](docs/resources.md) (e.g. `cpus: 0.5`, `memory: 512m`).
 - **Readiness-checked public rollouts** — For HTTP services without volumes or fixed ports, Caddy keeps routing to the previous release until its replacement passes readiness. Volume-backed and fixed-port services stop first and can remain unavailable if replacement fails. In a multi-service deploy, a later failure does not undo earlier service updates.
 - **TCP/UDP service ports** — Public IPv4 Docker port bindings, including equal-sized ranges for services such as coturn. Fixed-port services use one replica and stop-first replacement. See [service ports](docs/ports.md).
+- **Ingress WAF, caching, compression, rate limits & redirects** — Public HTTP services enable the Coraza OWASP WAF, HTTP caching, and Zstandard/Gzip compression by default, each disableable per service (`waf: false`, `cache: false`, `compression: false`); add path-based `rate_limits` and `redirects` under a service's `http` block. See [ingress features](docs/services.md#http-ingress-features) & [rate limits and redirects](docs/services.md#rate-limits-and-redirects).
 - **Persistent volumes** — One named local volume per service (`volume: {name: data, mount: /data}`) with single-writer stop/start replacement, durable 503 maintenance routing during updates, and retained data across cleanup/destroy.
 - **Runtime secrets** — `vamos secrets stage` stores new values without restarting services; deploy the intended services to apply staged values. `vamos secrets set` stores new values and rolls out replacements to their deployed consumers, which can interrupt service. Secret-management output reports metadata, not values. Applications can log their own credentials; inspect workload logs before sharing them. See [runtime secrets](docs/secrets.md).
 - **Release & one-off commands** — Run pre-rollout release hooks (`release: {service: web, command: [...]}`) or ad-hoc noninteractive jobs (`vamos run --service web -- ...`) inside the captured image and network.
+- **Scheduled jobs (cron)** — Declare recurring commands per service in the manifest (`jobs:` with `every`/`cron` schedules run on the server clock) and review recent runs with `vamos jobs` (a bounded, per-service run inbox). See [scheduled jobs](docs/scheduled-jobs.md).
 - **Preview-first rollbacks** — Inspect and apply code/config rollbacks with `vamos rollback`.
 - **Custom domains** — Add `http.domains` aliases (up to 32 across the app) alongside the generated app URL; Caddy manages TLS certificates automatically.
 - **Independent service directories** — Deploy services from separate repositories/folders into one app using `--service` and `vamos service bind` / `vamos service remove`.
